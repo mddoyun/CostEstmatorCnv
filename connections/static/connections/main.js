@@ -4061,7 +4061,7 @@ function addBoqGroupingLevel() {
         });
 }
 
-async function generateBoqReport() {
+async function generateBoqReport(preserveColumnOrder = false) {
     console.log("[DEBUG] '집계표 생성' 버튼 클릭됨 / 혹은 단가기준 변경됨");
 
     if (!currentProjectId) {
@@ -4150,7 +4150,9 @@ async function generateBoqReport() {
         );
 
         // [추가] DD용 컬럼 상태 업데이트 (렌더링 전에 호출)
-        updateDdBoqColumns();
+        if (!preserveColumnOrder) {
+            updateDdBoqColumns();
+        }
 
         // [핵심 수정] renderBoqTable 호출 시 대상 컨테이너 ID 명시적 전달
         renderBoqTable(
@@ -10241,6 +10243,25 @@ function loadBoqColumnSettings() {
             { id: 'expense_cost_total', label: '경비', isDynamic: false, align: 'right' },
         ];
         boqColumnAliases = {};
+    }
+}
+
+// ▼▼▼ [추가] BOQ 컬럼 설정을 localStorage에 저장하는 함수 ▼▼▼
+function saveBoqColumnSettings() {
+    if (!currentProjectId) return;
+    try {
+        const settings = {
+            columns: currentBoqColumns,
+            aliases: boqColumnAliases,
+        };
+        localStorage.setItem(
+            `boqColumnSettings_${currentProjectId}`,
+            JSON.stringify(settings)
+        );
+        console.log('[DEBUG] Saved BOQ column settings to localStorage.');
+    } catch (e) {
+        console.error('Failed to save BOQ column settings to localStorage:', e);
+        showToast('컬럼 설정을 로컬 저장소에 저장하는데 실패했습니다.', 'error');
     }
 }
 

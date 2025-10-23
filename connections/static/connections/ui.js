@@ -2197,6 +2197,37 @@ function renderBoqTable(
             });
         console.log('[DEBUG][Render] Dropdown values set for DD BOQ table.');
     }
+
+    // ▼▼▼ [추가] SortableJS를 초기화하여 컬럼 순서 변경을 활성화합니다. ▼▼▼
+    // isSdTab이 false일 때만 (즉, DD 탭에서만) 컬럼 순서 변경을 활성화합니다.
+    if (!isSdTab) {
+        const table = container.querySelector('table.boq-table');
+        if (table) {
+            const headerRow = table.querySelector('thead tr');
+            if (headerRow) {
+                Sortable.create(headerRow, {
+                    animation: 150,
+                    onEnd: function (evt) {
+                        // 순서가 변경된 컬럼 ID들을 가져옵니다.
+                        const newOrder = Array.from(evt.target.children).map(
+                            (th) => th.dataset.columnId
+                        );
+
+                        // currentBoqColumns 배열을 새 순서에 맞게 재정렬합니다.
+                        currentBoqColumns.sort((a, b) => {
+                            return newOrder.indexOf(a.id) - newOrder.indexOf(b.id);
+                        });
+
+                        // 변경된 순서를 저장하고 테이블을 다시 생성합니다.
+                        saveBoqColumnSettings(); // main.js에 정의될 함수
+                        generateBoqReport(true); // 테이블을 다시 그려서 변경사항을 완전히 적용
+                        showToast('컬럼 순서가 저장되었습니다.', 'info');
+                    },
+                });
+            }
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 }
 // ▲▲▲ [교체] 여기까지 입니다 ▲▲▲
 
