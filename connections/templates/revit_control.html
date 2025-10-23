@@ -1,0 +1,2184 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>COST ESTIMATOR(DD)</title>
+        {% load static %}
+        <link
+            rel="stylesheet"
+            type="text/css"
+            href="{% static 'connections/style.css' %}"
+        />
+    </head>
+
+    <body>
+        <div id="toast-container"></div>
+        <input
+            type="file"
+            id="csv-file-input"
+            accept=".csv"
+            style="display: none"
+        />
+        <input
+            type="file"
+            id="project-import-input"
+            accept=".json"
+            style="display: none"
+        />
+
+        <div class="app-container">
+            <header class="app-header">
+                <div class="header-left">
+                    <h1>COST ESTIMATOR</h1>
+                </div>
+                <div class="header-right">
+                    {% csrf_token %}
+                    <label for="project-selector">Project:</label>
+                    <select id="project-selector">
+                        <option value="">-- 프로젝트 선택 --</option>
+                        {% for project in projects %}
+                        <option value="{{ project.id }}">
+                            {{ project.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+
+                    <button id="project-export-btn" style="margin-left: 10px">
+                        프로젝트 내보내기
+                    </button>
+                    <button id="project-import-btn">프로젝트 가져오기</button>
+                    <input
+                        type="text"
+                        id="new-project-name"
+                        placeholder="새 프로젝트 이름..."
+                    />
+                    <button id="create-project-btn">새 프로젝트</button>
+                    <button
+                        id="batch-auto-update-btn"
+                        style="
+                            margin-left: 10px;
+                            background-color: #ffc107;
+                            font-weight: bold;
+                        "
+                    >
+                        일괄 자동 업데이트
+                    </button>
+                    <div id="progress-container" style="display: none">
+                        <div class="progress-bar-wrapper">
+                            <progress
+                                id="data-fetch-progress"
+                                value="0"
+                                max="100"
+                            ></progress>
+                            <span id="progress-status-text"></span>
+                        </div>
+                    </div>
+                    <p id="status">서버 연결 대기중...</p>
+                </div>
+            </header>
+            <nav class="main-nav">
+                <button class="nav-button active" data-primary-tab="management">
+                    🗂️ 관리
+                </button>
+                <button class="nav-button" data-primary-tab="takeoff">
+                    🧱 산출
+                </button>
+                <button
+                    class="nav-button"
+                    data-primary-tab="detailed-estimation-dd"
+                >
+                    🧾 상세견적(DD)
+                </button>
+                <button
+                    class="nav-button"
+                    data-primary-tab="schematic-estimation-sd"
+                >
+                    🪙 개산견적(SD)
+                </button>
+            </nav>
+            <div class="secondary-nav-container">
+                <nav id="secondary-nav-management" class="secondary-nav active">
+                    <button
+                        class="sub-nav-button"
+                        data-tab="ruleset-management"
+                    >
+                        📜 룰셋 관리
+                    </button>
+                    <button
+                        class="sub-nav-button"
+                        data-tab="cost-code-management"
+                    >
+                        💰 공사코드 관리
+                    </button>
+                    <button
+                        class="sub-nav-button"
+                        data-tab="member-mark-management"
+                    >
+                        📋 일람부호 관리
+                    </button>
+                    <button class="sub-nav-button" data-tab="tag-management">
+                        🏷️ 수량산출분류 관리
+                    </button>
+                    <button class="sub-nav-button" data-tab="space-management">
+                        🏢 공간분류 관리
+                    </button>
+                    <button
+                        class="sub-nav-button"
+                        data-tab="unit-price-management"
+                    >
+                        💲 단가 관리
+                    </button>
+                    <button class="sub-nav-button" data-tab="ai-model-manager">
+                        🧠 AI 모델 관리
+                    </button>
+                </nav>
+                <nav id="secondary-nav-takeoff" class="secondary-nav">
+                    <button class="sub-nav-button" data-tab="data-management">
+                        📊 BIM원본데이터
+                    </button>
+                    <button class="sub-nav-button" data-tab="quantity-members">
+                        🧱 수량산출부재
+                    </button>
+                    <button
+                        class="sub-nav-button"
+                        data-tab="cost-item-management"
+                    >
+                        🧱 수량산출
+                    </button>
+                </nav>
+                <nav
+                    id="secondary-nav-schematic-estimation-sd"
+                    class="secondary-nav"
+                ></nav>
+            </div>
+
+            <div class="main-content">
+                <div id="data-management" class="tab-content active">
+                    <aside class="left-panel">
+                        <div class="control-box">
+                            <h3>데이터 연동</h3>
+                            <div
+                                id="connector-mode-selector"
+                                style="
+                                    margin-bottom: 15px;
+                                    display: flex;
+                                    gap: 15px;
+                                "
+                            >
+                                <label
+                                    ><input
+                                        type="radio"
+                                        name="connector_mode"
+                                        value="revit"
+                                        checked
+                                    />
+                                    Revit 모드</label
+                                >
+                                <label
+                                    ><input
+                                        type="radio"
+                                        name="connector_mode"
+                                        value="blender"
+                                    />
+                                    Blender 모드</label
+                                >
+                            </div>
+                            <button id="fetchDataBtn">데이터 가져오기</button>
+                            <button id="get-from-client-btn">
+                                선택 객체 가져오기
+                            </button>
+                            <button id="select-in-client-btn">
+                                연동 프로그램에서 선택 확인
+                            </button>
+                        </div>
+
+                        <div class="left-panel-tab-container">
+                            <div class="left-panel-tabs">
+                                <button
+                                    class="left-panel-tab-button active"
+                                    data-tab="fields"
+                                >
+                                    필드 선택
+                                </button>
+                                <button
+                                    class="left-panel-tab-button"
+                                    data-tab="classification"
+                                >
+                                    선택항목 분류
+                                </button>
+                                <button
+                                    class="left-panel-tab-button"
+                                    data-tab="bim-properties"
+                                >
+                                    BIM속성
+                                </button>
+                            </div>
+
+                            <div
+                                id="fields"
+                                class="left-panel-tab-content active"
+                            >
+                                <div class="control-box">
+                                    <div class="field-selection-wrapper">
+                                        <div class="field-container-box">
+                                            <h4>시스템 필드</h4>
+                                            <div
+                                                id="system-field-container"
+                                                class="field-container"
+                                            ></div>
+                                        </div>
+                                        <div class="field-container-box">
+                                            <h4>BIM객체 데이터 필드</h4>
+                                            <div
+                                                id="revit-field-container"
+                                                class="field-container"
+                                            ></div>
+                                        </div>
+                                    </div>
+                                    <button id="render-table-btn">
+                                        테이블에 선택 적용
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div
+                                id="classification"
+                                class="left-panel-tab-content"
+                            >
+                                <div class="control-box">
+                                    <div id="selected-tags-list">
+                                        항목을 선택하세요.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                id="bim-properties"
+                                class="left-panel-tab-content"
+                            >
+                                <div class="control-box">
+                                    <div id="selected-bim-properties-container">
+                                        <p>
+                                            테이블에서 항목을 선택하면 BIM
+                                            속성이 여기에 표시됩니다.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <main class="right-panel">
+                        <div class="table-area">
+                            <div class="view-tabs">
+                                <button
+                                    class="view-tab-button active"
+                                    data-view="raw-data-view"
+                                >
+                                    Raw 데이터 뷰
+                                </button>
+                                <button
+                                    class="view-tab-button"
+                                    data-view="classification-view"
+                                >
+                                    수량산출분류 뷰
+                                </button>
+                            </div>
+                            <div class="table-controls">
+                                <div id="grouping-controls-container">
+                                    <button id="add-group-level-btn">
+                                        그룹핑 추가
+                                    </button>
+                                    <div
+                                        id="data-management-grouping-controls"
+                                    ></div>
+                                </div>
+                                <div id="tag-assignment-controls">
+                                    <select id="tag-assign-select">
+                                        <option value="">
+                                            -- 분류 선택 --
+                                        </option>
+                                    </select>
+                                    <button id="assign-tag-btn">
+                                        분류 적용
+                                    </button>
+                                    <button
+                                        id="apply-rules-btn"
+                                        title="룰셋을 기준으로 모든 객체에 분류를 일괄 적용합니다."
+                                    >
+                                        룰셋 일괄적용
+                                    </button>
+                                    <button id="clear-tags-btn">
+                                        분류 제거
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                id="data-management-data-table-container"
+                                class="table-container"
+                            >
+                                데이터가 여기에 표시됩니다...
+                            </div>
+                            <div class="table-footer-controls">
+                                <button
+                                    id="clear-selection-filter-btn"
+                                    style="display: none"
+                                >
+                                    선택 필터 해제
+                                </button>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+
+                <div id="tag-management" class="tab-content">
+                    <div class="ruleset-container">
+                        <main class="ruleset-main-panel" style="width: 100%">
+                            <div class="ruleset-header">
+                                <h2>수량산출분류 관리</h2>
+                            </div>
+                            <div class="tag-management-content-wrapper">
+                                <div class="control-box">
+                                    <h3>수량산출분류 목록</h3>
+                                    <div id="tag-list">
+                                        프로젝트를 선택하세요.
+                                    </div>
+                                </div>
+                                <div class="control-box">
+                                    <h3>새 분류 추가</h3>
+                                    <input
+                                        type="text"
+                                        id="new-tag-name"
+                                        placeholder="새 분류 이름..."
+                                    />
+                                    <button id="create-tag-btn">
+                                        분류 추가
+                                    </button>
+                                </div>
+                                <div class="control-box">
+                                    <h3>가져오기 / 내보내기</h3>
+                                    <div class="io-buttons">
+                                        <button id="import-tags-btn">
+                                            가져오기
+                                        </button>
+                                        <button id="export-tags-btn">
+                                            내보내기
+                                        </button>
+                                        <input
+                                            type="file"
+                                            id="tag-file-input"
+                                            style="display: none"
+                                            accept=".csv"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+
+                <div id="space-management" class="tab-content">
+                    <div
+                        class="left-panel-tab-container"
+                        style="width: 300px; flex-shrink: 0"
+                    >
+                        <div class="left-panel-tabs">
+                            <button
+                                class="left-panel-tab-button active"
+                                data-tab="sm-fields"
+                            >
+                                필드 선택
+                            </button>
+                            <button
+                                class="left-panel-tab-button"
+                                data-tab="sm-bim-properties"
+                            >
+                                BIM속성
+                            </button>
+                        </div>
+                        <div
+                            id="sm-fields"
+                            class="left-panel-tab-content active"
+                        >
+                            <div class="control-box">
+                                <div class="field-selection-wrapper">
+                                    <div class="field-container-box">
+                                        <h4>시스템 필드</h4>
+                                        <div
+                                            id="sm-system-field-container"
+                                            class="field-container"
+                                        ></div>
+                                    </div>
+                                    <div class="field-container-box">
+                                        <h4>BIM객체 데이터 필드</h4>
+                                        <div
+                                            id="sm-revit-field-container"
+                                            class="field-container"
+                                        ></div>
+                                    </div>
+                                </div>
+                                <button
+                                    id="sm-render-table-btn"
+                                    style="margin: 15px"
+                                >
+                                    테이블에 선택 적용
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            id="sm-bim-properties"
+                            class="left-panel-tab-content"
+                        >
+                            <div class="control-box">
+                                <div id="sm-selected-bim-properties-container">
+                                    <p>
+                                        테이블에서 항목을 선택하면 BIM 속성이
+                                        여기에 표시됩니다.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-area">
+                        <div class="table-controls">
+                            <div
+                                id="space-management-grouping-controls-container"
+                            >
+                                <button
+                                    id="add-space-management-group-level-btn"
+                                >
+                                    그룹핑 추가
+                                </button>
+                                <div
+                                    id="space-management-grouping-controls"
+                                ></div>
+                            </div>
+                        </div>
+                        <div
+                            id="space-management-data-table-container"
+                            class="table-container"
+                        >
+                            데이터가 여기에 표시됩니다...
+                        </div>
+                    </div>
+
+                    <div class="space-tree-panel">
+                        <div class="ruleset-header">
+                            <h2>공간분류 관리</h2>
+                            <div class="ruleset-actions">
+                                <button id="import-space-classifications-btn">
+                                    가져오기
+                                </button>
+                                <button id="export-space-classifications-btn">
+                                    내보내기
+                                </button>
+                                <button
+                                    id="apply-space-rules-btn"
+                                    title="정의된 룰셋을 기반으로 공간분류를 자동 생성/동기화합니다."
+                                >
+                                    룰셋 자동적용
+                                </button>
+                                <button id="add-root-space-btn">
+                                    최상위 공간 추가
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            id="space-tree-container"
+                            class="ruleset-table-container"
+                        >
+                            <p>프로젝트를 선택하세요.</p>
+                        </div>
+                    </div>
+                </div>
+                <div id="ruleset-management" class="tab-content">
+                    <div class="ruleset-container">
+                        <aside class="ruleset-nav-panel">
+                            <h3>룰셋 종류</h3>
+                            <nav class="ruleset-nav">
+                                <button
+                                    class="ruleset-nav-button active"
+                                    data-ruleset="classification-ruleset"
+                                >
+                                    <span class="ruleset-icon">🏷️</span>
+                                    <span class="ruleset-text"
+                                        ><strong>분류 할당 룰셋</strong
+                                        ><small
+                                            >RawElement → 수량산출분류</small
+                                        ></span
+                                    >
+                                </button>
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="mapping-ruleset"
+                                >
+                                    <span class="ruleset-icon">📐</span>
+                                    <span class="ruleset-text"
+                                        ><strong>속성 맵핑 룰셋</strong
+                                        ><small
+                                            >QuantityMember 속성 계산</small
+                                        ></span
+                                    >
+                                </button>
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="costcode-ruleset"
+                                >
+                                    <span class="ruleset-icon">💰</span>
+                                    <span class="ruleset-text"
+                                        ><strong>공사코드 룰셋</strong
+                                        ><small
+                                            >CostItem 수량 산출 기준</small
+                                        ></span
+                                    >
+                                </button>
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="member-mark-assignment-ruleset"
+                                >
+                                    <span class="ruleset-icon">🏷️</span>
+                                    <span class="ruleset-text"
+                                        ><strong>일람부호 할당 룰셋</strong
+                                        ><small
+                                            >QuantityMember → MemberMark</small
+                                        ></span
+                                    >
+                                </button>
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="cost-code-assignment-ruleset"
+                                >
+                                    <span class="ruleset-icon">📎</span>
+                                    <span class="ruleset-text"
+                                        ><strong>공사코드 할당 룰셋</strong
+                                        ><small
+                                            >QuantityMember → CostCode</small
+                                        ></span
+                                    >
+                                </button>
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="space-classification-ruleset"
+                                >
+                                    <span class="ruleset-icon">🏗️</span>
+                                    <span class="ruleset-text"
+                                        ><strong>공간분류 생성 룰셋</strong
+                                        ><small
+                                            >BIM객체 → 공간분류 위계</small
+                                        ></span
+                                    >
+                                </button>
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="space-assignment-ruleset"
+                                >
+                                    <span class="ruleset-icon">🏢</span>
+                                    <span class="ruleset-text"
+                                        ><strong>공간분류 할당 룰셋</strong
+                                        ><small
+                                            >QuantityMember → 공간분류</small
+                                        ></span
+                                    >
+                                </button>
+                            </nav>
+                        </aside>
+                        <main class="ruleset-main-panel">
+                            <div
+                                id="classification-ruleset"
+                                class="ruleset-content active"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>분류 할당 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="import-classification-rules-btn"
+                                        >
+                                            가져오기
+                                        </button>
+                                        <button
+                                            id="export-classification-rules-btn"
+                                        >
+                                            내보내기
+                                        </button>
+                                        <button
+                                            id="add-classification-rule-btn"
+                                        >
+                                            새 규칙 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="ruleset-table-container">
+                                    <p>
+                                        프로젝트를 선택하고 규칙을 추가하세요.
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="mapping-ruleset" class="ruleset-content">
+                                <div class="ruleset-header">
+                                    <h2>속성 맵핑 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button id="import-mapping-rules-btn">
+                                            가져오기
+                                        </button>
+                                        <button id="export-mapping-rules-btn">
+                                            내보내기
+                                        </button>
+                                        <button id="add-mapping-rule-btn">
+                                            새 규칙 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="mapping-ruleset-table-container"
+                                >
+                                    <p>
+                                        이곳에서 QuantityMember의 속성을
+                                        계산하는 규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="costcode-ruleset" class="ruleset-content">
+                                <div class="ruleset-header">
+                                    <h2>공사코드 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button id="import-costcode-rules-btn">
+                                            가져오기
+                                        </button>
+                                        <button id="export-costcode-rules-btn">
+                                            내보내기
+                                        </button>
+                                        <button id="add-costcode-rule-btn">
+                                            새 규칙 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="costcode-ruleset-table-container"
+                                >
+                                    <p>
+                                        이곳에서 공사코드별 수량 산출 기준을
+                                        관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <div
+                                id="member-mark-assignment-ruleset"
+                                class="ruleset-content"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>일람부호 할당 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="import-member-mark-assignment-rules-btn"
+                                        >
+                                            가져오기
+                                        </button>
+                                        <button
+                                            id="export-member-mark-assignment-rules-btn"
+                                        >
+                                            내보내기
+                                        </button>
+                                        <button
+                                            id="add-member-mark-assignment-rule-btn"
+                                        >
+                                            새 규칙 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="member-mark-assignment-ruleset-table-container"
+                                >
+                                    <p>
+                                        QuantityMember 속성 기반으로 일람부호를
+                                        자동 할당하는 규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <div
+                                id="cost-code-assignment-ruleset"
+                                class="ruleset-content"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>공사코드 할당 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="import-cost-code-assignment-rules-btn"
+                                        >
+                                            가져오기
+                                        </button>
+                                        <button
+                                            id="export-cost-code-assignment-rules-btn"
+                                        >
+                                            내보내기
+                                        </button>
+                                        <button
+                                            id="add-cost-code-assignment-rule-btn"
+                                        >
+                                            새 규칙 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="cost-code-assignment-ruleset-table-container"
+                                >
+                                    <p>
+                                        QuantityMember 속성 기반으로 공사코드를
+                                        자동 할당/생성하는 규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <div
+                                id="space-classification-ruleset"
+                                class="ruleset-content"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>공간분류 생성 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="import-space-classification-rules-btn"
+                                        >
+                                            가져오기
+                                        </button>
+                                        <button
+                                            id="export-space-classification-rules-btn"
+                                        >
+                                            내보내기
+                                        </button>
+                                        <button
+                                            id="add-space-classification-rule-btn"
+                                        >
+                                            새 규칙(위계) 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="space-classification-ruleset-table-container"
+                                >
+                                    <p>
+                                        BIM 객체로부터 공간분류 위계를 자동으로
+                                        생성하는 규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <div
+                                id="space-assignment-ruleset"
+                                class="ruleset-content"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>공간분류 할당 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="import-space-assignment-rules-btn"
+                                        >
+                                            가져오기
+                                        </button>
+                                        <button
+                                            id="export-space-assignment-rules-btn"
+                                        >
+                                            내보내기
+                                        </button>
+                                        <button
+                                            id="add-space-assignment-rule-btn"
+                                        >
+                                            새 규칙 추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="space-assignment-ruleset-table-container"
+                                >
+                                    <p>
+                                        QuantityMember 속성 기반으로 공간분류를
+                                        자동 할당하는 규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+
+                <div id="quantity-members" class="tab-content">
+                    <div class="qm-container">
+                        <div class="qm-header">
+                            <h2>수량산출부재 관리</h2>
+                            <div class="qm-actions">
+                                <button id="create-qm-manual-btn">
+                                    수동 생성
+                                </button>
+                                <button id="create-qm-auto-btn">
+                                    자동 생성 (분류 기준)
+                                </button>
+                                <button
+                                    id="apply-assignment-rules-btn"
+                                    title="일람부호 및 공사코드 할당 룰셋을 모든 부재에 일괄 적용합니다."
+                                >
+                                    할당 룰셋 일괄적용
+                                </button>
+                            </div>
+                        </div>
+                        <div class="main-split-layout">
+                            <div class="table-area">
+                                <div class="view-tabs">
+                                    <button
+                                        class="view-tab-button active"
+                                        data-view="quantity-member-view"
+                                    >
+                                        수량산출부재 뷰
+                                    </button>
+                                    <button
+                                        class="view-tab-button"
+                                        data-view="cost-code-view"
+                                    >
+                                        공사코드별 뷰
+                                    </button>
+                                </div>
+                                <div class="table-controls">
+                                    <div id="qm-grouping-controls-container">
+                                        <button id="add-qm-group-level-btn">
+                                            그룹핑 추가
+                                        </button>
+                                        <div id="qm-grouping-controls"></div>
+                                    </div>
+                                </div>
+                                <div
+                                    id="qm-table-container"
+                                    class="qm-table-container"
+                                >
+                                    <p>프로젝트를 선택하세요.</p>
+                                </div>
+                            </div>
+                            <div class="details-panel">
+                                <div class="details-panel-tabs">
+                                    <button
+                                        class="detail-tab-button active"
+                                        data-tab="properties"
+                                    >
+                                        부재 속성
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="cost-codes"
+                                    >
+                                        공사 코드
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="member-mark"
+                                    >
+                                        일람 부호
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="raw-data"
+                                    >
+                                        BIM 원본
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="spaces"
+                                    >
+                                        공간분류
+                                    </button>
+                                </div>
+                                <div
+                                    class="detail-tab-content active"
+                                    data-tab="properties"
+                                >
+                                    <div class="control-box">
+                                        <h4>선택된 부재의 속성</h4>
+                                        <div id="qm-properties-container">
+                                            부재를 하나만 선택하세요.
+                                        </div>
+                                        <div
+                                            id="qm-properties-actions"
+                                            class="assignment-controls"
+                                        ></div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="cost-codes"
+                                >
+                                    <div class="control-box">
+                                        <h4>선택된 부재의 공사코드</h4>
+                                        <div id="qm-cost-codes-list">
+                                            공사코드를 보려면 부재를 선택하세요.
+                                        </div>
+                                        <div class="assignment-controls">
+                                            <select
+                                                id="qm-cost-code-assign-select"
+                                                class="control-element"
+                                            >
+                                                <option value="">
+                                                    -- 공사코드 선택 --
+                                                </option>
+                                            </select>
+                                            <button
+                                                id="qm-assign-cost-code-btn"
+                                            >
+                                                할당
+                                            </button>
+                                            <button
+                                                id="qm-clear-cost-codes-btn"
+                                            >
+                                                제거
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="member-mark"
+                                >
+                                    <div class="control-box">
+                                        <h4>선택된 부재의 일람부호 상세정보</h4>
+                                        <div
+                                            id="qm-member-mark-details-container"
+                                        >
+                                            부재를 하나만 선택하세요.
+                                        </div>
+                                        <div class="assignment-controls">
+                                            <select
+                                                id="qm-member-mark-assign-select"
+                                                class="control-element"
+                                            >
+                                                <option value="">
+                                                    -- 일람부호 선택 --
+                                                </option>
+                                            </select>
+                                            <button
+                                                id="qm-assign-member-mark-btn"
+                                            >
+                                                할당
+                                            </button>
+                                            <button
+                                                id="qm-clear-member-marks-btn"
+                                            >
+                                                제거
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="raw-data"
+                                >
+                                    <div class="control-box">
+                                        <h4>연관된 BIM 원본 데이터</h4>
+                                        <div
+                                            id="qm-linked-raw-element-properties-container"
+                                        >
+                                            부재를 하나만 선택하면 원본 데이터가
+                                            표시됩니다.
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="spaces"
+                                >
+                                    <div class="control-box">
+                                        <h4>선택된 부재의 공간분류</h4>
+                                        <div id="qm-spaces-list">
+                                            공간분류를 보려면 부재를 선택하세요.
+                                        </div>
+                                        <div class="assignment-controls">
+                                            <select
+                                                id="qm-space-assign-select"
+                                                class="control-element"
+                                            >
+                                                <option value="">
+                                                    -- 공간분류 선택 --
+                                                </option>
+                                            </select>
+                                            <button id="qm-assign-space-btn">
+                                                할당
+                                            </button>
+                                            <button id="qm-clear-spaces-btn">
+                                                제거
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="cost-item-management" class="tab-content">
+                    <div class="qm-container">
+                        <div class="qm-header">
+                            <h2>산출항목 관리</h2>
+                            <div class="qm-actions">
+                                <button id="create-ci-manual-btn">
+                                    수동 생성
+                                </button>
+                                <button id="create-ci-auto-btn">
+                                    자동 생성 (공사코드 기준)
+                                </button>
+                            </div>
+                        </div>
+                        <div class="main-split-layout">
+                            <div class="table-area">
+                                <div class="table-controls">
+                                    <div id="ci-grouping-controls-container">
+                                        <button id="add-ci-group-level-btn">
+                                            그룹핑 추가
+                                        </button>
+                                        <div id="ci-grouping-controls"></div>
+                                    </div>
+                                </div>
+                                <div
+                                    id="ci-table-container"
+                                    class="qm-table-container"
+                                >
+                                    <p>프로젝트를 선택하세요.</p>
+                                </div>
+                            </div>
+                            <div class="details-panel">
+                                <div class="control-box">
+                                    <h3>연관된 부재의 속성</h3>
+                                    <div id="ci-linked-member-info-header">
+                                        <p>
+                                            산출항목을 선택하면 정보가
+                                            표시됩니다.
+                                        </p>
+                                    </div>
+                                    <div id="ci-linked-properties-wrapper">
+                                        <div
+                                            id="ci-linked-member-properties-container"
+                                            class="properties-sub-container"
+                                        ></div>
+                                        <div
+                                            id="ci-linked-mark-properties-container"
+                                            class="properties-sub-container"
+                                        ></div>
+                                        <div
+                                            id="ci-linked-raw-element-properties-container"
+                                            class="properties-sub-container"
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="member-mark-management" class="tab-content">
+                    <div class="ruleset-container">
+                        <main class="ruleset-main-panel" style="width: 100%">
+                            <div class="ruleset-header">
+                                <h2>일람부호(Member Mark) 관리</h2>
+                                <div class="ruleset-actions">
+                                    <button id="import-member-marks-btn">
+                                        가져오기
+                                    </button>
+                                    <button id="export-member-marks-btn">
+                                        내보내기
+                                    </button>
+                                    <button id="add-member-mark-btn">
+                                        새 일람부호 추가
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                id="member-marks-table-container"
+                                class="ruleset-table-container"
+                            >
+                                <p>프로젝트를 선택하세요.</p>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+
+                <div id="cost-code-management" class="tab-content">
+                    <div class="ruleset-container">
+                        <main class="ruleset-main-panel" style="width: 100%">
+                            <div class="ruleset-header">
+                                <h2>공사코드(Cost Code) 관리</h2>
+                                <div class="ruleset-actions">
+                                    <button id="import-cost-codes-btn">
+                                        가져오기
+                                    </button>
+                                    <button id="export-cost-codes-btn">
+                                        내보내기
+                                    </button>
+                                    <button id="add-cost-code-btn">
+                                        새 공사코드 추가
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                id="cost-codes-table-container"
+                                class="ruleset-table-container"
+                            >
+                                <p>프로젝트를 선택하세요.</p>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+
+                <div id="detailed-estimation-dd" class="tab-content">
+                    <div class="boq-container">
+                        <button
+                            id="boq-left-panel-toggle-btn"
+                            class="panel-toggle-btn"
+                            title="왼쪽 패널 접기/펴기"
+                        >
+                            ◀
+                        </button>
+
+                        <aside class="boq-left-panel">
+                            <div class="control-box">
+                                <button
+                                    id="generate-boq-btn"
+                                    style="width: 100%"
+                                >
+                                    📈 집계표 생성
+                                </button>
+                                <button
+                                    id="boq-reset-columns-btn"
+                                    style="width: 100%; margin-top: 10px"
+                                >
+                                    🔄 열 순서/이름 초기화
+                                </button>
+                                <button
+                                    id="export-boq-btn"
+                                    style="width: 100%; margin-top: 10px"
+                                >
+                                    📄 Excel 내보내기
+                                </button>
+                            </div>
+                            <div class="control-box">
+                                <h3>프로그램 연동</h3>
+                                <div class="io-buttons">
+                                    <button id="boq-get-from-client-btn">
+                                        선택 객체 가져오기
+                                    </button>
+                                    <button id="boq-select-in-client-btn">
+                                        연동 프로그램에서 선택 확인
+                                    </button>
+                                </div>
+                                <button
+                                    id="boq-clear-selection-filter-btn"
+                                    style="display: none; margin-top: 10px"
+                                >
+                                    선택 필터 해제
+                                </button>
+                            </div>
+                            <div class="control-box">
+                                <h4>표시할 필드</h4>
+                                <div
+                                    id="boq-display-fields-container"
+                                    style="
+                                        max-height: 150px;
+                                        overflow-y: auto;
+                                        overflow-x: auto;
+                                    "
+                                >
+                                    <small
+                                        >그룹핑 필드 목록을 먼저
+                                        불러옵니다...</small
+                                    >
+                                </div>
+                            </div>
+                            <div
+                                id="boq-item-details-panel"
+                                class="control-box boq-left-details-panel"
+                            >
+                                <div class="details-panel-tabs">
+                                    <button
+                                        class="detail-tab-button active"
+                                        data-tab="boq-member-prop"
+                                    >
+                                        부재 속성
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="boq-mark-prop"
+                                    >
+                                        일람부호
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="boq-raw-prop"
+                                    >
+                                        BIM 원본
+                                    </button>
+                                </div>
+                                <div
+                                    class="detail-tab-content active"
+                                    data-tab="boq-member-prop"
+                                >
+                                    <div
+                                        id="boq-details-member-container"
+                                        class="properties-sub-container"
+                                    ></div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="boq-mark-prop"
+                                >
+                                    <div
+                                        id="boq-details-mark-container"
+                                        class="properties-sub-container"
+                                    ></div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="boq-raw-prop"
+                                >
+                                    <div
+                                        id="boq-details-raw-container"
+                                        class="properties-sub-container"
+                                    ></div>
+                                </div>
+                            </div>
+                        </aside>
+
+                        <main class="boq-main-content">
+                            <div class="control-box">
+                                <div id="boq-grouping-controls-wrapper">
+                                    <button id="add-boq-group-level-btn">
+                                        + 그룹핑 추가
+                                    </button>
+                                    <div id="boq-grouping-controls"></div>
+                                </div>
+                            </div>
+                            <div
+                                id="boq-table-container"
+                                class="boq-table-wrapper"
+                            >
+                                <p style="padding: 20px">
+                                    집계 기준을 설정하고 '집계표 생성' 버튼을
+                                    눌러주세요.
+                                </p>
+                            </div>
+                            <div id="boq-details-toolbar">
+                                <button
+                                    id="boq-bottom-panel-toggle-btn"
+                                    class="panel-toggle-btn"
+                                    title="하단 패널 접기/펴기"
+                                >
+                                    ▼
+                                </button>
+                            </div>
+                            <div
+                                id="boq-item-list-wrapper"
+                                class="boq-details-wrapper"
+                            >
+                                <div
+                                    class="control-box"
+                                    style="
+                                        height: 100%;
+                                        display: flex;
+                                        flex-direction: column;
+                                    "
+                                >
+                                    <div class="boq-details-header">
+                                        <h4 style="margin: 0">
+                                            포함된 산출항목
+                                        </h4>
+                                    </div>
+                                    <div
+                                        id="boq-item-list-container"
+                                        style="flex-grow: 1; overflow-y: auto"
+                                    >
+                                        <p style="padding: 10px">
+                                            상단 집계표의 행을 선택하세요.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+
+                        <aside class="boq-bim-object-summary-panel">
+                            <div class="control-box">
+                                <h4 id="boq-bim-object-summary-header">
+                                    BIM 객체 비용 요약
+                                </h4>
+                                <div id="boq-bim-object-cost-summary">
+                                    <p style="padding: 10px">
+                                        하단 목록에서 산출항목을 선택하면 연관된
+                                        BIM 객체의 비용 요약이 표시됩니다.
+                                    </p>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+                </div>
+                <div id="schematic-estimation-sd" class="tab-content">
+                    <div class="sd-container">
+                        <div class="sd-top-panel">
+                            <div class="sd-input-section panel-box">
+                                <div class="panel-header">
+                                    <h4>개산견적 입력</h4>
+                                </div>
+                                <div class="panel-content sd-input-content">
+                                    <div class="sd-model-selector">
+                                        <label for="sd-model-select"
+                                            >AI 모델 선택:</label
+                                        >
+                                        <select id="sd-model-select">
+                                            <option value="">
+                                                -- 모델 선택 --
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div
+                                        id="sd-input-fields"
+                                        class="sd-input-fields"
+                                    >
+                                        <p>
+                                            모델을 선택하면 입력 항목이
+                                            표시됩니다.
+                                        </p>
+                                    </div>
+                                    <button id="sd-predict-btn" disabled>
+                                        📈 예측 실행
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="sd-output-section panel-box">
+                                <div class="panel-header">
+                                    <h4>예측 결과</h4>
+                                </div>
+                                <div class="panel-content sd-output-content">
+                                    <div id="sd-prediction-results-table">
+                                        <p>예측 결과가 여기에 표시됩니다.</p>
+                                    </div>
+                                    <canvas
+                                        id="sd-prediction-chart"
+                                        height="150"
+                                    ></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="sd-bottom-panel three-column-layout">
+                            <div class="left-column panel-box">
+                                <div class="panel-header">
+                                    <h4>개산견적(SD) 대상 항목</h4>
+                                    <button id="sd-select-in-client-btn">
+                                        👁️ 연동 프로그램에서 선택 확인
+                                    </button>
+                                </div>
+                                <div
+                                    class="panel-content sd-table-content"
+                                    style="
+                                        display: flex;
+                                        flex-direction: column;
+                                    "
+                                >
+                                    <div
+                                        class="control-box"
+                                        style="
+                                            flex-shrink: 0;
+                                            border: none;
+                                            border-bottom: 1px solid
+                                                var(--border-color);
+                                            padding-bottom: 10px;
+                                            margin-bottom: 10px;
+                                        "
+                                    >
+                                        <div
+                                            id="sd-grouping-controls-wrapper"
+                                            style="
+                                                display: flex;
+                                                align-items: center;
+                                                gap: 15px;
+                                            "
+                                        >
+                                            <button id="add-sd-group-level-btn">
+                                                + 그룹핑 추가
+                                            </button>
+                                            <div
+                                                id="sd-grouping-controls"
+                                                style="
+                                                    display: flex;
+                                                    flex-wrap: nowrap;
+                                                    overflow-x: auto;
+                                                    gap: 10px;
+                                                    align-items: center;
+                                                    padding-bottom: 5px;
+                                                    min-width: 0;
+                                                    flex-grow: 1;
+                                                "
+                                            ></div>
+                                        </div>
+                                        <div
+                                            id="sd-display-fields-wrapper"
+                                            style="
+                                                display: none;
+                                                align-items: center;
+                                                gap: 10px;
+                                                padding-top: 10px;
+                                                border-top: 1px dashed #e0e0e0;
+                                                margin-top: 10px;
+                                            "
+                                        >
+                                            <span>표시 필드:</span>
+                                            <div
+                                                id="sd-display-fields-container"
+                                                style="
+                                                    flex-grow: 1;
+                                                    max-height: 80px;
+                                                    overflow: auto;
+                                                    border: 1px solid
+                                                        var(--border-color);
+                                                    padding: 5px;
+                                                    background-color: #fff;
+                                                    border-radius: 4px;
+                                                "
+                                            >
+                                                <small>필드 로딩 중...</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div
+                                        id="sd-table-container"
+                                        class="table-container"
+                                        style="flex-grow: 1; overflow: auto"
+                                    >
+                                        <p style="padding: 20px">
+                                            개산견적(SD)에 사용되는 산출항목
+                                            목록이 여기에 표시됩니다.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="middle-column panel-box">
+                                <div class="panel-header">
+                                    <h4>연관 산출항목</h4>
+                                </div>
+                                <div
+                                    id="sd-item-list-container"
+                                    class="panel-content"
+                                >
+                                    <p style="padding: 15px">
+                                        왼쪽 테이블에서 그룹 행을 선택하세요.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div
+                                id="sd-item-details-panel"
+                                class="right-column panel-box"
+                            >
+                                <div class="details-panel-tabs">
+                                    <button
+                                        class="detail-tab-button active"
+                                        data-tab="sd-member-prop"
+                                    >
+                                        부재 속성
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="sd-mark-prop"
+                                    >
+                                        일람부호
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="sd-raw-prop"
+                                    >
+                                        BIM 원본
+                                    </button>
+                                </div>
+                                <div
+                                    class="detail-tab-content active"
+                                    data-tab="sd-member-prop"
+                                >
+                                    <div
+                                        id="sd-details-member-container"
+                                        class="panel-content properties-sub-container"
+                                    >
+                                        <p style="padding: 15px">
+                                            중간 목록에서 항목을 선택하세요.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="sd-mark-prop"
+                                >
+                                    <div
+                                        id="sd-details-mark-container"
+                                        class="panel-content properties-sub-container"
+                                    >
+                                        <p style="padding: 15px">
+                                            중간 목록에서 항목을 선택하세요.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="sd-raw-prop"
+                                >
+                                    <div
+                                        id="sd-details-raw-container"
+                                        class="panel-content properties-sub-container"
+                                    >
+                                        <p style="padding: 15px">
+                                            중간 목록에서 항목을 선택하세요.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="unit-price-management" class="tab-content">
+                    <div class="unit-price-container">
+                        <aside class="unit-price-left-panel">
+                            <div class="panel-header">
+                                <h3>공사코드 목록</h3>
+                                <input
+                                    type="text"
+                                    id="unit-price-cost-code-search"
+                                    placeholder="코드/품명 검색..."
+                                    style="width: 100%"
+                                />
+                            </div>
+                            <div
+                                id="unit-price-cost-code-list"
+                                class="panel-content cost-code-list-container"
+                            >
+                                <p>
+                                    프로젝트를 선택하면 공사코드가 표시됩니다.
+                                </p>
+                            </div>
+                        </aside>
+
+                        <main class="unit-price-right-panel">
+                            <section class="unit-price-type-section">
+                                <div class="panel-header">
+                                    <h4>단가 구분 관리</h4>
+                                    <button id="add-unit-price-type-btn">
+                                        새 구분 추가
+                                    </button>
+                                </div>
+                                <div
+                                    id="unit-price-type-table-container"
+                                    class="panel-content type-table-container"
+                                >
+                                    <p>단가 구분을 추가하세요.</p>
+                                </div>
+                            </section>
+
+                            <section class="unit-price-list-section">
+                                <div class="panel-header">
+                                    <h4 id="unit-price-list-header">
+                                        단가 리스트 (공사코드를 선택하세요)
+                                    </h4>
+                                    <button id="add-unit-price-btn" disabled>
+                                        새 단가 추가
+                                    </button>
+                                </div>
+                                <div
+                                    id="unit-price-table-container"
+                                    class="panel-content price-table-container"
+                                >
+                                    <p>왼쪽에서 공사코드를 선택하세요.</p>
+                                </div>
+                            </section>
+                        </main>
+                    </div>
+                </div>
+                <div id="ai-model-manager" class="tab-content">
+                    <nav class="inner-tab-nav">
+                        <button
+                            class="inner-tab-button active"
+                            data-inner-tab="ai-model-list"
+                        >
+                            📊 모델 목록/업로드
+                        </button>
+                        <button
+                            class="inner-tab-button"
+                            data-inner-tab="ai-model-training"
+                        >
+                            🎓 모델 학습
+                        </button>
+                    </nav>
+
+                    <div class="inner-tab-content-container">
+                        <div
+                            id="ai-model-list"
+                            class="inner-tab-content active"
+                        >
+                            <div class="ai-model-list-section panel-box">
+                                <div class="panel-header">
+                                    <h3>AI 모델 목록</h3>
+                                    <div class="ai-model-actions">
+                                        <input
+                                            type="file"
+                                            id="ai-model-h5-input"
+                                            accept=".h5"
+                                            style="display: none"
+                                        />
+                                        <input
+                                            type="file"
+                                            id="ai-model-json-input"
+                                            accept=".json"
+                                            style="display: none"
+                                        />
+                                        <input
+                                            type="text"
+                                            id="new-ai-model-name"
+                                            placeholder="새 모델 이름"
+                                        />
+                                        <button
+                                            id="upload-ai-model-files-btn"
+                                            title="모델 파일(.h5)과 메타데이터 파일(.json) 선택"
+                                        >
+                                            파일 선택
+                                        </button>
+                                        <textarea
+                                            id="ai-model-metadata-manual"
+                                            placeholder="메타데이터(.json) 파일 대신 직접 입력 (JSON 형식)"
+                                            rows="3"
+                                            style="
+                                                display: none;
+                                                width: 100%;
+                                                margin-top: 5px;
+                                            "
+                                        ></textarea>
+                                        <button
+                                            id="confirm-upload-ai-model-btn"
+                                        >
+                                            모델 업로드
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    id="ai-model-list-container"
+                                    class="panel-content"
+                                >
+                                    <p>
+                                        프로젝트를 선택하면 AI 모델 목록이
+                                        표시됩니다.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="ai-model-training" class="inner-tab-content">
+                            <div class="ai-model-training-section panel-box">
+                                <div class="panel-header">
+                                    <h3>AI 모델 학습</h3>
+                                </div>
+                                <div class="panel-content ai-training-content">
+                                    <div
+                                        class="training-step"
+                                        id="training-step-1"
+                                    >
+                                        <h4>1단계: 학습 데이터 업로드 (CSV)</h4>
+                                        <input
+                                            type="file"
+                                            id="training-csv-input"
+                                            accept=".csv"
+                                        />
+                                        <button id="upload-csv-btn">
+                                            CSV 업로드 및 분석
+                                        </button>
+                                        <div
+                                            id="csv-info"
+                                            style="margin-top: 10px"
+                                        ></div>
+                                    </div>
+
+                                    <div
+                                        class="training-step"
+                                        id="training-step-2"
+                                        style="display: none"
+                                    >
+                                        <h4>
+                                            2단계: 모델 구조, 파라미터, 데이터
+                                            분할 설정
+                                        </h4>
+
+                                        <div
+                                            class="feature-selection-container"
+                                        >
+                                            <div class="feature-box">
+                                                <label
+                                                    >입력 피처 (Input
+                                                    Features):</label
+                                                >
+                                                <div
+                                                    id="input-feature-list"
+                                                    class="feature-list"
+                                                ></div>
+                                            </div>
+                                            <div class="feature-box">
+                                                <label
+                                                    >출력 피처 (Output
+                                                    Features):</label
+                                                >
+                                                <div
+                                                    id="output-feature-list"
+                                                    class="feature-list"
+                                                ></div>
+                                            </div>
+                                        </div>
+
+                                        <label style="margin-bottom: 15px"
+                                            >모델 이름:
+                                            <input
+                                                type="text"
+                                                id="training-model-name"
+                                                placeholder="학습 완료 후 저장될 모델 이름"
+                                            />
+                                        </label>
+
+                                        <fieldset
+                                            style="
+                                                border: 1px solid #ccc;
+                                                padding: 10px;
+                                                margin-bottom: 15px;
+                                            "
+                                        >
+                                            <legend>모델 구조 (은닉층)</legend>
+                                            <div id="hidden-layers-config">
+                                                <div
+                                                    class="layer-config-row"
+                                                    data-layer-index="0"
+                                                >
+                                                    <span>Layer 1:</span>
+                                                    <input
+                                                        type="number"
+                                                        class="nodes-input"
+                                                        value="64"
+                                                        min="1"
+                                                        title="노드 수"
+                                                    />
+                                                    <select
+                                                        class="activation-select"
+                                                        title="활성화 함수"
+                                                    >
+                                                        <option
+                                                            value="relu"
+                                                            selected
+                                                        >
+                                                            relu
+                                                        </option>
+                                                        <option value="sigmoid">
+                                                            sigmoid
+                                                        </option>
+                                                        <option value="tanh">
+                                                            tanh
+                                                        </option>
+                                                        <option value="elu">
+                                                            elu
+                                                        </option>
+                                                        <option value="selu">
+                                                            selu
+                                                        </option>
+                                                        <option value="swish">
+                                                            swish
+                                                        </option>
+                                                    </select>
+                                                    <button
+                                                        class="remove-layer-btn"
+                                                        style="
+                                                            padding: 2px 5px;
+                                                            font-size: 10px;
+                                                        "
+                                                    >
+                                                        -
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <button
+                                                id="add-hidden-layer-btn"
+                                                style="margin-top: 5px"
+                                            >
+                                                + 은닉층 추가
+                                            </button>
+                                        </fieldset>
+
+                                        <fieldset
+                                            style="
+                                                border: 1px solid #ccc;
+                                                padding: 10px;
+                                                margin-bottom: 15px;
+                                            "
+                                        >
+                                            <legend>학습 파라미터</legend>
+                                            <div class="model-config-container">
+                                                <label
+                                                    >Loss 함수:
+                                                    <select id="loss-function">
+                                                        <option
+                                                            value="mse"
+                                                            selected
+                                                        >
+                                                            mse (Mean Squared
+                                                            Error)
+                                                        </option>
+                                                        <option value="mae">
+                                                            mae (Mean Absolute
+                                                            Error)
+                                                        </option>
+                                                    </select>
+                                                </label>
+                                                <label
+                                                    >Optimizer:
+                                                    <select id="optimizer">
+                                                        <option
+                                                            value="adam"
+                                                            selected
+                                                        >
+                                                            Adam
+                                                        </option>
+                                                        <option value="sgd">
+                                                            SGD
+                                                        </option>
+                                                        <option value="rmsprop">
+                                                            RMSprop
+                                                        </option>
+                                                    </select>
+                                                </label>
+                                                <label
+                                                    >Metrics:
+                                                    <select
+                                                        id="metrics"
+                                                        multiple
+                                                        size="3"
+                                                    >
+                                                        <option
+                                                            value="mae"
+                                                            selected
+                                                        >
+                                                            mae
+                                                        </option>
+                                                        <option value="mse">
+                                                            mse
+                                                        </option>
+                                                        <option value="mape">
+                                                            mape (Mean Absolute
+                                                            Percentage Error)
+                                                        </option>
+                                                    </select>
+                                                    <small
+                                                        >(Ctrl/Cmd 클릭으로 다중
+                                                        선택)</small
+                                                    >
+                                                </label>
+                                                <label
+                                                    >학습률(Learning Rate):
+                                                    <input
+                                                        type="number"
+                                                        id="learning-rate"
+                                                        value="0.001"
+                                                        step="0.0001"
+                                                /></label>
+                                                <label
+                                                    >에포크(Epochs):
+                                                    <input
+                                                        type="number"
+                                                        id="epochs"
+                                                        value="50"
+                                                        min="1"
+                                                /></label>
+                                                <label
+                                                    ><input
+                                                        type="checkbox"
+                                                        id="normalize-inputs"
+                                                        checked
+                                                    />
+                                                    입력값
+                                                    정규화(StandardScaler)</label
+                                                >
+                                            </div>
+                                        </fieldset>
+
+                                        <fieldset
+                                            style="
+                                                border: 1px solid #ccc;
+                                                padding: 10px;
+                                                margin-bottom: 15px;
+                                            "
+                                        >
+                                            <legend>데이터 분할</legend>
+                                            <div
+                                                style="
+                                                    display: flex;
+                                                    gap: 15px;
+                                                    align-items: center;
+                                                "
+                                            >
+                                                <label
+                                                    >Train 비율(%):
+                                                    <input
+                                                        type="number"
+                                                        id="train-ratio"
+                                                        value="70"
+                                                        min="1"
+                                                        max="98"
+                                                /></label>
+                                                <label
+                                                    >Validation 비율(%):
+                                                    <input
+                                                        type="number"
+                                                        id="val-ratio"
+                                                        value="15"
+                                                        min="1"
+                                                        max="98"
+                                                /></label>
+                                                <span id="test-ratio-display"
+                                                    >Test 비율(%): 15</span
+                                                >
+                                                <label
+                                                    ><input
+                                                        type="checkbox"
+                                                        id="use-random-seed"
+                                                    />
+                                                    랜덤 시드 고정</label
+                                                >
+                                                <input
+                                                    type="number"
+                                                    id="random-seed-value"
+                                                    value="42"
+                                                    min="0"
+                                                    style="
+                                                        width: 60px;
+                                                        display: none;
+                                                    "
+                                                />
+                                            </div>
+                                        </fieldset>
+
+                                        <button id="start-training-btn">
+                                            학습 시작
+                                        </button>
+                                        <button
+                                            id="reset-training-config-btn"
+                                            style="margin-left: 10px"
+                                        >
+                                            설정 초기화
+                                        </button>
+                                    </div>
+                                    <div
+                                        class="training-step"
+                                        id="training-step-3"
+                                        style="display: none"
+                                    >
+                                        <h4>3단계: 학습 진행률 및 결과</h4>
+                                        <div id="training-progress-info">
+                                            학습 대기 중...
+                                        </div>
+                                        <canvas
+                                            id="training-progress-chart"
+                                            width="400"
+                                            height="200"
+                                        ></canvas>
+                                        <div
+                                            id="training-results"
+                                            style="margin-top: 15px"
+                                        ></div>
+                                        <div
+                                            id="test-set-evaluation-results"
+                                            style="
+                                                margin-top: 20px;
+                                                border-top: 1px dashed #ccc;
+                                                padding-top: 15px;
+                                            "
+                                        >
+                                            <h4>Test Set 평가 결과</h4>
+                                            <p>
+                                                Test 데이터셋을 사용한 최종 모델
+                                                성능 평가 결과입니다.
+                                            </p>
+                                        </div>
+                                        <div
+                                            id="training-actions"
+                                            style="
+                                                margin-top: 10px;
+                                                display: none;
+                                            "
+                                        >
+                                            <button id="save-trained-model-btn">
+                                                학습된 모델 저장
+                                            </button>
+                                            <button
+                                                id="download-trained-model-h5-btn"
+                                            >
+                                                모델 파일(.h5) 다운로드
+                                            </button>
+                                            <button
+                                                id="download-trained-model-json-btn"
+                                            >
+                                                메타데이터(.json) 다운로드
+                                            </button>
+                                            <button id="reset-training-btn">
+                                                새 학습 시작
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="schematic-estimation-sd" class="tab-content">
+                    <div class="sd-container">
+                        <div class="sd-top-panel">
+                            <div class="sd-input-section panel-box">
+                                <div class="panel-header">
+                                    <h4>개산견적 입력</h4>
+                                </div>
+                                <div class="panel-content sd-input-content">
+                                    <div class="sd-model-selector">
+                                        <label for="sd-model-select"
+                                            >AI 모델 선택:</label
+                                        >
+                                        <select id="sd-model-select">
+                                            <option value="">
+                                                -- 모델 선택 --
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div
+                                        id="sd-input-fields"
+                                        class="sd-input-fields"
+                                    >
+                                        <p>
+                                            모델을 선택하면 입력 항목이
+                                            표시됩니다.
+                                        </p>
+                                    </div>
+                                    <button id="sd-predict-btn" disabled>
+                                        예측 실행
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="sd-output-section panel-box">
+                                <div class="panel-header">
+                                    <h4>예측 결과</h4>
+                                </div>
+                                <div class="panel-content sd-output-content">
+                                    <div id="sd-prediction-results-table">
+                                        <p>예측 결과가 여기에 표시됩니다.</p>
+                                    </div>
+                                    <canvas
+                                        id="sd-prediction-chart"
+                                        height="150"
+                                    ></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="sd-bottom-panel panel-box">
+                            <div class="panel-header">
+                                <h4>개산견적(SD) 대상 산출항목</h4>
+                                <button id="sd-select-in-client-btn">
+                                    연동 프로그램에서 선택 확인
+                                </button>
+                            </div>
+                            <div class="panel-content sd-table-content">
+                                <div
+                                    id="sd-cost-item-table-container"
+                                    class="table-container"
+                                >
+                                    <p>
+                                        개산견적(SD)에 사용되는 산출항목 목록이
+                                        여기에 표시됩니다.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div
+            id="cost-code-selection-modal"
+            class="modal-overlay"
+            style="display: none"
+        >
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>공사코드 선택</h2>
+                    <button class="modal-close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <input
+                        type="text"
+                        id="cost-code-search-input"
+                        placeholder="코드로 검색..."
+                        style="margin-bottom: 15px"
+                    />
+                    <div id="cost-code-list-container" class="modal-list"></div>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        id="modal-cancel-btn"
+                        class="modal-button-secondary"
+                    >
+                        취소
+                    </button>
+                    <button
+                        id="modal-confirm-btn"
+                        class="modal-button-primary"
+                        disabled
+                    >
+                        선택 완료
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="assigned-elements-modal"
+            class="modal-overlay"
+            style="display: none"
+        >
+            <div class="modal-content" style="width: 80%; max-width: 1200px">
+                <div class="modal-header">
+                    <h2 id="assigned-elements-modal-title">할당된 BIM 객체</h2>
+                    <button class="modal-close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div
+                        id="assigned-elements-table-container"
+                        class="table-container"
+                        style="height: 60vh"
+                    ></div>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        id="modal-unassign-btn"
+                        class="modal-button-secondary"
+                    >
+                        선택 항목 할당 해제
+                    </button>
+                    <button
+                        id="modal-close-assigned-elements"
+                        class="modal-button-secondary"
+                    >
+                        닫기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="{% static 'connections/ui.js' %}"></script>
+        <script src="{% static 'connections/websocket.js' %}"></script>
+        <script src="{% static 'connections/main.js' %}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script
+            src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"
+            integrity="sha512-Hn1w6YiiFw6p6S2lXv6yKeqTk0PLVzeCwWY9n32beuPjQ5HLcvz5l2QsP+KilEr1ws37rCTw3bZpvfvVIeTh0Q=="
+            crossorigin="anonymous"
+            referrerpolicy="no-referrer"
+        ></script>
+    </body>
+</html>

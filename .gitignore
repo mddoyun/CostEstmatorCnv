@@ -1,0 +1,13 @@
+.mddoyun_win/
+.mddoyun_mac/
+.mddoyun/
+db.sqlite3
+*.pyc
+*.DS_Store
+dist/
+build/
+__pycache__/
+.venv/
+venv/
+.env
+*.log
