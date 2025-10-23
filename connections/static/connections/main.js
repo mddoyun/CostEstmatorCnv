@@ -4190,114 +4190,6 @@ function setupBoqTableInteractions() {
     const thead = table.querySelector('thead');
     if (thead && !thead.dataset.interactionsAttached) {
         // 중복 리스너 방지
-        let draggedColumn = null;
-        let startX, currentX;
-
-        thead.addEventListener('dragstart', (e) => {
-            draggedColumn = e.target.closest('th');
-            if (!draggedColumn || !draggedColumn.draggable) return;
-            startX = e.clientX;
-            e.dataTransfer.effectAllowed = 'move';
-            // Optional: Add a class for visual feedback
-            draggedColumn.classList.add('dragging');
-            console.log(
-                `[DEBUG] Drag start: Column "${draggedColumn.dataset.columnId}"`
-            ); // 디버깅
-        });
-
-        thead.addEventListener('dragend', (e) => {
-            if (draggedColumn) {
-                draggedColumn.classList.remove('dragging');
-                draggedColumn = null;
-                console.log('[DEBUG] Drag end'); // 디버깅
-                // Remove visual cues from all headers
-                thead.querySelectorAll('th').forEach((th) => {
-                    th.classList.remove('drag-over-left', 'drag-over-right');
-                });
-            }
-        });
-
-        thead.addEventListener('dragover', (e) => {
-            e.preventDefault(); // Necessary to allow drop
-            const targetTh = e.target.closest('th');
-            if (!targetTh || !draggedColumn || targetTh === draggedColumn)
-                return;
-
-            currentX = e.clientX;
-            const rect = targetTh.getBoundingClientRect();
-            const midpoint = rect.left + rect.width / 2;
-
-            // Remove previous visual cues
-            thead.querySelectorAll('th').forEach((th) => {
-                th.classList.remove('drag-over-left', 'drag-over-right');
-            });
-
-            // Add new visual cue based on cursor position
-            if (currentX < midpoint) {
-                targetTh.classList.add('drag-over-left');
-            } else {
-                targetTh.classList.add('drag-over-right');
-            }
-            e.dataTransfer.dropEffect = 'move';
-        });
-
-        thead.addEventListener('dragleave', (e) => {
-            const targetTh = e.target.closest('th');
-            if (targetTh) {
-                targetTh.classList.remove('drag-over-left', 'drag-over-right');
-            }
-        });
-
-        thead.addEventListener('drop', (e) => {
-            e.preventDefault();
-            const targetTh = e.target.closest('th');
-            if (!targetTh || !draggedColumn || targetTh === draggedColumn)
-                return;
-
-            targetTh.classList.remove('drag-over-left', 'drag-over-right');
-            const rect = targetTh.getBoundingClientRect();
-            const midpoint = rect.left + rect.width / 2;
-
-            console.log(
-                `[DEBUG] Drop on column "${
-                    targetTh.dataset.columnId
-                }". Insert ${currentX < midpoint ? 'before' : 'after'}.`
-            ); // 디버깅
-
-            // Reorder the columns in the thead
-            if (currentX < midpoint) {
-                targetTh.parentNode.insertBefore(draggedColumn, targetTh);
-            } else {
-                targetTh.parentNode.insertBefore(
-                    draggedColumn,
-                    targetTh.nextSibling
-                );
-            }
-
-            // Update the global column order based on the new DOM order
-            currentBoqColumns = Array.from(thead.querySelectorAll('th')).map(
-                (th) => {
-                    const colId = th.dataset.columnId;
-                    // Find the original column object to keep its properties
-                    return (
-                        currentBoqColumns.find((c) => c.id === colId) || {
-                            id: colId,
-                            label: colId,
-                            isDynamic: true,
-                        }
-                    ); // Fallback
-                }
-            );
-            console.log(
-                '[DEBUG] currentBoqColumns updated based on drop:',
-                currentBoqColumns
-            ); // 디버깅
-
-            // Re-render the table body with the new column order
-            generateBoqReport(); // This will use the updated currentBoqColumns
-            saveBoqColumnSettings(); // Save new column order
-        });
-
         // Column name editing listener
         thead.addEventListener('click', (e) => {
             if (e.target.classList.contains('col-edit-btn')) {
@@ -4411,7 +4303,7 @@ function setupBoqTableInteractions() {
                     ); // 디버깅
                     // lastSelectedUnitPriceTypeId = newTypeId; // This was causing a bug where all dropdowns would change
                     // 중요: 업데이트 성공 후 BOQ 테이블 전체를 다시 그림
-                    await generateBoqReport();
+                    await generateBoqReport(true);
                 } catch (error) {
                     console.error(
                         '[ERROR][Event] Failed to update UnitPriceType:',
