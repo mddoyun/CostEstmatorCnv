@@ -1725,6 +1725,21 @@ def generate_boq_report_api(request, project_id):
     """(개선된 버전 + 비용 계산 추가) 사용자가 요청한 모든 종류의 그룹핑/표시 기준 및 필터에 따라 CostItem을 집계하고 비용을 계산합니다."""
     print(f"\n[DEBUG] --- '집계표 생성(generate_boq_report_api)' API 요청 수신 (Project ID: {project_id}) ---")
 
+    # --- [수정] 포맷팅 헬퍼 함수 2개로 분리 ---
+    def format_cost(d):
+        """비용/단가용: 정수로 반올림하여 문자열로 변환"""
+        if not isinstance(d, Decimal):
+            try: d = Decimal(str(d))
+            except (InvalidOperation, TypeError): return '0'
+        return str(d.quantize(Decimal('1'), rounding=decimal.ROUND_HALF_UP))
+
+    def format_quantity(d):
+        """수량용: 소수점 4자리로 반올림하여 문자열로 변환"""
+        if not isinstance(d, Decimal):
+            try: d = Decimal(str(d))
+            except (InvalidOperation, TypeError): return '0.0000'
+        return str(d.quantize(Decimal('0.0001'), rounding=decimal.ROUND_HALF_UP))
+
     group_by_fields = request.GET.getlist('group_by')
     display_by_fields = request.GET.getlist('display_by')
     raw_element_ids = request.GET.getlist('raw_element_ids')
@@ -1806,7 +1821,6 @@ def generate_boq_report_api(request, project_id):
         exp_unit = unit_price_obj.expense_cost if unit_price_obj else ZERO_DECIMAL
         tot_unit = unit_price_obj.total_cost if unit_price_obj else ZERO_DECIMAL
 
-        # [수정] 비용 및 단가 정보를 Decimal 객체로 추가
         processed_item['material_cost_total'] = mat_unit * qty
         processed_item['labor_cost_total'] = lab_unit * qty
         processed_item['expense_cost_total'] = exp_unit * qty
@@ -1824,22 +1838,19 @@ def generate_boq_report_api(request, project_id):
     root = {
         'name': 'Total', 'quantity': ZERO_DECIMAL, 'count': 0, 'children': {},
         'display_values': {}, 'item_ids': [],
-        # 비용 합계 필드 추가
         'material_cost_unit': ZERO_DECIMAL, 'material_cost_total': ZERO_DECIMAL,
         'labor_cost_unit': ZERO_DECIMAL, 'labor_cost_total': ZERO_DECIMAL,
         'expense_cost_unit': ZERO_DECIMAL, 'expense_cost_total': ZERO_DECIMAL,
         'total_cost_unit': ZERO_DECIMAL, 'total_cost_total': ZERO_DECIMAL,
-        'unit_price_type_ids': set(), # 그룹 내 단가 기준 ID 추적
-        'has_missing_price_in_group': False # 그룹 내 누락된 단가 여부
+        'unit_price_type_ids': set(),
+        'has_missing_price_in_group': False
     }
     VARIOUS_VALUES_SENTINEL = object()
 
     for item in items:
-        # 루트 노드에 합계 누적 (여기서는 quantity와 total_cost_total만 예시로)
         root['quantity'] += item['quantity']
         root['total_cost_total'] += item['total_cost_total']
         root['item_ids'].append(item['id'])
-        # [추가] 루트 노드에도 단가 기준 ID와 누락 여부 추적
         if item['unit_price_type_id']:
             root['unit_price_type_ids'].add(item['unit_price_type_id'])
         if item['has_missing_price']:
@@ -1849,7 +1860,6 @@ def generate_boq_report_api(request, project_id):
 
         for i, field in enumerate(group_by_fields):
             key = item.get(field)
-            # JSON 필드 값은 문자열화하여 키로 사용 (딕셔너리 등 비교 방지)
             if isinstance(key, (dict, list)):
                 key_str = json.dumps(key, sort_keys=True)
             else:
@@ -1859,14 +1869,12 @@ def generate_boq_report_api(request, project_id):
                 current_level['children'][key_str] = {
                     'name': key_str, 'quantity': ZERO_DECIMAL, 'count': 0, 'level': i,
                     'children': {}, 'display_values': {}, 'item_ids': [],
-                    # 비용 필드 초기화
                     'material_cost_total': ZERO_DECIMAL,
                     'labor_cost_total': ZERO_DECIMAL,
                     'expense_cost_total': ZERO_DECIMAL,
                     'total_cost_total': ZERO_DECIMAL,
                     'unit_price_type_ids': set(),
                     'has_missing_price_in_group': False,
-                    # [수정] 단가 값들을 추적하기 위한 set 추가
                     'material_cost_unit_set': set(),
                     'labor_cost_unit_set': set(),
                     'expense_cost_unit_set': set(),
@@ -1874,32 +1882,27 @@ def generate_boq_report_api(request, project_id):
                 }
 
             child_node = current_level['children'][key_str]
-            current_level = child_node # 다음 레벨로 이동
+            current_level = child_node
 
-            # 현재 레벨 노드에 값 누적
             current_level['quantity'] += item['quantity']
             current_level['count'] += 1
             current_level['item_ids'].append(item['id'])
 
-            # 비용 누적
             current_level['material_cost_total'] += item['material_cost_total']
             current_level['labor_cost_total'] += item['labor_cost_total']
             current_level['expense_cost_total'] += item['expense_cost_total']
             current_level['total_cost_total'] += item['total_cost_total']
 
-            # [추가] 단가 기준 ID 및 누락 여부 추적
             if item['unit_price_type_id']:
                 current_level['unit_price_type_ids'].add(item['unit_price_type_id'])
             if item['has_missing_price']:
                 current_level['has_missing_price_in_group'] = True
 
-            # [수정] 단가 값 추적
             current_level['material_cost_unit_set'].add(item['material_cost_unit'])
             current_level['labor_cost_unit_set'].add(item['labor_cost_unit'])
             current_level['expense_cost_unit_set'].add(item['expense_cost_unit'])
             current_level['total_cost_unit_set'].add(item['total_cost_unit'])
 
-            # Display 필드 값 처리
             for display_field in display_by_fields:
                 current_value = item.get(display_field)
                 if display_field not in current_level['display_values']:
@@ -1908,7 +1911,6 @@ def generate_boq_report_api(request, project_id):
                      current_level['display_values'][display_field] is not VARIOUS_VALUES_SENTINEL:
                     current_level['display_values'][display_field] = VARIOUS_VALUES_SENTINEL
 
-    # --- 5. 최종 결과 포맷팅 (재귀 함수 + 비용 필드 추가) ---
     def format_to_list(node):
         children_list = []
         for key, child_node in sorted(node['children'].items()):
@@ -1924,19 +1926,18 @@ def generate_boq_report_api(request, project_id):
             
             child_list_item = {
                 'name': child_node['name'],
-                'quantity': str(child_node['quantity']),
+                'quantity': format_quantity(child_node['quantity']),
                 'count': child_node['count'],
                 'level': child_node['level'],
                 'display_values': final_display_values,
                 'children': format_to_list(child_node),
                 'item_ids': child_node['item_ids'],
-                'total_cost_total': str(child_node['total_cost_total']),
-                'material_cost_total': str(child_node['material_cost_total']),
-                'labor_cost_total': str(child_node['labor_cost_total']),
-                'expense_cost_total': str(child_node['expense_cost_total']),
+                'total_cost_total': format_cost(child_node['total_cost_total']),
+                'material_cost_total': format_cost(child_node['material_cost_total']),
+                'labor_cost_total': format_cost(child_node['labor_cost_total']),
+                'expense_cost_total': format_cost(child_node['expense_cost_total']),
             }
 
-            # [수정] 그룹 노드의 단가 기준 ID 결정 로직
             unit_ids = child_node.get('unit_price_type_ids', set())
             if len(unit_ids) == 1:
                 child_list_item['unit_price_type_id'] = str(list(unit_ids)[0])
@@ -1945,14 +1946,13 @@ def generate_boq_report_api(request, project_id):
             else:
                 child_list_item['unit_price_type_id'] = None
 
-            # [수정] 그룹 노드의 단가 값 결정 로직
             def get_unit_cost_display(cost_set):
                 if len(cost_set) == 1:
-                    return str(list(cost_set)[0])
+                    return format_cost(list(cost_set)[0])
                 elif len(cost_set) > 1:
                     return '다양함'
                 else:
-                    return '0.0000'
+                    return '0'
 
             child_list_item['material_cost_unit'] = get_unit_cost_display(child_node['material_cost_unit_set'])
             child_list_item['labor_cost_unit'] = get_unit_cost_display(child_node['labor_cost_unit_set'])
@@ -1965,35 +1965,27 @@ def generate_boq_report_api(request, project_id):
     report_data = format_to_list(root)
 
     total_summary = {
-        # [핵심 수정] sum() 함수에 start=ZERO_DECIMAL 추가
-        'total_quantity': str(sum((item['quantity'] for item in items), start=ZERO_DECIMAL)),
+        'total_quantity': format_quantity(sum((item['quantity'] for item in items), start=ZERO_DECIMAL)),
         'total_count': len(items),
-        # 비용 합계 추가 (Decimal -> str)
-        'total_material_cost': str(sum((item['material_cost_total'] for item in items), start=ZERO_DECIMAL)),
-        'total_labor_cost': str(sum((item['labor_cost_total'] for item in items), start=ZERO_DECIMAL)),
-        'total_expense_cost': str(sum((item['expense_cost_total'] for item in items), start=ZERO_DECIMAL)),
-        'total_total_cost': str(sum((item['total_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'total_material_cost': format_cost(sum((item['material_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'total_labor_cost': format_cost(sum((item['labor_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'total_expense_cost': format_cost(sum((item['expense_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'total_total_cost': format_cost(sum((item['total_cost_total'] for item in items), start=ZERO_DECIMAL)),
     }
 
     # --- 6. 최종 items_detail의 Decimal을 문자열로 변환 ---
-    cost_fields_to_convert = [
-        'quantity', 'material_cost_total', 'labor_cost_total', 'expense_cost_total', 'total_cost_total',
+    cost_fields_to_format = [
+        'material_cost_total', 'labor_cost_total', 'expense_cost_total', 'total_cost_total',
         'material_cost_unit', 'labor_cost_unit', 'expense_cost_unit', 'total_cost_unit'
     ]
     for item in items:
-        for field in cost_fields_to_convert:
+        # 비용 필드 포맷팅 (정수)
+        for field in cost_fields_to_format:
             if field in item and isinstance(item[field], Decimal):
-                item[field] = str(item[field])
-
-    # --- 6. 최종 items_detail의 Decimal을 문자열로 변환 ---
-    cost_fields_to_convert = [
-        'quantity', 'material_cost_total', 'labor_cost_total', 'expense_cost_total', 'total_cost_total',
-        'material_cost_unit', 'labor_cost_unit', 'expense_cost_unit', 'total_cost_unit'
-    ]
-    for item in items:
-        for field in cost_fields_to_convert:
-            if field in item and isinstance(item[field], Decimal):
-                item[field] = str(item[field])
+                item[field] = format_cost(item[field])
+        # 수량 필드 포맷팅 (소수점 4자리)
+        if 'quantity' in item and isinstance(item['quantity'], Decimal):
+            item['quantity'] = format_quantity(item['quantity'])
 
     # 모든 단가 타입 정보도 함께 전달 (프론트엔드 드롭다운 채우기용)
     unit_price_types = list(UnitPriceType.objects.filter(project_id=project_id).values('id', 'name'))

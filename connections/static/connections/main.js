@@ -4194,34 +4194,67 @@ function setupBoqTableInteractions() {
         thead.addEventListener('click', (e) => {
             if (e.target.classList.contains('col-edit-btn')) {
                 const th = e.target.closest('th');
-                const colId = th.dataset.columnId;
-                const currentAlias =
-                    boqColumnAliases[colId] ||
-                    currentBoqColumns.find((c) => c.id === colId)?.label ||
-                    colId;
-                const newAlias = prompt(
-                    `'${currentAlias}' 열의 새 이름 입력:`,
-                    currentAlias
-                );
+                if (th.querySelector('input')) return; // Already in edit mode
 
-                if (newAlias && newAlias.trim() !== currentAlias) {
-                    boqColumnAliases[colId] = newAlias.trim();
-                    th.childNodes[0].nodeValue = `${newAlias.trim()} `; // Update header text (keep space for icon)
-                    console.log(
-                        `[DEBUG] Column alias updated for "${colId}": "${newAlias.trim()}"`
-                    ); // 디버깅
-                    saveBoqColumnSettings(); // Save new column alias
-                    // No need to regenerate report, just update alias
-                } else if (newAlias === '') {
-                    // If user enters empty string, reset to default label
-                    const defaultLabel =
-                        currentBoqColumns.find((c) => c.id === colId)?.label ||
-                        colId;
-                    delete boqColumnAliases[colId];
-                    th.childNodes[0].nodeValue = `${defaultLabel} `;
-                    console.log(`[DEBUG] Column alias reset for "${colId}".`); // 디버깅
-                    saveBoqColumnSettings(); // Save updated aliases
-                }
+                const colId = th.dataset.columnId;
+                const textNode = Array.from(th.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+                if (!textNode) return;
+
+                const originalText = textNode.nodeValue.trim();
+                const editIcon = th.querySelector('.col-edit-btn');
+
+                textNode.nodeValue = '';
+                if(editIcon) editIcon.style.display = 'none';
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = originalText;
+                input.className = 'th-edit-input';
+                
+                th.prepend(input);
+                input.focus();
+                input.select();
+
+                let alreadyHandled = false;
+
+                const handleCleanup = (shouldSave) => {
+                    if (alreadyHandled) return;
+                    alreadyHandled = true;
+
+                    const newAlias = input.value.trim();
+                    
+                    input.remove();
+                    if(editIcon) editIcon.style.display = '';
+
+                    if (shouldSave) {
+                        if (newAlias && newAlias !== originalText) {
+                            boqColumnAliases[colId] = newAlias;
+                            textNode.nodeValue = `${newAlias} `;
+                            saveBoqColumnSettings();
+                        } else if (newAlias === '') {
+                            const defaultLabel = currentBoqColumns.find(c => c.id === colId)?.label || colId;
+                            delete boqColumnAliases[colId];
+                            textNode.nodeValue = `${defaultLabel} `;
+                            saveBoqColumnSettings();
+                        } else {
+                            textNode.nodeValue = `${originalText} `;
+                        }
+                    } else {
+                        // Cancelled, restore original text
+                        textNode.nodeValue = `${originalText} `;
+                    }
+                };
+
+                input.addEventListener('blur', () => handleCleanup(true));
+                input.addEventListener('keydown', (ev) => {
+                    if (ev.isComposing || ev.keyCode === 229) return;
+                    
+                    if (ev.key === 'Enter') {
+                        handleCleanup(true);
+                    } else if (ev.key === 'Escape') {
+                        handleCleanup(false);
+                    }
+                });
             }
         });
 
@@ -4441,42 +4474,42 @@ function handleBoqSelectInClientFromDetail(costItemId) {
 }
 
 /**
- * [수정됨] 중앙 하단 패널에 포함된 산출항목 목록을 3열 테이블로 렌더링하고, 첫 항목의 상세 정보를 표시합니다.
+ * [수정됨] 중앙 하단 패널에 포함된 산출항목 목록을 테이블로 렌더링하고, 숫자 서식을 적용합니다.
  * @param {Array<String>} itemIds - 표시할 CostItem의 ID 배열
  */
 function updateBoqDetailsPanel(itemIds) {
     const listContainer = document.getElementById('boq-item-list-container');
-    // 디버깅 로그 추가
     console.log(
-        `[DEBUG][UI] updateBoqDetailsPanel called with ${itemIds?.length} item IDs. Rendering list and resetting detail panels.` // 로그 메시지 수정
+        `[DEBUG][UI] updateBoqDetailsPanel called with ${itemIds?.length} item IDs.`
     );
+
+    // 숫자 포매팅 헬퍼 함수
+    const formatNumber = (value, precision = 3) => {
+        const num = parseFloat(value);
+        if (isNaN(num)) return value; // 숫자가 아니면 원래 값 반환
+        return num.toFixed(precision);
+    };
 
     if (!itemIds || itemIds.length === 0) {
         listContainer.innerHTML =
             '<p style="padding: 10px;">이 그룹에 포함된 산출항목이 없습니다.</p>';
-        // 초기 상태: 상세/요약 패널도 초기화
         renderBoqItemProperties(null);
         renderBoqBimObjectCostSummary(null);
         return;
     }
 
-    // loadedCostItems에서 ID가 일치하는 항목들을 찾음 (items_detail에서 온 데이터)
-    // ▼▼▼ 수정: loadedCostItems 대신 loadedDdCostItems 사용 ▼▼▼
-    const itemsToRender = loadedDdCostItems.filter((item) =>
+    const itemsToRender = (loadedDdCostItems || []).filter((item) =>
         itemIds.includes(item.id)
     );
-    console.log(`[DEBUG][updateBoqDetailsPanel] Filtered itemsToRender:`, itemsToRender);
-    // ▲▲▲ 수정 끝 ▲▲▲
+
     if (itemsToRender.length === 0) {
         listContainer.innerHTML =
             '<p style="padding: 10px;">산출항목 데이터를 찾을 수 없습니다.</p>';
-        // 초기 상태: 상세/요약 패널도 초기화
         renderBoqItemProperties(null);
         renderBoqBimObjectCostSummary(null);
         return;
     }
 
-    // --- 테이블 헤더 정의 (기존 3열 + 비용 + BIM 연동 버튼) ---
     const headers = [
         { id: 'cost_code_name', label: '산출항목' },
         { id: 'quantity', label: '수량', align: 'right' },
@@ -4489,12 +4522,11 @@ function updateBoqDetailsPanel(itemIds) {
         { id: 'material_cost_total', label: '재료비', align: 'right' },
         { id: 'labor_cost_total', label: '노무비', align: 'right' },
         { id: 'expense_cost_total', label: '경비', align: 'right' },
-        { id: 'linked_member_name', label: '연관 부재' }, // 연관 부재 이름 열 추가
-        { id: 'linked_raw_name', label: 'BIM 원본 객체' }, // BIM 원본 이름 열 추가
+        { id: 'linked_member_name', label: '연관 부재' },
+        { id: 'linked_raw_name', label: 'BIM 원본 객체' },
         { id: 'actions', label: 'BIM 연동', align: 'center' },
     ];
 
-    // --- 테이블 HTML 생성 ---
     let tableHtml = `<table class="boq-item-list-table"><thead><tr>`;
     headers.forEach(
         (h) =>
@@ -4504,110 +4536,35 @@ function updateBoqDetailsPanel(itemIds) {
     );
     tableHtml += `</tr></thead><tbody>`;
 
-    // --- 각 CostItem 행 생성 ---
     itemsToRender.forEach((item) => {
-        console.log(`[DEBUG][updateBoqDetailsPanel] Processing item ID: ${item.id}`);
-        console.log(`[DEBUG][updateBoqDetailsPanel] Item unit costs: totalUnit=${item.total_cost_unit}, materialUnit=${item.material_cost_unit}, laborUnit=${item.labor_cost_unit}, expenseUnit=${item.expense_cost_unit}`);
-        // --- 이름 및 비용 정보 조회 로직 ---
-        const costItemName = item.cost_code_name || '(이름 없는 항목)';
-        const qtyStr = item.quantity || '0.0000'; // 백엔드에서 문자열로 옴
-
-        // 연관 부재 정보 찾기
-        const member = item.quantity_member_id
-            ? loadedQuantityMembers.find(
-                  (m) => m.id === item.quantity_member_id
-              )
-            : null;
-        const memberName = member
-            ? member.name || '(이름 없는 부재)'
-            : '(연관 부재 없음)';
-
-        // BIM 원본 객체 정보 찾기
-        const rawElement = member?.raw_element_id
-            ? allRevitData.find((el) => el.id === member.raw_element_id)
-            : null;
-        const rawElementName = rawElement
-            ? rawElement.raw_data?.Name || '(이름 없는 원본)'
-            : '(BIM 원본 없음)';
-
-        // 단가 기준 이름 찾기
         const unitPriceType = loadedUnitPriceTypesForBoq.find(
             (t) => t.id === item.unit_price_type_id
-        ); // loadedUnitPriceTypesForBoq 사용
-        const unitPriceTypeName = unitPriceType
-            ? unitPriceType.name
-            : '(미지정)';
+        );
 
-        // 비용 정보 (loadedCostItems 또는 loadedDdCostItems에 이미 문자열로 포함되어 있음)
-        const totalUnit = item.total_cost_unit || '0.0000';
-        const materialUnit = item.material_cost_unit || '0.0000';
-        const laborUnit = item.labor_cost_unit || '0.0000';
-        const expenseUnit = item.expense_cost_unit || '0.0000';
-        const totalAmount = item.total_cost_total || '0.0000';
-        const matAmount = item.material_cost_total || '0.0000';
-        const labAmount = item.labor_cost_total || '0.0000';
-        const expAmount = item.expense_cost_total || '0.0000';
+        // 모든 숫자 값에 포매팅 적용
+        const values = {
+            cost_code_name: item.cost_code_name || '(이름 없는 항목)',
+            quantity: formatNumber(item.quantity),
+            unit_price_type_name: unitPriceType ? unitPriceType.name : '(미지정)',
+            total_cost_unit: formatNumber(item.total_cost_unit),
+            material_cost_unit: formatNumber(item.material_cost_unit),
+            labor_cost_unit: formatNumber(item.labor_cost_unit),
+            expense_cost_unit: formatNumber(item.expense_cost_unit),
+            total_cost_total: formatNumber(item.total_cost_total),
+            material_cost_total: formatNumber(item.material_cost_total),
+            labor_cost_total: formatNumber(item.labor_cost_total),
+            expense_cost_total: formatNumber(item.expense_cost_total),
+            linked_member_name: item.quantity_member_name || '(연관 부재 없음)',
+            linked_raw_name: item.raw_element_name || '(BIM 원본 없음)',
+            actions: item.raw_element_id
+                ? `<button class="select-in-client-btn-detail" data-cost-item-id="${item.id}" title="연동 프로그램에서 선택 확인">👁️</button>`
+                : ''
+        };
 
-        // BIM 객체 연동 버튼
-        let bimButtonHtml = '';
-        if (rawElement) {
-            // rawElement가 있을 때만 버튼 생성
-            bimButtonHtml = `<button class="select-in-client-btn-detail" data-cost-item-id="${item.id}" title="연동 프로그램에서 선택 확인">👁️</button>`;
-        }
-
-        // 행 생성 (selected 클래스 없음)
-        tableHtml += `<tr data-item-id="${item.id}">`; // selected 클래스 제거 확인
+        tableHtml += `<tr data-item-id="${item.id}">`;
         headers.forEach((h) => {
-            let value = '';
-            let style = h.align ? `style="text-align: ${h.align};"` : '';
-            switch (h.id) {
-                case 'cost_code_name':
-                    value = costItemName;
-                    break;
-                case 'quantity':
-                    value = qtyStr;
-                    break; // 문자열 그대로 사용
-                case 'unit_price_type_name':
-                    value = unitPriceTypeName;
-                    break;
-                case 'total_cost_unit':
-                    value = totalUnit;
-                    break;
-                case 'material_cost_unit':
-                    value = materialUnit;
-                    break;
-                case 'labor_cost_unit':
-                    value = laborUnit;
-                    break;
-                case 'expense_cost_unit':
-                    value = expenseUnit;
-                    break;
-                case 'total_cost_total':
-                    value = totalAmount;
-                    break;
-                case 'material_cost_total':
-                    value = matAmount;
-                    break;
-                case 'labor_cost_total':
-                    value = labAmount;
-                    break;
-                case 'expense_cost_total':
-                    value = expAmount;
-                    break;
-                case 'linked_member_name':
-                    value = memberName;
-                    break; // 추가된 열
-                case 'linked_raw_name':
-                    value = rawElementName;
-                    break; // 추가된 열
-                case 'actions':
-                    value = bimButtonHtml;
-                    style = `style="text-align: center;"`;
-                    break;
-                default:
-                    value = item[h.id] || '';
-            }
-            tableHtml += `<td ${style}>${value}</td>`;
+            const style = h.align ? `style="text-align: ${h.align};"` : '';
+            tableHtml += `<td ${style}>${values[h.id]}</td>`;
         });
         tableHtml += `</tr>`;
     });
@@ -4618,15 +4575,8 @@ function updateBoqDetailsPanel(itemIds) {
         '[DEBUG][UI] CostItem list table rendered in details panel (no initial selection).'
     );
 
-    // ▼▼▼ 수정: 첫 번째 항목 자동 선택 및 상세/요약 렌더링 호출 제거하고, null로 호출하여 초기화 ▼▼▼
-    // const firstItemId = itemsToRender[0].id; // 제거
-    // renderBoqItemProperties(firstItemId);    // 제거
-    // renderBoqBimObjectCostSummary(firstItemId); // 제거
-
-    // ▼▼▼ 추가: 대신 초기 상태로 상세/요약 패널 렌더링 호출 ▼▼▼
-    renderBoqItemProperties(null); // 왼쪽 패널 초기화
-    renderBoqBimObjectCostSummary(null); // 오른쪽 패널 초기화
-    // ▲▲▲ 추가 끝 ▲▲▲
+    renderBoqItemProperties(null);
+    renderBoqBimObjectCostSummary(null);
 }
 
 // ▼▼▼ [수정] 이 함수 전체를 아래 코드로 교체해주세요. ▼▼▼
