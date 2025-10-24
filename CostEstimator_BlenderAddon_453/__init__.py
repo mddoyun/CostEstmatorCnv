@@ -96,12 +96,35 @@ def get_quantity_value(quantity):
     return None
 
 def serialize_ifc_elements_to_string_list(ifc_file):
+    import ifcopenshell.geom  # Import geometry module
+    import ifcopenshell.util.shape # Import shape utility module
     elements_data = []
     products = ifc_file.by_type("IfcProduct")
     print(f"🔍 [Blender] {len(products)}개의 IFC 객체 데이터 직렬화를 시작합니다.") # 디버깅 추가
+
+    # Geometry settings
+    settings = ifcopenshell.geom.settings()
+    
     for element in products:
         if not element.GlobalId: continue
         element_dict = { "Name": element.Name or "이름 없음", "IfcClass": element.is_a(), "ElementId": element.id(), "UniqueId": element.GlobalId, "Parameters": {}, "TypeParameters": {}, "RelatingType": None, "SpatialContainer": None, "Aggregates": None, "Nests": None, }
+        
+        # Add Geometry Data
+        try:
+            shape = ifcopenshell.geom.create_shape(settings, element)
+            
+            # Use ifcopenshell.util.shape to get verts and faces reliably
+            verts = ifcopenshell.util.shape.get_vertices(shape.geometry)
+            faces = ifcopenshell.util.shape.get_faces(shape.geometry)
+            
+            element_dict["Parameters"]["Geometry"] = {
+                "verts": verts.tolist(), # Use .tolist() for robust conversion
+                "faces": faces.tolist()  # Use .tolist() for robust conversion
+            }
+        except Exception as e:
+            print(f"Could not get geometry for element {element.id()}: {e}")
+            element_dict["Parameters"]["Geometry"] = None
+
         is_spatial_element = element.is_a("IfcSpatialStructureElement")
         try:
             if hasattr(element, 'IsDefinedBy') and element.IsDefinedBy:
