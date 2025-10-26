@@ -72,9 +72,8 @@ async function loadAiModels() {
     }
     try {
         const response = await fetch(
-            `/connections/api/ai-models/${currentProjectId}/
-        );`
-        ); // <<< 수정: 백틱으로 감싸서 줄바꿈 처리
+            `/connections/api/ai-models/${window.currentProjectId}/`
+        );
         if (!response.ok) throw new Error('AI 모델 목록 로딩 실패');
         loadedAiModels = await response.json(); // 전역 변수 업데이트
         console.log(
@@ -200,11 +199,10 @@ async function uploadAiModel() {
     showToast('AI 모델 업로드 중...', 'info');
     try {
         const response = await fetch(
-            `/connections/api/ai-models/${currentProjectId}/
-        );`, // <<< 수정: 백틱으로 감싸서 줄바꿈 처리
+            `/connections/api/ai-models/${window.currentProjectId}/`,
             {
                 method: 'POST',
-                headers: { 'X-CSRFToken': csrftoken },
+                headers: { 'X-CSRFToken': window.csrftoken },
                 body: formData,
             }
         );
@@ -256,11 +254,10 @@ async function handleAiModelListActions(event) {
             ); // 디버깅
             try {
                 const response = await fetch(
-                    `/connections/api/ai-models/${currentProjectId}/${modelId}/
-                );`, // <<< 수정: 백틱으로 감싸서 줄바꿈 처리
+                    `/connections/api/ai-models/${window.currentProjectId}/${modelId}/`,
                     {
                         method: 'DELETE',
-                        headers: { 'X-CSRFToken': csrftoken },
+                        headers: { 'X-CSRFToken': window.csrftoken },
                     }
                 );
                 const result = await response.json();
@@ -319,11 +316,10 @@ async function uploadAndAnalyzeCsv() {
     showToast('CSV 파일 업로드 및 분석 중...', 'info');
     try {
         const response = await fetch(
-            `/connections/api/ai-training/${currentProjectId}/upload-csv/
-        );`, // <<< 수정: 백틱으로 감싸서 줄바꿈 처리
+            `/connections/api/ai-training/${window.currentProjectId}/upload-csv/`,
             {
                 method: 'POST',
-                headers: { 'X-CSRFToken': csrftoken },
+                headers: { 'X-CSRFToken': window.csrftoken },
                 body: formData,
             }
         );
@@ -544,7 +540,7 @@ async function startTraining() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': csrftoken,
+                    'X-CSRFToken': window.csrftoken,
                 },
                 body: JSON.stringify(config), // 생성된 config 객체 전송
             }
@@ -717,9 +713,8 @@ async function saveTrainedModel() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': csrftoken,
-                },
-                body: JSON.stringify({
+                    'X-CSRFToken': window.csrftoken,
+                },                body: JSON.stringify({
                     temp_h5_filename: trainedModelTempFilename, // 임시 h5 파일 이름
                     name: modelName,
                     metadata: trainedModelMetadata,
@@ -775,7 +770,7 @@ function downloadTrainedModelFile(type) {
             `[DEBUG][downloadTrainedModelFile] Triggering H5 download for temp file: ${trainedModelTempFilename}`
         ); // 디버깅
         // 백엔드에 임시 파일명과 원하는 다운로드 파일명을 전달
-        window.location.href = `/connections/api/ai-training/download-temp/?filename=${trainedModelTempFilename}&type=h5&download_name=${encodeURIComponent(
+        window.location.href = `/connections/api/ai-training/download-temp/${window.currentProjectId}/?filename=${trainedModelTempFilename}&type=h5&download_name=${encodeURIComponent(
             modelName
         )}.h5`; // << 백엔드에 이 URL 구현 필요
     } else if (type === 'json') {

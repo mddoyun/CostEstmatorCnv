@@ -1,6 +1,6 @@
 // websocket.js
-let frontendSocket;
-const PROGRESS_TOTAL_KEYS = [
+window.frontendSocket = null;
+var PROGRESS_TOTAL_KEYS = [
     'total',
     'total_elements',
     'totalElements',
@@ -25,7 +25,7 @@ function parseProgressTotal(payload) {
     return { hasTotal: false, total: null };
 }
 
-function setupWebSocket() {
+window.setupWebSocket = function() {
     const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const wsPath = wsScheme + '://' + window.location.host + '/ws/frontend/';
     frontendSocket = new WebSocket(wsPath);
