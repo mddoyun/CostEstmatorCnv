@@ -2,8 +2,8 @@
 // 태그(Tag) 관리 관련 함수들
 // =====================================================================
 
-function createNewTag() {
-    if (!currentProjectId) {
+window.createNewTag = function() {
+    if (!window.currentProjectId) {
         showToast('먼저 프로젝트를 선택하세요.', 'error');
         return;
     }
@@ -13,25 +13,25 @@ function createNewTag() {
         showToast('분류 이름을 입력하세요.', 'error');
         return;
     }
-    frontendSocket.send(
+    window.frontendSocket.send(
         JSON.stringify({
             type: 'create_tag',
-            payload: { project_id: currentProjectId, name: newTagName },
+            payload: { project_id: window.currentProjectId, name: newTagName },
         })
     );
     newTagNameInput.value = '';
-}
+};
 
-function handleTagListActions(event) {
+window.handleTagListActions = function(event) {
     const target = event.target;
     const tagId = target.dataset.id;
     if (!tagId) return;
     if (target.classList.contains('delete-tag-btn')) {
         if (confirm('이 분류를 삭제하시겠습니까?')) {
-            frontendSocket.send(
+            window.frontendSocket.send(
                 JSON.stringify({
                     type: 'delete_tag',
-                    payload: { project_id: currentProjectId, tag_id: tagId },
+                    payload: { project_id: window.currentProjectId, tag_id: tagId },
                 })
             );
         }
@@ -39,11 +39,11 @@ function handleTagListActions(event) {
         const currentName = target.dataset.name;
         const newName = prompt('새 분류 이름을 입력하세요:', currentName);
         if (newName && newName.trim() !== '' && newName !== currentName) {
-            frontendSocket.send(
+            window.frontendSocket.send(
                 JSON.stringify({
                     type: 'update_tag',
                     payload: {
-                        project_id: currentProjectId,
+                        project_id: window.currentProjectId,
                         tag_id: tagId,
                         new_name: newName.trim(),
                     },
@@ -51,10 +51,10 @@ function handleTagListActions(event) {
             );
         }
     }
-}
+};
 
-function importTags(event) {
-    if (!currentProjectId) {
+window.importTags = function(event) {
+    if (!window.currentProjectId) {
         showToast('먼저 프로젝트를 선택하세요.', 'error');
         return;
     }
@@ -62,9 +62,9 @@ function importTags(event) {
     if (file) {
         const formData = new FormData();
         formData.append('tag_file', file);
-        fetch(`/connections/import-tags/${currentProjectId}/`, {
+        fetch(`/connections/import-tags/${window.currentProjectId}/`, {
             method: 'POST',
-            headers: { 'X-CSRFToken': csrftoken },
+            headers: { 'X-CSRFToken': window.csrftoken },
             body: formData,
         })
             .then((res) => res.json())
@@ -78,12 +78,33 @@ function importTags(event) {
                 event.target.value = '';
             });
     }
-}
+};
 
-function exportTags() {
-    if (!currentProjectId) {
+window.exportTags = function() {
+    if (!window.currentProjectId) {
         showToast('먼저 프로젝트를 선택하세요.', 'error');
         return;
     }
-    window.location.href = `/connections/export-tags/${currentProjectId}/`;
-}
+    window.location.href = `/connections/export-tags/${window.currentProjectId}/`;
+};
+
+window.setupTagManagementListeners = function() {
+    document
+        .getElementById("create-tag-btn")
+        ?.addEventListener("click", window.createNewTag);
+    document
+        .getElementById("tag-list")
+        ?.addEventListener("click", window.handleTagListActions); // 수정, 삭제 위임
+    document
+        .getElementById("import-tags-btn")
+        ?.addEventListener("click", () =>
+            document.getElementById("tag-file-input").click()
+        );
+    document
+        .getElementById("tag-file-input")
+        ?.addEventListener("change", window.importTags);
+    document
+        .getElementById("export-tags-btn")
+        ?.addEventListener("click", window.exportTags);
+    console.log("[DEBUG] Tag Management listeners setup complete.");
+};

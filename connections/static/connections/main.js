@@ -4,26 +4,7 @@
 
 // --- 리스너 설정 헬퍼 함수들 (기존 함수들 포함) ---
 
-function setupTagManagementListeners() {
-    document
-        .getElementById("create-tag-btn")
-        ?.addEventListener("click", createNewTag);
-    document
-        .getElementById("tag-list")
-        ?.addEventListener("click", handleTagListActions); // 수정, 삭제 위임
-    document
-        .getElementById("import-tags-btn")
-        ?.addEventListener("click", () =>
-            document.getElementById("tag-file-input").click()
-        );
-    document
-        .getElementById("tag-file-input")
-        ?.addEventListener("change", importTags);
-    document
-        .getElementById("export-tags-btn")
-        ?.addEventListener("click", exportTags);
-    console.log("[DEBUG] Tag Management listeners setup complete.");
-}
+
 
 function setupSpaceManagementListeners() {
     document

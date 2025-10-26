@@ -170,7 +170,7 @@
 
         // --- 각 탭별 UI 요소 리스너 설정 (헬퍼 함수 호출) ---
         setupDataManagementListeners();
-        setupTagManagementListeners();
+        window.setupTagManagementListeners();
         setupSpaceManagementListeners();
         setupRulesetManagementListeners();
         setupCostCodeManagementListeners();
