@@ -1549,13 +1549,7 @@
                 </div>
 
                 <div id="three-d-viewer" class="tab-content">
-                    <div class="three-d-viewer-container">
-                        <canvas id="three-d-canvas"></canvas>
-                        <div class="viewer-controls">
-                            <button id="load-geometry-btn">Load Geometry</button>
-                            <button id="clear-scene-btn">Clear Scene</button>
-                        </div>
-                    </div>
+                    {% include 'three_d_viewer.html' %}
                 </div>
 
                 <div id="unit-price-management" class="tab-content">

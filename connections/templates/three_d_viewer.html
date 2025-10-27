@@ -1,7 +1,48 @@
-<div class="three-d-viewer-container">
-    <canvas id="three-d-canvas"></canvas>
-    <div class="viewer-controls">
-        <button id="load-geometry-btn">Load Geometry</button>
-        <button id="clear-scene-btn">Clear Scene</button>
+<div class="three-d-viewer-main-wrapper">
+    <div class="three-d-viewer-top-section">
+        <div class="three-d-viewer-container">
+            <canvas id="three-d-canvas"></canvas>
+            <div class="viewer-controls">
+                <button id="load-geometry-btn">Load Geometry</button>
+                <button id="clear-scene-btn">Clear Scene</button>
+            </div>
+        </div>
+        <div class="three-d-properties-panel">
+            <div class="properties-header">
+                <div class="properties-tabs">
+                    <button class="properties-tab-button active" data-tab="bim-properties">BIM 속성</button>
+                    <button class="properties-tab-button" data-tab="quantity-members">수량산출부재</button>
+                </div>
+            </div>
+            <div class="properties-tab-content active" id="bim-properties-tab">
+                <div class="properties-content" id="three-d-properties-content">
+                    <p class="no-selection">Click on an object to view its properties</p>
+                </div>
+            </div>
+            <div class="properties-tab-content" id="quantity-members-tab">
+                <div class="quantity-members-list-container">
+                    <h4>연관된 수량산출부재</h4>
+                    <div class="quantity-members-list" id="three-d-quantity-members-list">
+                        <p class="no-selection">객체를 선택하세요</p>
+                    </div>
+                </div>
+                <div class="quantity-member-details-container">
+                    <h4>수량산출부재 속성</h4>
+                    <div class="quantity-member-details" id="three-d-quantity-member-details">
+                        <p class="no-selection">리스트에서 수량산출부재를 선택하세요</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="three-d-viewer-bottom-section">
+        <div class="cost-items-panel">
+            <div class="cost-items-panel-header">
+                <h3>공사코드별 비용 정보</h3>
+            </div>
+            <div class="cost-items-panel-content" id="three-d-cost-items-table">
+                <p class="no-selection">객체를 선택하세요</p>
+            </div>
+        </div>
     </div>
 </div>

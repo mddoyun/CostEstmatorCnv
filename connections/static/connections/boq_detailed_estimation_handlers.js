@@ -336,9 +336,18 @@ function setupBoqTableInteractions() {
 
     // --- 2. 메인 BOQ 테이블 '행' 클릭 시 -> 중앙 하단 목록 업데이트 ---
     const tbody = table.querySelector("tbody");
+    console.log('[DEBUG] Found tbody element:', tbody);
+    console.log('[DEBUG] tbody has rowClickListenerAttached:', tbody?.dataset.rowClickListenerAttached);
+
     if (tbody && !tbody.dataset.rowClickListenerAttached) {
         tbody.addEventListener("click", (e) => {
-            const row = e.target.closest("tr.boq-group-header");
+            console.log('[DEBUG] tbody click event triggered', e.target);
+            // Find either boq-group-header or boq-item-row
+            const row = e.target.closest("tr.boq-group-header, tr.boq-item-row");
+            console.log('[DEBUG] Closest BOQ row:', row);
+            console.log('[DEBUG] Row classes:', row?.className);
+
+            // Ignore clicks on select, button, or icon elements
             if (row && !e.target.matches("select, button, i")) {
                 const currentSelected = table.querySelector(
                     "tr.selected-boq-row"
@@ -349,13 +358,17 @@ function setupBoqTableInteractions() {
 
                 const itemIds = JSON.parse(row.dataset.itemIds || "[]");
                 console.log(
-                    `[DEBUG][Event] Main BOQ table row clicked. Item IDs: ${itemIds.length}`
+                    `[DEBUG][Event] Main BOQ table row clicked. Item IDs:`, itemIds
                 );
                 updateBoqDetailsPanel(itemIds);
             }
         });
         tbody.dataset.rowClickListenerAttached = "true";
         console.log("[DEBUG] Main BOQ table row click listener attached.");
+    } else if (tbody) {
+        console.warn('[WARN] tbody already has rowClickListenerAttached, skipping...');
+    } else {
+        console.error('[ERROR] tbody not found!');
     }
 
     // --- 3. 메인 BOQ 테이블 '단가기준' 드롭다운 변경 시 ---
@@ -592,6 +605,26 @@ function updateBoqDetailsPanel(itemIds) {
             (t) => t.id === item.unit_price_type_id
         );
 
+        // Find quantity member name
+        const quantityMember = item.quantity_member_id
+            ? loadedQuantityMembers.find(
+                  (m) => m.id.toString() === item.quantity_member_id.toString()
+              )
+            : null;
+        const linkedMemberName = quantityMember
+            ? quantityMember.name || "(이름 없는 부재)"
+            : "(연관 부재 없음)";
+
+        // Find raw element name
+        const rawElement = quantityMember?.raw_element_id
+            ? allRevitData.find(
+                  (re) => re.id.toString() === quantityMember.raw_element_id.toString()
+              )
+            : null;
+        const linkedRawName = rawElement
+            ? rawElement.raw_data?.Name || "(이름 없는 BIM 객체)"
+            : "(BIM 원본 없음)";
+
         const values = {
             cost_code_name: item.cost_code_name || "(이름 없는 항목)",
             quantity: formatNumber(item.quantity),
@@ -606,9 +639,9 @@ function updateBoqDetailsPanel(itemIds) {
             material_cost_total: formatNumber(item.material_cost_total),
             labor_cost_total: formatNumber(item.labor_cost_total),
             expense_cost_total: formatNumber(item.expense_cost_total),
-            linked_member_name: item.quantity_member_name || "(연관 부재 없음)",
-            linked_raw_name: item.raw_element_name || "(BIM 원본 없음)",
-            actions: item.raw_element_id
+            linked_member_name: linkedMemberName,
+            linked_raw_name: linkedRawName,
+            actions: rawElement
                 ? `<button class="select-in-client-btn-detail" data-cost-item-id="${item.id}" title="연동 프로그램에서 선택 확인">👁️</button>`
                 : "",
         };
@@ -1549,9 +1582,21 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
         items.forEach((item) => {
             const isGroup = item.children && item.children.length > 0;
             const rowClass = isGroup ? "boq-group-header" : "boq-item-row";
-            const itemIds = isGroup
-                ? JSON.stringify(item.item_ids || [])
-                : JSON.stringify([item.id]);
+
+            // Determine item IDs to use
+            let itemIds;
+            if (item.item_ids && Array.isArray(item.item_ids)) {
+                // Use item_ids if available (grouped or aggregated rows)
+                itemIds = JSON.stringify(item.item_ids);
+            } else if (item.id) {
+                // Use single item.id for individual items
+                itemIds = JSON.stringify([item.id]);
+            } else {
+                // Fallback to empty array
+                itemIds = JSON.stringify([]);
+                console.warn('[WARN] Row has no item_ids or id:', item);
+            }
+
             const currentUnitPriceTypeId = item.unit_price_type_id || "";
 
             tableHtml += `

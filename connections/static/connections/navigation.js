@@ -494,10 +494,18 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             break;
         case 'three-d-viewer': // 3D 뷰어 탭
             console.log(
-                `[DEBUG][loadDataForActiveTab] 3D Viewer tab activated. Keeping existing BIM data.`
+                `[DEBUG][loadDataForActiveTab] 3D Viewer tab activated. Keeping existing BIM data and loading quantity members and cost items with prices.`
             ); // 디버깅
             // 3D 뷰어는 기존 allRevitData를 사용하므로 데이터 클리어하지 않음
             // 뷰어 초기화는 handleMainNavClick에서 이미 처리됨 (initThreeDViewer 호출)
+            // Load quantity members for the 3D viewer quantity members panel
+            if (typeof loadQuantityMembers === 'function') {
+                loadQuantityMembers();
+            }
+            // Load cost items with unit price information from BOQ report API
+            if (typeof window.loadCostItemsWithPrices === 'function') {
+                window.loadCostItemsWithPrices();
+            }
             break;
         default:
             console.log(
