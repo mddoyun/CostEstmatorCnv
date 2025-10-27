@@ -45,6 +45,10 @@
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
 
+        // Enable shadows
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
         // Controls
         controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -54,11 +58,23 @@
         controls.maxDistance = 500;
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1, 1, 1).normalize();
+        directionalLight.position.set(10, 20, 10);
+        directionalLight.castShadow = true;
+
+        // Configure shadow properties
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+
         scene.add(directionalLight);
 
         // Axes Helper
@@ -381,6 +397,7 @@
 
         const loadBtn = document.getElementById('load-geometry-btn');
         const clearBtn = document.getElementById('clear-scene-btn');
+        const splitBtn = document.getElementById('split-object-btn');
 
         if (loadBtn) {
             loadBtn.addEventListener('click', function() {
@@ -393,6 +410,62 @@
             clearBtn.addEventListener('click', function() {
                 console.log("[3D Viewer] Clear Scene button clicked.");
                 window.clearScene();
+            });
+        }
+
+        // Split mode controls
+        const splitControlsPanel = document.getElementById('split-controls-panel');
+        const splitAxisSelect = document.getElementById('split-axis-select');
+        const splitPositionSlider = document.getElementById('split-position-slider');
+        const splitPositionValue = document.getElementById('split-position-value');
+        const previewSplitBtn = document.getElementById('preview-split-btn');
+        const applySplitBtn = document.getElementById('apply-split-btn');
+        const cancelSplitBtn = document.getElementById('cancel-split-btn');
+
+        if (splitBtn) {
+            splitBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Entering split mode...");
+                // Show split controls, hide split button
+                if (splitControlsPanel) splitControlsPanel.style.display = 'flex';
+                splitBtn.style.display = 'none';
+                showSplitPlaneHelper();
+            });
+        }
+
+        if (splitAxisSelect) {
+            splitAxisSelect.addEventListener('change', function() {
+                updateSliderRange();
+                updateSplitPlaneHelper();
+            });
+        }
+
+        if (splitPositionSlider) {
+            splitPositionSlider.addEventListener('input', function() {
+                const value = parseFloat(this.value).toFixed(2);
+                if (splitPositionValue) splitPositionValue.textContent = value;
+                updateSplitPlaneHelper();
+            });
+        }
+
+        if (previewSplitBtn) {
+            previewSplitBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Preview split plane");
+                updateSplitPlaneHelper();
+            });
+        }
+
+        if (applySplitBtn) {
+            applySplitBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Applying split...");
+                splitSelectedObject();
+                // exitSplitMode() is called inside splitSelectedObject()
+            });
+        }
+
+        if (cancelSplitBtn) {
+            cancelSplitBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Canceling split mode");
+                exitSplitMode();
             });
         }
 
@@ -454,7 +527,7 @@
                 const geomData = bimObject.geometry;
 
                 // Create geometry from vertices and faces
-                const geometry = new THREE.BufferGeometry();
+                let geometry = new THREE.BufferGeometry();
 
                 // Vertices - convert 2D array [[x,y,z], ...] to flat array [x,y,z, ...]
                 if (geomData.vertices && geomData.vertices.length > 0) {
@@ -470,18 +543,39 @@
                     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
                 }
 
+                // Merge duplicate vertices to fix diagonal shading artifacts
+                // Higher tolerance (1e-3) ensures coplanar edges are properly merged
+                geometry.deleteAttribute('normal');
+                geometry = THREE.BufferGeometryUtils.mergeVertices(geometry, 1e-3);
+
                 // Compute normals for lighting
                 geometry.computeVertexNormals();
+                geometry.normalizeNormals();
 
-                // Create material with random color for distinction
-                const color = new THREE.Color().setHSL(Math.random(), 0.7, 0.5);
-                const material = new THREE.MeshPhongMaterial({
-                    color: color,
+                // Create material with light gray color and flat shading
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xcccccc,        // Light gray
+                    metalness: 0.0,
+                    roughness: 1.0,         // High roughness for more uniform appearance
+                    flatShading: true,      // Flat shading to eliminate diagonal shading artifacts
                     side: THREE.DoubleSide
                 });
 
                 // Create mesh and add to scene
                 const mesh = new THREE.Mesh(geometry, material);
+
+                // Enable shadow casting and receiving
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                // Add only boundary edges (external outline, no internal triangulation)
+                const boundaryGeometry = getBoundaryEdges(geometry);
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0x000000,
+                    linewidth: 1
+                });
+                const lineSegments = new THREE.LineSegments(boundaryGeometry, lineMaterial);
+                mesh.add(lineSegments);
 
                 // Apply transformation matrix if available
                 if (geomData.matrix && geomData.matrix.length === 16) {
@@ -562,17 +656,33 @@
         // Get all BIM meshes (exclude helpers like axes, grid, lights)
         const bimMeshes = [];
         scene.traverse(function(object) {
-            if (object instanceof THREE.Mesh && object.userData && object.userData.bimObjectId) {
+            // Include both original BIM objects and split parts
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart)) {
                 bimMeshes.push(object);
             }
         });
 
-        // Check for intersections
-        const intersects = raycaster.intersectObjects(bimMeshes);
+        // Check for intersections (recursive to include edge lines)
+        const intersects = raycaster.intersectObjects(bimMeshes, true);
 
         if (intersects.length > 0) {
-            const clickedObject = intersects[0].object;
-            selectObject(clickedObject);
+            let clickedObject = intersects[0].object;
+
+            // If clicked on edge line (LineSegments), get parent mesh
+            if (clickedObject instanceof THREE.LineSegments) {
+                clickedObject = clickedObject.parent;
+                console.log('[3D Viewer] Clicked on edge line, selecting parent mesh');
+            }
+
+            // Verify we have a valid mesh with userData
+            if (clickedObject instanceof THREE.Mesh && clickedObject.userData &&
+                (clickedObject.userData.bimObjectId || clickedObject.userData.isSplitPart)) {
+                selectObject(clickedObject);
+            } else {
+                console.warn('[3D Viewer] Clicked object is not a valid BIM mesh:', clickedObject);
+                deselectObject();
+            }
         } else {
             // Clicked on empty space - deselect
             deselectObject();
@@ -593,17 +703,34 @@
             originalMaterials.set(object, object.material);
         }
 
-        // Create highlight material
-        const highlightMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffff00, // Yellow highlight
-            side: THREE.DoubleSide,
-            emissive: 0xffff00,
-            emissiveIntensity: 0.3
+        // Create new highlight material - orange semi-transparent
+        const highlightMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff8800,           // Orange
+            emissive: 0xff6600,        // Orange glow
+            emissiveIntensity: 0.5,
+            metalness: 0.0,
+            roughness: 1.0,
+            flatShading: true,         // Flat shading to match original objects
+            transparent: true,
+            opacity: 0.7,              // Semi-transparent
+            side: THREE.DoubleSide
         });
 
         object.material = highlightMaterial;
+        object.material.needsUpdate = true;
 
         console.log("[3D Viewer] Object selected:", object.userData.bimObjectId);
+        console.log("[3D Viewer] Highlight material applied:", {
+            color: highlightMaterial.color,
+            opacity: highlightMaterial.opacity,
+            transparent: highlightMaterial.transparent
+        });
+
+        // Enable split button
+        const splitBtn = document.getElementById('split-object-btn');
+        if (splitBtn) {
+            splitBtn.disabled = false;
+        }
 
         // Display properties
         displayObjectProperties(object);
@@ -622,10 +749,17 @@
         // Restore original material
         if (originalMaterials.has(selectedObject)) {
             selectedObject.material = originalMaterials.get(selectedObject);
+            selectedObject.material.needsUpdate = true;
         }
 
         console.log("[3D Viewer] Object deselected");
         selectedObject = null;
+
+        // Disable split button
+        const splitBtn = document.getElementById('split-object-btn');
+        if (splitBtn) {
+            splitBtn.disabled = true;
+        }
 
         // Clear properties panel
         clearPropertiesPanel();
@@ -694,8 +828,14 @@
         const propertiesContent = document.getElementById('three-d-properties-content');
         if (!propertiesContent) return;
 
-        // Find full BIM object from allRevitData using the stored ID
-        const bimObjectId = object.userData.bimObjectId;
+        // Find full BIM object from allRevitData using the stored ID (use originalObjectId for split parts)
+        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId;
+
+        if (!bimObjectId) {
+            propertiesContent.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+            return;
+        }
+
         console.log('[3D Viewer] Looking up BIM object with ID:', bimObjectId);
 
         const fullBimObject = window.allRevitData.find(obj => obj.id === bimObjectId);
@@ -775,7 +915,13 @@
         const listContainer = document.getElementById('three-d-quantity-members-list');
         if (!listContainer) return;
 
-        const bimObjectId = object.userData.bimObjectId;
+        // Get BIM object ID (use originalObjectId for split parts)
+        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId;
+
+        if (!bimObjectId) {
+            listContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+            return;
+        }
 
         // Find all quantity members linked to this BIM object
         const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
@@ -839,6 +985,12 @@
 
         console.log('[3D Viewer] Searching for quantity members with raw_element_id:', rawElementId);
         console.log('[3D Viewer] Total quantity members:', window.loadedQuantityMembers.length);
+
+        // Validate rawElementId
+        if (!rawElementId) {
+            console.warn('[3D Viewer] rawElementId is null or undefined');
+            return [];
+        }
 
         // Find all quantity members where raw_element_id matches this ID
         const results = window.loadedQuantityMembers.filter(qm => {
@@ -932,7 +1084,14 @@
             return;
         }
 
-        const bimObjectId = object.userData.bimObjectId;
+        // Get BIM object ID (use originalObjectId for split parts)
+        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId;
+
+        if (!bimObjectId) {
+            tableContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+            return;
+        }
+
         console.log('[3D Viewer] BIM Object ID:', bimObjectId);
 
         // Find all quantity members linked to this BIM object
@@ -1084,6 +1243,712 @@
         if (tableContainer) {
             tableContainer.innerHTML = '<p class="no-selection">객체를 선택하세요</p>';
         }
+    }
+
+    // ===================================================================
+    // PROTOTYPE: Object Splitting Functionality
+    // ===================================================================
+
+    // Split mode variables
+    let splitPlaneHelper = null;
+
+    /**
+     * Show split plane helper
+     */
+    function showSplitPlaneHelper() {
+        if (!selectedObject) return;
+
+        updateSliderRange();
+        updateSplitPlaneHelper();
+    }
+
+    /**
+     * Update slider range based on selected axis and object bounds
+     */
+    function updateSliderRange() {
+        if (!selectedObject) return;
+
+        selectedObject.geometry.computeBoundingBox();
+        const bbox = selectedObject.geometry.boundingBox;
+
+        const axis = document.getElementById('split-axis-select')?.value || 'z';
+        const slider = document.getElementById('split-position-slider');
+        const valueDisplay = document.getElementById('split-position-value');
+
+        if (!slider) return;
+
+        let min, max, midValue;
+
+        if (axis === 'z') {
+            min = bbox.min.z;
+            max = bbox.max.z;
+        } else if (axis === 'x') {
+            min = bbox.min.x;
+            max = bbox.max.x;
+        } else if (axis === 'y') {
+            min = bbox.min.y;
+            max = bbox.max.y;
+        }
+
+        midValue = (min + max) / 2;
+
+        // Use setAttribute to ensure absolute coordinate values
+        slider.setAttribute('min', min.toString());
+        slider.setAttribute('max', max.toString());
+        slider.setAttribute('step', ((max - min) / 100).toString());
+        slider.setAttribute('value', midValue.toString());
+
+        if (valueDisplay) {
+            valueDisplay.textContent = midValue.toFixed(2);
+        }
+
+        console.log('[3D Viewer] Slider range updated - Axis:', axis, 'Min:', min.toFixed(2), 'Max:', max.toFixed(2), 'Mid:', midValue.toFixed(2));
+    }
+
+    /**
+     * Update split plane helper based on axis and position
+     */
+    function updateSplitPlaneHelper() {
+        if (!selectedObject) return;
+
+        // Remove existing helper
+        if (splitPlaneHelper) {
+            scene.remove(splitPlaneHelper);
+            splitPlaneHelper = null;
+        }
+
+        // Get split parameters
+        const axis = document.getElementById('split-axis-select')?.value || 'z';
+        const position = parseFloat(document.getElementById('split-position-slider')?.value || '0');
+
+        // Calculate bounding box
+        selectedObject.geometry.computeBoundingBox();
+        const bbox = selectedObject.geometry.boundingBox;
+
+        // Calculate split position (now using absolute values)
+        let planePosition, planeNormal, planeSize;
+
+        if (axis === 'z') {
+            planePosition = parseFloat(position);
+            planeNormal = new THREE.Vector3(0, 0, 1);  // Z축 선택 → Z normal (수직)
+            planeSize = [bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y];
+        } else if (axis === 'x') {
+            planePosition = parseFloat(position);
+            planeNormal = new THREE.Vector3(1, 0, 0);
+            planeSize = [bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z];
+        } else if (axis === 'y') {
+            planePosition = parseFloat(position);
+            planeNormal = new THREE.Vector3(0, 1, 0);  // Y축 선택 → Y normal (수평)
+            planeSize = [bbox.max.x - bbox.min.x, bbox.max.z - bbox.min.z];
+        }
+
+        // Create helper plane with grid
+        const planeSize1 = Math.max(...planeSize) * 1.5;
+
+        // Create group for plane + grid
+        splitPlaneHelper = new THREE.Group();
+
+        // Create semi-transparent plane
+        const planeGeometry = new THREE.PlaneGeometry(planeSize1, planeSize1);
+        const planeMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide
+        });
+        const planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+
+        // Create grid helper
+        const gridHelper = new THREE.GridHelper(planeSize1, 10, 0xffff00, 0xffff00);
+        gridHelper.material.opacity = 0.5;
+        gridHelper.material.transparent = true;
+
+        // Position and orient based on axis
+        // PlaneGeometry default: XY plane (normal = +Z)
+        // GridHelper default: XZ plane (normal = +Y, horizontal)
+
+        // Create local position vector for the plane
+        const localPlanePos = new THREE.Vector3();
+
+        if (axis === 'z') {
+            // Z axis cut → 수직으로 자름 → 수평면(XY) 보임
+            // PlaneGeometry: already XY (no rotation needed)
+            // GridHelper: XZ → XY (rotate -90° around X)
+            gridHelper.rotation.x = -Math.PI / 2;
+            localPlanePos.set(
+                (bbox.min.x + bbox.max.x) / 2,
+                (bbox.min.y + bbox.max.y) / 2,
+                planePosition  // Z position = planePosition (local)
+            );
+        } else if (axis === 'x') {
+            // X axis cut → plane perpendicular to X axis
+            // PlaneGeometry: XY → YZ (rotate -90° around Y)
+            // GridHelper: XZ → YZ (rotate -90° around Y)
+            planeMesh.rotation.y = -Math.PI / 2;
+            gridHelper.rotation.y = -Math.PI / 2;
+            localPlanePos.set(
+                planePosition,  // X position = planePosition (local)
+                (bbox.min.y + bbox.max.y) / 2,
+                (bbox.min.z + bbox.max.z) / 2
+            );
+        } else if (axis === 'y') {
+            // Y axis cut → 수평으로 자름 → 수직면(XZ) 보임
+            // PlaneGeometry: XY → XZ (rotate -90° around X)
+            // GridHelper: already XZ (no rotation needed)
+            planeMesh.rotation.x = -Math.PI / 2;
+            localPlanePos.set(
+                (bbox.min.x + bbox.max.x) / 2,
+                planePosition,  // Y position = planePosition (local)
+                (bbox.min.z + bbox.max.z) / 2
+            );
+        }
+
+        splitPlaneHelper.add(planeMesh);
+        splitPlaneHelper.add(gridHelper);
+
+        // Convert local position to world position
+        const worldPlanePos = selectedObject.localToWorld(localPlanePos.clone());
+        splitPlaneHelper.position.copy(worldPlanePos);
+
+        // Match object's rotation so plane is properly oriented
+        splitPlaneHelper.rotation.copy(selectedObject.rotation);
+        splitPlaneHelper.scale.copy(selectedObject.scale);
+
+        scene.add(splitPlaneHelper);
+        console.log('[3D Viewer] Split plane helper updated');
+        console.log('  - Axis:', axis);
+        console.log('  - Slider value (local):', position);
+        console.log('  - Plane position (local):', planePosition);
+        console.log('  - Plane position (world):', worldPlanePos);
+        console.log('  - BBox range (local):', axis === 'z' ? [bbox.min.z, bbox.max.z] : (axis === 'x' ? [bbox.min.x, bbox.max.x] : [bbox.min.y, bbox.max.y]));
+        console.log('  - Object position (world):', selectedObject.position);
+    }
+
+    /**
+     * Exit split mode
+     */
+    function exitSplitMode() {
+        // Remove helper
+        if (splitPlaneHelper) {
+            scene.remove(splitPlaneHelper);
+            splitPlaneHelper = null;
+        }
+
+        // Hide split controls, show split button
+        const splitControlsPanel = document.getElementById('split-controls-panel');
+        const splitBtn = document.getElementById('split-object-btn');
+
+        if (splitControlsPanel) splitControlsPanel.style.display = 'none';
+        if (splitBtn) splitBtn.style.display = 'inline-block';
+
+        console.log('[3D Viewer] Exited split mode');
+    }
+
+    /**
+     * Split the selected object using a horizontal plane (Z-axis midpoint)
+     * Uses precise plane-triangle intersection algorithm
+     */
+    function splitSelectedObject() {
+        if (!selectedObject) {
+            console.warn('[3D Viewer] No object selected for splitting');
+            showToast('분할할 객체를 먼저 선택하세요', 'warning');
+            return;
+        }
+
+        console.log('[3D Viewer] Starting precise plane-based split operation on object:', selectedObject.userData.bimObjectId);
+
+        try {
+            // Get split parameters from UI
+            const axis = document.getElementById('split-axis-select')?.value || 'z';
+            const position = parseFloat(document.getElementById('split-position-slider')?.value || '0');
+
+            // Calculate bounding box
+            selectedObject.geometry.computeBoundingBox();
+            const bbox = selectedObject.geometry.boundingBox;
+            console.log('[3D Viewer] Bounding box:', bbox);
+
+            // Calculate split plane based on selected axis and position (now using absolute values)
+            let planePosition, planeNormal, axisName;
+
+            if (axis === 'z') {
+                planePosition = position;
+                planeNormal = new THREE.Vector3(0, 0, 1);  // Z축 → Z normal (수직)
+                axisName = 'Z';
+            } else if (axis === 'x') {
+                planePosition = position;
+                planeNormal = new THREE.Vector3(1, 0, 0);
+                axisName = 'X';
+            } else if (axis === 'y') {
+                planePosition = position;
+                planeNormal = new THREE.Vector3(0, 1, 0);  // Y축 → Y normal (수평)
+                axisName = 'Y';
+            }
+
+            // Note: planePosition is now in LOCAL coordinates (from bbox range)
+            // No conversion needed - geometry vertices are already in local coords
+            const planeDistance = -planePosition;
+
+            console.log('[3D Viewer] Split operation starting');
+            console.log('  - Axis:', axisName);
+            console.log('  - Plane position (local):', planePosition.toFixed(2));
+            console.log('  - Plane distance:', planeDistance.toFixed(2));
+            console.log('  - BBox (local):', bbox);
+
+            // Get geometry data
+            const positions = selectedObject.geometry.attributes.position.array;
+            const indices = selectedObject.geometry.index ? selectedObject.geometry.index.array : null;
+
+            console.log('[3D Viewer] Original geometry - vertices:', positions.length / 3, 'faces:', indices ? indices.length / 3 : 'N/A');
+
+            // Split geometry with precise intersection (using local coordinates)
+            const splitResult = splitGeometryByPlane(positions, indices, planeNormal, planeDistance);
+
+            console.log('[3D Viewer] Split complete - Bottom faces:', splitResult.bottomFaces.length, 'Top faces:', splitResult.topFaces.length);
+            console.log('[3D Viewer] New vertices created:', splitResult.newVertices.length / 3);
+
+            // Check if split produced valid results
+            if (splitResult.bottomFaces.length === 0 || splitResult.topFaces.length === 0) {
+                console.warn('[3D Viewer] Split resulted in empty geometry');
+                showToast('분할 평면이 객체와 교차하지 않습니다', 'warning');
+                return;
+            }
+
+            // Create new geometries
+            let bottomGeometry = createGeometryFromSplitResult(splitResult.allVertices, splitResult.bottomFaces);
+            let topGeometry = createGeometryFromSplitResult(splitResult.allVertices, splitResult.topFaces);
+
+            // Validate geometries
+            if (!bottomGeometry || !topGeometry ||
+                bottomGeometry.attributes.position.count === 0 ||
+                topGeometry.attributes.position.count === 0) {
+                console.error('[3D Viewer] Failed to create valid geometries');
+                showToast('형상 생성에 실패했습니다', 'error');
+                return;
+            }
+
+            // Merge duplicate vertices for proper normal calculation
+            // Use higher tolerance (1e-3) to ensure vertices are properly merged
+            bottomGeometry.deleteAttribute('normal');
+            topGeometry.deleteAttribute('normal');
+            bottomGeometry = THREE.BufferGeometryUtils.mergeVertices(bottomGeometry, 1e-3);
+            topGeometry = THREE.BufferGeometryUtils.mergeVertices(topGeometry, 1e-3);
+
+            // Recompute normals for smooth shading
+            bottomGeometry.computeVertexNormals();
+            topGeometry.computeVertexNormals();
+
+            // Normalize normals to ensure consistent shading
+            bottomGeometry.normalizeNormals();
+            topGeometry.normalizeNormals();
+
+            // Create materials - use original gray material (not current selected material)
+            let originalMaterial = originalMaterials.get(selectedObject);
+            if (!originalMaterial) {
+                // If not found, create new gray material
+                originalMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xcccccc,
+                    metalness: 0.0,
+                    roughness: 1.0,
+                    flatShading: true,
+                    side: THREE.DoubleSide
+                });
+            }
+
+            const bottomMaterial = originalMaterial.clone();
+            const topMaterial = originalMaterial.clone();
+            bottomMaterial.flatShading = true;
+            topMaterial.flatShading = true;
+            bottomMaterial.needsUpdate = true;
+            topMaterial.needsUpdate = true;
+
+            // Create meshes from results
+            const bottomMesh = new THREE.Mesh(bottomGeometry, bottomMaterial);
+            const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+
+            // Enable shadow casting and receiving
+            bottomMesh.castShadow = true;
+            bottomMesh.receiveShadow = true;
+            topMesh.castShadow = true;
+            topMesh.receiveShadow = true;
+
+            // Add only boundary edges (external outline, no internal triangulation)
+            const bottomBoundaryGeometry = getBoundaryEdges(bottomGeometry);
+            const bottomLineSegments = new THREE.LineSegments(
+                bottomBoundaryGeometry,
+                new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+            );
+            bottomMesh.add(bottomLineSegments);
+
+            const topBoundaryGeometry = getBoundaryEdges(topGeometry);
+            const topLineSegments = new THREE.LineSegments(
+                topBoundaryGeometry,
+                new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+            );
+            topMesh.add(topLineSegments);
+
+            // Copy transformation from original
+            bottomMesh.position.copy(selectedObject.position);
+            bottomMesh.rotation.copy(selectedObject.rotation);
+            bottomMesh.scale.copy(selectedObject.scale);
+
+            topMesh.position.copy(selectedObject.position);
+            topMesh.rotation.copy(selectedObject.rotation);
+            topMesh.scale.copy(selectedObject.scale);
+
+            // Preserve original color from first split (don't overwrite on re-split)
+            // Use the original material's color (gray), not the selected material's color
+            const preservedOriginalColor = selectedObject.userData.originalColor ||
+                                          originalMaterial.color.clone();
+
+            // Store metadata including original colors for selection highlighting
+            bottomMesh.userData = {
+                ...selectedObject.userData,
+                isSplitPart: true,
+                splitPartType: 'bottom',
+                originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                splitAxis: axisName,
+                splitPosition: planePosition,
+                splitPositionPercent: position,
+                originalColor: preservedOriginalColor.clone(),  // Preserve from original
+                displayColor: bottomMaterial.color.clone()      // Current display color
+            };
+
+            topMesh.userData = {
+                ...selectedObject.userData,
+                isSplitPart: true,
+                splitPartType: 'top',
+                originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                splitAxis: axisName,
+                splitPosition: planePosition,
+                splitPositionPercent: position,
+                originalColor: preservedOriginalColor.clone(),  // Preserve from original
+                displayColor: topMaterial.color.clone()         // Current display color
+            };
+
+            // Compute bounding boxes and spheres for the new geometries
+            bottomGeometry.computeBoundingBox();
+            bottomGeometry.computeBoundingSphere();
+            topGeometry.computeBoundingBox();
+            topGeometry.computeBoundingSphere();
+
+            console.log('[3D Viewer] Geometries computed - normals, bounding boxes, and bounding spheres ready');
+
+            // Remove original object from scene (not just hide)
+            scene.remove(selectedObject);
+
+            // Add split parts to scene
+            scene.add(bottomMesh);
+            scene.add(topMesh);
+
+            console.log('[3D Viewer] Split complete - created 2 parts with precise geometry');
+            console.log('[3D Viewer] Bottom part:', bottomMesh.userData);
+            console.log('[3D Viewer] Top part:', topMesh.userData);
+            console.log('[3D Viewer] Bottom BBox:', bottomGeometry.boundingBox);
+            console.log('[3D Viewer] Top BBox:', topGeometry.boundingBox);
+
+            // Extract geometry data for console output
+            const bottomGeomData = extractGeometryData(bottomMesh.geometry, bottomMesh);
+            const topGeomData = extractGeometryData(topMesh.geometry, topMesh);
+
+            console.log('[3D Viewer] Bottom geometry data:', bottomGeomData);
+            console.log('[3D Viewer] Top geometry data:', topGeomData);
+
+            showToast('객체가 정확하게 분할되었습니다', 'success');
+
+            // Exit split mode
+            exitSplitMode();
+
+            // Deselect the original object
+            deselectObject();
+
+        } catch (error) {
+            console.error('[3D Viewer] Split operation failed:', error);
+            showToast('분할 중 오류가 발생했습니다: ' + error.message, 'error');
+            // Don't exit split mode on error, user might want to try again
+        }
+    }
+
+    /**
+     * Extract only boundary edges (edges that belong to only 1 face)
+     * This filters out internal triangulation edges on flat surfaces
+     */
+    function getBoundaryEdges(geometry) {
+        const edges = new Map(); // Map of "i1-i2" -> count
+        const positions = geometry.attributes.position;
+        const indices = geometry.index ? geometry.index.array : null;
+
+        if (!indices) return new THREE.BufferGeometry(); // No indices, no edges
+
+        // Count how many faces share each edge
+        for (let i = 0; i < indices.length; i += 3) {
+            const i0 = indices[i];
+            const i1 = indices[i + 1];
+            const i2 = indices[i + 2];
+
+            // Three edges per triangle
+            const edge1 = [Math.min(i0, i1), Math.max(i0, i1)].join('-');
+            const edge2 = [Math.min(i1, i2), Math.max(i1, i2)].join('-');
+            const edge3 = [Math.min(i2, i0), Math.max(i2, i0)].join('-');
+
+            edges.set(edge1, (edges.get(edge1) || 0) + 1);
+            edges.set(edge2, (edges.get(edge2) || 0) + 1);
+            edges.set(edge3, (edges.get(edge3) || 0) + 1);
+        }
+
+        // Extract edges that appear only once (boundary edges)
+        const boundaryEdges = [];
+        for (const [edgeKey, count] of edges.entries()) {
+            if (count === 1) {
+                const [i0, i1] = edgeKey.split('-').map(Number);
+                // Add both vertices
+                boundaryEdges.push(
+                    positions.getX(i0), positions.getY(i0), positions.getZ(i0),
+                    positions.getX(i1), positions.getY(i1), positions.getZ(i1)
+                );
+            }
+        }
+
+        // Create line geometry from boundary edges
+        const lineGeometry = new THREE.BufferGeometry();
+        lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(boundaryEdges, 3));
+        return lineGeometry;
+    }
+
+    /**
+     * Split geometry by plane with precise triangle-plane intersection
+     * @param {Float32Array} positions - Vertex positions
+     * @param {Uint16Array|Uint32Array} indices - Face indices
+     * @param {THREE.Vector3} planeNormal - Plane normal vector
+     * @param {number} planeDistance - Plane distance from origin
+     * @returns {Object} Split result with bottom/top faces and all vertices
+     */
+    function splitGeometryByPlane(positions, indices, planeNormal, planeDistance) {
+        const EPSILON = 0.00001;
+
+        // Store all vertices (original + new intersection vertices)
+        const allVertices = [];
+        for (let i = 0; i < positions.length; i++) {
+            allVertices.push(positions[i]);
+        }
+
+        const bottomFaces = [];
+        const topFaces = [];
+        const newVertices = [];
+
+        // Helper: Calculate signed distance from point to plane
+        function signedDistance(x, y, z) {
+            return planeNormal.x * x + planeNormal.y * y + planeNormal.z * z + planeDistance;
+        }
+
+        // Helper: Calculate intersection point between two vertices
+        function intersectEdge(i0, i1) {
+            const x0 = positions[i0 * 3], y0 = positions[i0 * 3 + 1], z0 = positions[i0 * 3 + 2];
+            const x1 = positions[i1 * 3], y1 = positions[i1 * 3 + 1], z1 = positions[i1 * 3 + 2];
+
+            const d0 = signedDistance(x0, y0, z0);
+            const d1 = signedDistance(x1, y1, z1);
+
+            // Interpolation factor
+            const t = d0 / (d0 - d1);
+
+            // Intersection point
+            return {
+                x: x0 + t * (x1 - x0),
+                y: y0 + t * (y1 - y0),
+                z: z0 + t * (z1 - z0)
+            };
+        }
+
+        // Process each triangle
+        if (indices) {
+            for (let i = 0; i < indices.length; i += 3) {
+                const i0 = indices[i];
+                const i1 = indices[i + 1];
+                const i2 = indices[i + 2];
+
+                // Get vertices
+                const v0 = { x: positions[i0 * 3], y: positions[i0 * 3 + 1], z: positions[i0 * 3 + 2] };
+                const v1 = { x: positions[i1 * 3], y: positions[i1 * 3 + 1], z: positions[i1 * 3 + 2] };
+                const v2 = { x: positions[i2 * 3], y: positions[i2 * 3 + 1], z: positions[i2 * 3 + 2] };
+
+                // Calculate signed distances
+                const d0 = signedDistance(v0.x, v0.y, v0.z);
+                const d1 = signedDistance(v1.x, v1.y, v1.z);
+                const d2 = signedDistance(v2.x, v2.y, v2.z);
+
+                // Classify vertices
+                const below0 = d0 < -EPSILON;
+                const below1 = d1 < -EPSILON;
+                const below2 = d2 < -EPSILON;
+
+                const above0 = d0 > EPSILON;
+                const above1 = d1 > EPSILON;
+                const above2 = d2 > EPSILON;
+
+                const belowCount = (below0 ? 1 : 0) + (below1 ? 1 : 0) + (below2 ? 1 : 0);
+                const aboveCount = (above0 ? 1 : 0) + (above1 ? 1 : 0) + (above2 ? 1 : 0);
+
+                // Case 1: All vertices on one side
+                if (belowCount === 3) {
+                    bottomFaces.push([i0, i1, i2]);
+                } else if (aboveCount === 3) {
+                    topFaces.push([i0, i1, i2]);
+                }
+                // Case 2: Triangle crosses the plane
+                else if (belowCount > 0 && aboveCount > 0) {
+                    // Find vertices on each side
+                    const belowVerts = [];
+                    const aboveVerts = [];
+                    const vertIndices = [i0, i1, i2];
+                    const dists = [d0, d1, d2];
+
+                    for (let j = 0; j < 3; j++) {
+                        if (dists[j] < -EPSILON) {
+                            belowVerts.push(vertIndices[j]);
+                        } else if (dists[j] > EPSILON) {
+                            aboveVerts.push(vertIndices[j]);
+                        } else {
+                            // On plane - add to both
+                            belowVerts.push(vertIndices[j]);
+                            aboveVerts.push(vertIndices[j]);
+                        }
+                    }
+
+                    // Case 2a: 1 below, 2 above
+                    if (belowVerts.length === 1 && aboveVerts.length === 2) {
+                        const vBelow = belowVerts[0];
+                        const vAbove1 = aboveVerts[0];
+                        const vAbove2 = aboveVerts[1];
+
+                        // Create intersection points
+                        const int1 = intersectEdge(vBelow, vAbove1);
+                        const int2 = intersectEdge(vBelow, vAbove2);
+
+                        // Add new vertices
+                        const idx1 = allVertices.length / 3;
+                        allVertices.push(int1.x, int1.y, int1.z);
+                        newVertices.push(int1.x, int1.y, int1.z);
+
+                        const idx2 = allVertices.length / 3;
+                        allVertices.push(int2.x, int2.y, int2.z);
+                        newVertices.push(int2.x, int2.y, int2.z);
+
+                        // Bottom: 1 triangle (vBelow, int1, int2)
+                        bottomFaces.push([vBelow, idx1, idx2]);
+
+                        // Top: 2 triangles (int1, vAbove1, vAbove2) and (int1, vAbove2, int2)
+                        topFaces.push([idx1, vAbove1, vAbove2]);
+                        topFaces.push([idx1, vAbove2, idx2]);
+                    }
+                    // Case 2b: 2 below, 1 above
+                    else if (belowVerts.length === 2 && aboveVerts.length === 1) {
+                        const vBelow1 = belowVerts[0];
+                        const vBelow2 = belowVerts[1];
+                        const vAbove = aboveVerts[0];
+
+                        // Create intersection points
+                        const int1 = intersectEdge(vAbove, vBelow1);
+                        const int2 = intersectEdge(vAbove, vBelow2);
+
+                        // Add new vertices
+                        const idx1 = allVertices.length / 3;
+                        allVertices.push(int1.x, int1.y, int1.z);
+                        newVertices.push(int1.x, int1.y, int1.z);
+
+                        const idx2 = allVertices.length / 3;
+                        allVertices.push(int2.x, int2.y, int2.z);
+                        newVertices.push(int2.x, int2.y, int2.z);
+
+                        // Bottom: 2 triangles (vBelow1, vBelow2, int1) and (vBelow2, int2, int1)
+                        bottomFaces.push([vBelow1, vBelow2, idx1]);
+                        bottomFaces.push([vBelow2, idx2, idx1]);
+
+                        // Top: 1 triangle (vAbove, int1, int2)
+                        topFaces.push([vAbove, idx1, idx2]);
+                    }
+                }
+            }
+        }
+
+        return {
+            allVertices: allVertices,
+            newVertices: newVertices,
+            bottomFaces: bottomFaces,
+            topFaces: topFaces
+        };
+    }
+
+    /**
+     * Create a BufferGeometry from split result
+     */
+    function createGeometryFromSplitResult(allVertices, faces) {
+        const vertices = [];
+        const indices = [];
+        const vertexMap = new Map();
+
+        // Build new vertex array with only used vertices
+        for (let i = 0; i < faces.length; i++) {
+            const face = faces[i];
+            for (let j = 0; j < 3; j++) {
+                const oldIndex = face[j];
+
+                if (!vertexMap.has(oldIndex)) {
+                    const newIndex = vertices.length / 3;
+                    vertexMap.set(oldIndex, newIndex);
+
+                    // Add vertex position
+                    vertices.push(
+                        allVertices[oldIndex * 3],
+                        allVertices[oldIndex * 3 + 1],
+                        allVertices[oldIndex * 3 + 2]
+                    );
+                }
+
+                indices.push(vertexMap.get(oldIndex));
+            }
+        }
+
+        // Create BufferGeometry
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        return geometry;
+    }
+
+    // Removed: createGeometryFromFaces() - replaced by createGeometryFromSplitResult()
+
+    /**
+     * Extract geometry data from a mesh (for saving to database)
+     */
+    function extractGeometryData(geometry, mesh) {
+        const positions = geometry.attributes.position.array;
+        const indices = geometry.index ? geometry.index.array : null;
+
+        // Convert to nested arrays format
+        const vertices = [];
+        for (let i = 0; i < positions.length; i += 3) {
+            vertices.push([positions[i], positions[i + 1], positions[i + 2]]);
+        }
+
+        const faces = [];
+        if (indices) {
+            for (let i = 0; i < indices.length; i += 3) {
+                faces.push([indices[i], indices[i + 1], indices[i + 2]]);
+            }
+        }
+
+        // Get transformation matrix
+        const matrix = mesh.matrix.toArray();
+
+        return {
+            vertices: vertices,
+            faces: faces,
+            matrix: matrix,
+            vertexCount: vertices.length,
+            faceCount: faces.length
+        };
     }
 
 })();

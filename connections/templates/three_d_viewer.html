@@ -5,6 +5,27 @@
             <div class="viewer-controls">
                 <button id="load-geometry-btn">Load Geometry</button>
                 <button id="clear-scene-btn">Clear Scene</button>
+                <div class="split-controls" id="split-controls-panel" style="display: none;">
+                    <div class="split-control-row">
+                        <label>분할 축:</label>
+                        <select id="split-axis-select">
+                            <option value="z" selected>Z축 (수평)</option>
+                            <option value="x">X축 (세로)</option>
+                            <option value="y">Y축 (세로)</option>
+                        </select>
+                    </div>
+                    <div class="split-control-row">
+                        <label>분할 위치:</label>
+                        <input type="range" id="split-position-slider" min="0" max="100" value="50" step="1">
+                        <span id="split-position-value">50%</span>
+                    </div>
+                    <div class="split-control-row">
+                        <button id="preview-split-btn">미리보기</button>
+                        <button id="apply-split-btn">분할 적용</button>
+                        <button id="cancel-split-btn">취소</button>
+                    </div>
+                </div>
+                <button id="split-object-btn" disabled>Split Object</button>
             </div>
         </div>
         <div class="three-d-properties-panel">
