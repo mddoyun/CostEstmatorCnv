@@ -135,7 +135,7 @@ async function deleteClassificationRule(ruleId) {
     }
 }
 
-// ui.js에서 loadClassificationRules 함수를 main.js로 이동하고 수정합니다.
+// ui.js에서 loadClassificationRules 함수를 app.js로 이동하고 수정합니다.
 /**
  * 프로젝트의 모든 '분류 할당 룰셋'을 서버에서 불러와 전역 변수에 저장하고 화면을 다시 그립니다.
  */

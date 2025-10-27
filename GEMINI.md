@@ -63,7 +63,7 @@ pyinstaller --name "CostEstimatorServer" --onefile --add-data "db.sqlite3;." --a
 
 ### 프론트엔드
 
-프론트엔드는 바닐라 JavaScript로 빌드됩니다. 프론트엔드에 대한 별도의 빌드 프로세스는 없습니다. 정적 파일(`main.js`와 같은)은 Django 애플리케이션에서 직접 제공됩니다.
+프론트엔드는 바닐라 JavaScript로 빌드됩니다. 프론트엔드에 대한 별도의 빌드 프로세스는 없습니다. 정적 파일(`app.js`와 같은)은 Django 애플리케이션에서 직접 제공됩니다.
 
 ### Blender 애드온
 

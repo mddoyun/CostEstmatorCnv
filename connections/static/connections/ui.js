@@ -2219,7 +2219,7 @@ function renderBoqTable(
                         });
 
                         // 변경된 순서를 저장하고 테이블을 다시 생성합니다.
-                        saveBoqColumnSettings(); // main.js에 정의될 함수
+                        saveBoqColumnSettings(); // app.js에 정의될 함수
                         generateBoqReport(true); // 테이블을 다시 그려서 변경사항을 완전히 적용
                         showToast('컬럼 순서가 저장되었습니다.', 'info');
                     },

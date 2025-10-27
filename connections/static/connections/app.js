@@ -356,13 +356,12 @@ function handleRulesetNavClick(e) {
 
 // ... (기존 createAutoQuantityMembers 함수 아래)
 
-// connections/static/connections/main.js 파일 가장 하단에 추가
-// aibim_quantity_takeoff_web/connections/static/connections/main.js
+// connections/static/connections/app.js 파일 가장 하단에 추가
+// aibim_quantity_takeoff_web/connections/static/connections/app.js
 
 // ... (파일의 다른 부분은 그대로 유지합니다) ...
 
-// main.js
-// main.js
+// app.js
 
 // ▼▼▼ [추가] 파일의 맨 아래에 아래 함수들을 모두 추가해주세요. ▼▼▼
 
@@ -370,8 +369,8 @@ function handleRulesetNavClick(e) {
 // 산출항목(CostItem) 관리 관련 함수들
 // =====================================================================
 
-// connections/static/connections/main.js 파일에서 loadCostItems 함수를 찾아 아래 코드로 교체하세요.
-// connections/static/connections/main.js 파일에서
+// connections/static/connections/app.js 파일에서 loadCostItems 함수를 찾아 아래 코드로 교체하세요.
+// connections/static/connections/app.js 파일에서
 // 기존 loadCostItems 함수를 찾아 아래 코드로 교체하세요.
 
 // =====================================================================
@@ -571,7 +570,7 @@ async function handleCsvFileSelect(event) {
         currentCsvImportUrl = null;
     }
 }
-// ✅ REPLACE: main.js - function handleCostCodeActions(...)
+// ✅ REPLACE: app.js - function handleCostCodeActions(...)
 
 function debounce(fn, delay = 300) {
     let t;

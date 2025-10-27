@@ -1,6 +1,6 @@
 // connections/static/connections/space_management_handlers.js
 
-// 필요한 전역 변수 또는 헬퍼 함수를 main.js에서 가져오거나 여기에 정의합니다.
+// 필요한 전역 변수 또는 헬퍼 함수를 app.js에서 가져오거나 여기에 정의합니다.
 // 예: currentProjectId, csrftoken, showToast, viewerStates, loadedSpaceClassifications, loadedQuantityMembers, allRevitData, renderDataTable, renderBimPropertiesTable, renderAssignedElementsModal
 
 /**
