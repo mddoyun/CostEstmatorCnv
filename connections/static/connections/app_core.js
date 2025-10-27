@@ -64,16 +64,6 @@
     window.selectedCostCodeIdForUnitPrice = null;
     window.currentUnitPriceEditState = { id: null, originalData: null };
 
-    // --- UI 상태 (BOQ - DD) ---
-    window.boqFilteredRawElementIds = new Set();
-    window.availableBoqFields = [];
-    window.currentBoqColumns = [];
-    window.boqColumnAliases = {};
-    window.lastBoqItemIds = []; // BOQ 상세에서 이전 그룹으로 돌아가기 위한 ID 저장 (미사용 시 제거 가능)
-    window.currentBoqDetailItemId = null; // BOQ 상세에서 현재 선택된 Item ID
-    window.loadedUnitPriceTypesForBoq = [];
-    window.lastSelectedUnitPriceTypeId = null;
-
     // --- 기타 상태 ---
     window.currentCsvImportUrl = null; // CSV 가져오기 시 사용할 URL 임시 저장
     window.spaceMappingState = { active: false, spaceId: null, spaceName: "" }; // 공간 매핑 모드 상태
@@ -107,9 +97,6 @@
         console.log(
             "[DEBUG] DOMContentLoaded start - Setting up event listeners..."
         ); // 디버깅
-
-        // BOQ 컬럼 설정 로드 (초기 로드 시)
-        loadBoqColumnSettings();
 
         // CSRF 토큰 설정
         const tokenInput = document.querySelector("[name=csrfmiddlewaretoken]");
