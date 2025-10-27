@@ -100,21 +100,69 @@
             return;
         }
 
-        if (geometryLoaded) {
-            console.log("[3D Viewer] Clearing existing geometry...");
-            window.clearScene();
+        // Load actual BIM geometry from allRevitData
+        console.log("[3D Viewer] Loading BIM geometry from allRevitData...");
+
+        // Filter objects that have geometry data
+        if (!window.allRevitData || window.allRevitData.length === 0) {
+            console.warn("[3D Viewer] No Revit data available. Loading placeholder cube instead.");
+
+            if (geometryLoaded) {
+                window.clearScene();
+            }
+
+            // Fallback: Add a simple box
+            const geometry = new THREE.BoxGeometry(5, 5, 5);
+            const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+            const cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+            geometryLoaded = true;
+            console.log("[3D Viewer] Placeholder cube loaded (no BIM data found).");
+            return;
         }
 
-        console.log("[3D Viewer] Loading placeholder geometry...");
+        const geometryObjects = window.allRevitData
+            .filter(obj => obj.raw_data && obj.raw_data.Parameters && obj.raw_data.Parameters.Geometry)
+            .map(obj => ({
+                id: obj.id,
+                geometry: {
+                    vertices: obj.raw_data.Parameters.Geometry.verts,
+                    faces: obj.raw_data.Parameters.Geometry.faces,
+                    matrix: obj.raw_data.Parameters.Geometry.matrix
+                }
+            }));
 
-        // Example: Add a simple box
-        const geometry = new THREE.BoxGeometry(5, 5, 5);
-        const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-        const cube = new THREE.Mesh(geometry, material);
-        scene.add(cube);
+        if (geometryObjects.length === 0) {
+            console.warn("[3D Viewer] No objects with geometry found in allRevitData. Loading placeholder cube instead.");
 
-        geometryLoaded = true;
-        console.log("[3D Viewer] Placeholder geometry loaded.");
+            if (geometryLoaded) {
+                window.clearScene();
+            }
+
+            // Fallback: Add a simple box
+            const geometry = new THREE.BoxGeometry(5, 5, 5);
+            const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+            const cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+            geometryLoaded = true;
+            console.log("[3D Viewer] Placeholder cube loaded (no geometry property found).");
+            return;
+        }
+
+        console.log(`[3D Viewer] Found ${geometryObjects.length} objects with geometry data.`);
+
+        // [DEBUG] Check first object's matrix
+        if (geometryObjects.length > 0) {
+            console.log('[DEBUG] First geometry object:', geometryObjects[0]);
+            console.log('[DEBUG] Matrix:', geometryObjects[0].geometry.matrix);
+            console.log('[DEBUG] Matrix length:', geometryObjects[0].geometry.matrix ? geometryObjects[0].geometry.matrix.length : 'null');
+            console.log('[DEBUG] Matrix type:', typeof geometryObjects[0].geometry.matrix);
+            console.log('[DEBUG] Vertices sample:', geometryObjects[0].geometry.vertices.slice(0, 3));
+            console.log('[DEBUG] Faces sample:', geometryObjects[0].geometry.faces.slice(0, 3));
+        }
+
+        // Load BIM geometry using the dedicated function
+        window.loadBimGeometry(geometryObjects);
     }
 
     window.clearScene = function() {
@@ -216,15 +264,17 @@
                 // Create geometry from vertices and faces
                 const geometry = new THREE.BufferGeometry();
 
-                // Vertices - expecting flat array [x1,y1,z1, x2,y2,z2, ...]
+                // Vertices - convert 2D array [[x,y,z], ...] to flat array [x,y,z, ...]
                 if (geomData.vertices && geomData.vertices.length > 0) {
-                    const positions = new Float32Array(geomData.vertices);
+                    const flatVertices = geomData.vertices.flat();
+                    const positions = new Float32Array(flatVertices);
                     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
                 }
 
-                // Faces/Indices - expecting flat array [i1,i2,i3, i4,i5,i6, ...]
+                // Faces/Indices - convert 2D array [[i1,i2,i3], ...] to flat array [i1,i2,i3, ...]
                 if (geomData.faces && geomData.faces.length > 0) {
-                    const indices = new Uint32Array(geomData.faces);
+                    const flatFaces = geomData.faces.flat();
+                    const indices = new Uint32Array(flatFaces);
                     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
                 }
 
@@ -240,6 +290,28 @@
 
                 // Create mesh and add to scene
                 const mesh = new THREE.Mesh(geometry, material);
+
+                // Apply transformation matrix if available
+                if (geomData.matrix && geomData.matrix.length === 16) {
+                    // IFC transformation matrix (4x4) - column-major format
+                    const ifcMatrix = new THREE.Matrix4();
+                    ifcMatrix.fromArray(geomData.matrix);
+
+                    // Convert from Z-up (IFC/Blender) to Y-up (Three.js)
+                    // Transformation: X stays, Y->Z, Z->-Y (flipped)
+                    const zUpToYUp = new THREE.Matrix4();
+                    zUpToYUp.set(
+                        1,  0,  0,  0,
+                        0,  0,  1,  0,
+                        0, -1,  0,  0,
+                        0,  0,  0,  1
+                    );
+
+                    // Apply: first IFC matrix, then coordinate system conversion
+                    const finalMatrix = new THREE.Matrix4();
+                    finalMatrix.multiplyMatrices(zUpToYUp, ifcMatrix);
+                    mesh.applyMatrix4(finalMatrix);
+                }
 
                 // Store BIM object reference
                 mesh.userData = {

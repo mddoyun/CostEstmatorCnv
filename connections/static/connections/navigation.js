@@ -492,6 +492,13 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             // SD 상단 UI 초기화 (모델 선택, 입력 필드 등)
             initializeSdUI();
             break;
+        case 'three-d-viewer': // 3D 뷰어 탭
+            console.log(
+                `[DEBUG][loadDataForActiveTab] 3D Viewer tab activated. Keeping existing BIM data.`
+            ); // 디버깅
+            // 3D 뷰어는 기존 allRevitData를 사용하므로 데이터 클리어하지 않음
+            // 뷰어 초기화는 handleMainNavClick에서 이미 처리됨 (initThreeDViewer 호출)
+            break;
         default:
             console.log(
                 `[DEBUG][loadDataForActiveTab] No specific data loading function defined for currently active tab: ${activeTab}`

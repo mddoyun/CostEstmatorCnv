@@ -30,6 +30,7 @@ import subprocess
 import time
 import urllib.request
 import webbrowser
+import queue  # Add standard queue module for thread-safe communication
 
 
 bl_info = {
@@ -41,7 +42,7 @@ bl_info = {
 
 # --- 전역 변수 관리 ---
 websocket_client = None
-event_queue = asyncio.Queue()
+event_queue = queue.Queue()  # Use standard queue for thread-safe communication
 status_message = "연결 대기 중..."
 websocket_thread_loop = None
 
@@ -112,14 +113,79 @@ def serialize_ifc_elements_to_string_list(ifc_file):
         # Add Geometry Data
         try:
             shape = ifcopenshell.geom.create_shape(settings, element)
-            
+
             # Use ifcopenshell.util.shape to get verts and faces reliably
             verts = ifcopenshell.util.shape.get_vertices(shape.geometry)
             faces = ifcopenshell.util.shape.get_faces(shape.geometry)
-            
+
+            # Extract transformation matrix
+            matrix = None
+            try:
+                trans = shape.transformation
+                if trans:
+                    trans_type = str(type(trans))
+                    print(f"[DEBUG] Element {element.id()} trans type: {trans_type}")
+
+                    # Try to get attributes safely
+                    try:
+                        attrs = [x for x in dir(trans) if not x.startswith('_')]
+                        print(f"[DEBUG] Element {element.id()} attrs: {attrs}")
+                    except:
+                        print(f"[DEBUG] Element {element.id()} could not get attributes")
+
+                    # Method 1: Try trans.matrix
+                    if hasattr(trans, 'matrix'):
+                        try:
+                            trans_matrix = trans.matrix
+                            print(f"[DEBUG] Element {element.id()} trans.matrix type: {type(trans_matrix)}")
+
+                            # Try 2D array access (4x4)
+                            matrix = []
+                            for i in range(4):
+                                for j in range(4):
+                                    matrix.append(float(trans_matrix[i][j]))
+                            print(f"[DEBUG] Element {element.id()} extracted via [i][j], length: {len(matrix)}")
+                        except Exception as e1:
+                            print(f"[DEBUG] Element {element.id()} [i][j] failed: {e1}")
+                            # Try flat access (16 elements)
+                            try:
+                                matrix = [float(trans_matrix[i]) for i in range(16)]
+                                print(f"[DEBUG] Element {element.id()} extracted via [i], length: {len(matrix)}")
+                            except Exception as e2:
+                                print(f"[DEBUG] Element {element.id()} [i] failed: {e2}")
+                                matrix = None
+
+                    # Method 2: Try trans.data
+                    if not matrix and hasattr(trans, 'data'):
+                        try:
+                            matrix = list(trans.data)
+                            print(f"[DEBUG] Element {element.id()} extracted via .data, length: {len(matrix)}")
+                        except Exception as e:
+                            print(f"[DEBUG] Element {element.id()} .data failed: {e}")
+
+                    if matrix and len(matrix) == 12:
+                        # 3x4 matrix, convert to 4x4
+                        matrix = [
+                            matrix[0], matrix[1], matrix[2], 0,
+                            matrix[3], matrix[4], matrix[5], 0,
+                            matrix[6], matrix[7], matrix[8], 0,
+                            matrix[9], matrix[10], matrix[11], 1
+                        ]
+                        print(f"[DEBUG] Element {element.id()} converted 3x4 to 4x4")
+
+                    if matrix and len(matrix) == 16:
+                        print(f"[DEBUG] Element {element.id()} SUCCESS - matrix ready, length: {len(matrix)}")
+                    else:
+                        print(f"[WARN] Element {element.id()} - no valid matrix extracted")
+                        matrix = None
+            except Exception as matrix_error:
+                print(f"[ERROR] Matrix extraction failed for element {element.id()}: {str(matrix_error)}")
+                matrix = None
+
             element_dict["Parameters"]["Geometry"] = {
                 "verts": verts.tolist(), # Use .tolist() for robust conversion
-                "faces": faces.tolist()  # Use .tolist() for robust conversion
+                "faces": faces.tolist(),  # Use .tolist() for robust conversion
+                "matrix": matrix  # Add transformation matrix
             }
         except Exception as e:
             print(f"Could not get geometry for element {element.id()}: {e}")
@@ -217,17 +283,30 @@ def send_message_to_server(message_dict):
 async def websocket_handler(uri):
     global websocket_client, status_message
     try:
+        print(f"[DEBUG] Attempting to connect to {uri}")
         async with websockets.connect(uri) as websocket:
-            websocket_client = websocket; status_message = "서버에 연결되었습니다."
+            websocket_client = websocket
+            status_message = "서버에 연결되었습니다."
+            print("[DEBUG] WebSocket connected successfully")
             while True:
                 try:
                     message_str = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                     message_data = json.loads(message_str)
-                    await event_queue.put(message_data)
+                    print(f"[DEBUG] Received message: {message_data.get('command', 'unknown')}")
+                    event_queue.put(message_data)  # Use standard queue.put() instead of await
+                    print(f"[DEBUG] Message added to queue, queue size: {event_queue.qsize()}")
                 except asyncio.TimeoutError: continue
-                except websockets.exceptions.ConnectionClosed: break
-    except Exception as e: status_message = f"연결 실패: {e}"; traceback.print_exc()
-    finally: status_message = "연결이 끊어졌습니다."; websocket_client = None
+                except websockets.exceptions.ConnectionClosed:
+                    print("[DEBUG] WebSocket connection closed")
+                    break
+    except Exception as e:
+        status_message = f"연결 실패: {e}"
+        print(f"[ERROR] WebSocket connection failed: {e}")
+        traceback.print_exc()
+    finally:
+        status_message = "연결이 끊어졌습니다."
+        websocket_client = None
+        print("[DEBUG] WebSocket handler finished")
 
 def run_websocket_in_thread(uri):
     def loop_in_thread():
@@ -238,23 +317,61 @@ def run_websocket_in_thread(uri):
         loop.close()
     thread = threading.Thread(target=loop_in_thread, daemon=True); thread.start()
 
+timer_call_count = 0
+
 def process_event_queue_timer():
+    global timer_call_count
+    timer_call_count += 1
+
+    # Only print every 50 calls to avoid spam, unless there's a message
+    if timer_call_count % 50 == 0:
+        print(f"[DEBUG] Timer running (call #{timer_call_count}), queue size: {event_queue.qsize()}")
+
     try:
+        queue_size = event_queue.qsize()
+        if queue_size > 0:
+            print(f"[DEBUG] Queue has {queue_size} messages (timer call #{timer_call_count})")
+
         while not event_queue.empty():
             command_data = event_queue.get_nowait()
             command = command_data.get("command")
-            if command == "fetch_all_elements_chunked": schedule_blender_task(handle_fetch_all_elements, command_data)
-            elif command == "get_selection": schedule_blender_task(handle_get_selection)
-            elif command == "select_elements": schedule_blender_task(select_elements_by_guids, command_data.get("unique_ids", []))
-    except Exception as e: print(f"이벤트 큐 처리 중 오류: {e}")
+            print(f"[DEBUG] Processing command: {command}")
+            if command == "fetch_all_elements_chunked":
+                print("[DEBUG] Scheduling handle_fetch_all_elements")
+                schedule_blender_task(handle_fetch_all_elements, command_data)
+            elif command == "get_selection":
+                print("[DEBUG] Scheduling handle_get_selection")
+                schedule_blender_task(handle_get_selection)
+            elif command == "select_elements":
+                print("[DEBUG] Scheduling select_elements_by_guids")
+                schedule_blender_task(select_elements_by_guids, command_data.get("unique_ids", []))
+            else:
+                print(f"[WARN] Unknown command: {command}")
+    except Exception as e:
+        print(f"[ERROR] 이벤트 큐 처리 중 오류: {e}")
+        traceback.print_exc()
     return 0.1
 
 def handle_fetch_all_elements(command_data):
     global status_message
-    if not websocket_client: return
+    print("[DEBUG] handle_fetch_all_elements called")
+    if not websocket_client:
+        print("[ERROR] websocket_client is None")
+        return
     project_id = command_data.get("project_id")
-    status_message = "IFC 데이터 추출 중..."; ifc_file, error = get_ifc_file()
-    if error: status_message = error; return
+    print(f"[DEBUG] Fetching elements for project: {project_id}")
+    status_message = "IFC 데이터 추출 중..."
+    ifc_file, error = get_ifc_file()
+    if error:
+        status_message = error
+        # Send error message to server
+        send_message_to_server({
+            "type": "fetch_progress_complete",
+            "payload": {"total_sent": 0, "error": error}
+        })
+        print(f"[ERROR] {error}")
+        return
+
     elements_data = serialize_ifc_elements_to_string_list(ifc_file)
     total_elements = len(elements_data)
     send_message_to_server({"type": "fetch_progress_start", "payload": {"total_elements": total_elements, "project_id": project_id}})
@@ -458,7 +575,9 @@ def register():
     bpy.types.Scene.costestimator_server_url = bpy.props.StringProperty(
         name="서버 주소", default="ws://127.0.0.1:8000/ws/blender-connector/"
     )
+    print("[DEBUG] Registering process_event_queue_timer")
     bpy.app.timers.register(process_event_queue_timer)
+    print("[DEBUG] Timer registered successfully")
 
 def unregister():
     stop_server_process()
