@@ -1,10 +1,8 @@
-
-
 // =====================================================================
 // Navigation and Tab Handling
 // =====================================================================
 
-function handleMainNavClick(e) {
+window.handleMainNavClick = function handleMainNavClick(e) {
     const clickedButton = e.currentTarget;
     const primaryTabId = clickedButton.dataset.primaryTab; // 예: "management", "takeoff", "schematic-estimation-sd"
     console.log(
@@ -86,7 +84,8 @@ function handleMainNavClick(e) {
     } else if (
         targetContent &&
         (primaryTabId === 'detailed-estimation-dd' ||
-            primaryTabId === 'schematic-estimation-sd')
+            primaryTabId === 'schematic-estimation-sd' ||
+            primaryTabId === 'three-d-viewer')
     ) {
         console.log(
             `[DEBUG][handleMainNavClick] Activating content directly for tab without secondary nav: ${primaryTabId}`
@@ -94,11 +93,20 @@ function handleMainNavClick(e) {
         targetContent.classList.add('active');
         activeTab = primaryTabId; // 전역 activeTab 업데이트
         loadDataForActiveTab(); // 해당 탭 데이터 로드
+
+        if (primaryTabId === 'three-d-viewer') {
+            if (typeof window.initThreeDViewer === 'function') {
+                window.initThreeDViewer(); // 3D 뷰어 초기화
+            } else {
+                console.warn('[WARN] initThreeDViewer function not found');
+            }
+        }
     } else {
         // [추가] SD, DD 탭은 보조 네비게이션이 없는 것이 정상이므로 경고 제외
         const noSecondaryNavTabs = [
             'detailed-estimation-dd',
             'schematic-estimation-sd',
+            'three-d-viewer',
         ];
         if (!noSecondaryNavTabs.includes(primaryTabId)) {
             console.warn(
@@ -123,7 +131,7 @@ function handleMainNavClick(e) {
     );
 }
 
-function handleSubNavClick(e) {
+window.handleSubNavClick = function handleSubNavClick(e) {
     const clickedButton = e.currentTarget;
     const targetTabId = clickedButton.dataset.tab; // 클릭된 보조 탭 ID (예: "ruleset-management", "ai-model-manager")
     const targetContent = document.getElementById(targetTabId);
@@ -293,7 +301,7 @@ function handleSubNavClick(e) {
     console.log('[DEBUG][handleSubNavClick] Function end.');
 }
 
-function loadDataForActiveTab() {
+window.loadDataForActiveTab = function loadDataForActiveTab() {
     console.log(
         `[DEBUG][loadDataForActiveTab] Loading data for active tab: ${activeTab}`
     ); // 디버깅
@@ -496,7 +504,7 @@ function loadDataForActiveTab() {
     ); // 디버깅
 }
 
-function loadSpecificRuleset(rulesetType) {
+window.loadSpecificRuleset = function loadSpecificRuleset(rulesetType) {
     console.log(`[DEBUG][loadSpecificRuleset] Loading ruleset: ${rulesetType}`);
     if (!currentProjectId) return; // 프로젝트 ID 없으면 중단
 
@@ -529,7 +537,7 @@ function loadSpecificRuleset(rulesetType) {
     }
 }
 
-function clearAllTabData() {
+window.clearAllTabData = function clearAllTabData() {
     console.log(
         '[DEBUG][clearAllTabData] Clearing all global data, states, and UI elements.'
     ); // 디버깅
@@ -735,7 +743,7 @@ function clearAllTabData() {
     console.log('[DEBUG][clearAllTabData] UI elements cleared/reset.'); // 디버깅
 }
 
-function clearContainer(id, message = '<p>프로젝트를 선택하세요.</p>') {
+window.clearContainer = function clearContainer(id, message = '<p>프로젝트를 선택하세요.</p>') {
     const container = document.getElementById(id);
     if (container) {
         container.innerHTML = message;

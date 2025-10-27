@@ -3,12 +3,18 @@
     <head>
         <title>COST ESTIMATOR(DD)</title>
         {% load static %}
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <link
             rel="stylesheet"
             type="text/css"
             href="{% static 'connections/style.css' %}"
         />
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+        <!-- Three.js 글로벌 로드 (r140 - 안정적인 글로벌 스크립트 버전) -->
+        <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
     </head>
 
     <body>
@@ -94,6 +100,12 @@
                     data-primary-tab="schematic-estimation-sd"
                 >
                     🪙 개산견적(SD)
+                </button>
+                <button
+                    class="nav-button"
+                    data-primary-tab="three-d-viewer"
+                >
+                    🧊 3D 뷰어
                 </button>
             </nav>
             <div class="secondary-nav-container">
@@ -1536,6 +1548,16 @@
                     </div>
                 </div>
 
+                <div id="three-d-viewer" class="tab-content">
+                    <div class="three-d-viewer-container">
+                        <canvas id="three-d-canvas"></canvas>
+                        <div class="viewer-controls">
+                            <button id="load-geometry-btn">Load Geometry</button>
+                            <button id="clear-scene-btn">Clear Scene</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="unit-price-management" class="tab-content">
                     <div class="unit-price-container">
                         <aside class="unit-price-left-panel">
@@ -2186,13 +2208,14 @@
         <script src="{% static 'connections/csrf_token.js' %}"></script>
         <script src="{% static 'connections/data_management_handlers.js' %}"></script>
         <script src="{% static 'connections/space_management_handlers.js' %}"></script>
-        <script src="{% static 'connections/project_management_handlers.js' %}"></script>
-        <script src="{% static 'connections/navigation.js' %}"></script>
-        <script src="{% static 'connections/ai_model_management.js' %}"></script>
+        <script src="{% static 'connections/project_management_handlers.js' %}?v=2"></script>
+        <script src="{% static 'connections/navigation.js' %}?v=2"></script>
+        <script src="{% static 'connections/three_d_viewer.js' %}?v=4"></script>
+        <script src="{% static 'connections/ai_model_management.js' %}?v=2"></script>
         <script src="{% static 'connections/unit_price_management.js' %}"></script>
         <script src="{% static 'connections/schematic_estimation_handlers.js' %}"></script>
         <script src="{% static 'connections/websocket.js' %}"></script>
-        <script src="{% static 'connections/app_core.js' %}"></script>
+        <script src="{% static 'connections/app_core.js' %}?v=2"></script>
         <script src="{% static 'connections/boq_detailed_estimation_handlers.js' %}"></script>
         <script src="{% static 'connections/app.js' %}"></script>
     </body>

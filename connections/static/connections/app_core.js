@@ -92,6 +92,7 @@
     window.csrftoken = null; // Initialize as null, will be set in DOMContentLoaded
 
     // Expose setupWebSocket globally (defined in websocket.js)
+    // Note: initThreeDViewer is loaded via script tag in HTML
 
     document.addEventListener("DOMContentLoaded", () => {
         console.log(
@@ -168,6 +169,13 @@
         setupUnitPriceManagementListeners();
         setupAiModelManagementListeners(); // [신규] AI 탭
         setupSchematicEstimationListeners(); // [신규] SD 탭
+
+        // [수정] 3D Viewer는 모듈로 비동기 로드되므로 조건부 호출
+        if (typeof window.setupThreeDViewerListeners === 'function') {
+            window.setupThreeDViewerListeners();
+        } else {
+            console.log("[DEBUG] setupThreeDViewerListeners not yet loaded (will be available after module loads).");
+        }
 
         console.log("[DEBUG] All specific tab listeners setup complete.");
 
