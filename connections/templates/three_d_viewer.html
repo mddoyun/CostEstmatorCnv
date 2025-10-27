@@ -26,6 +26,33 @@
                     </div>
                 </div>
                 <button id="split-object-btn" disabled>Split Object</button>
+                <button id="sketch-split-btn" disabled>Sketch Split</button>
+                <div class="sketch-controls" id="sketch-controls-panel" style="display: none;">
+                    <div class="sketch-control-row">
+                        <h4>1. 작업면 선택</h4>
+                        <button id="select-face-btn">작업면 선택</button>
+                        <span id="selected-face-info"></span>
+                    </div>
+                    <div class="sketch-control-row">
+                        <h4>2. 스케치 그리기</h4>
+                        <button id="start-sketch-btn" disabled>스케치 시작</button>
+                        <button id="clear-sketch-btn" disabled>스케치 지우기</button>
+                        <button id="close-sketch-btn" disabled>닫기</button>
+                    </div>
+                    <div class="sketch-control-row">
+                        <h4>3. 분할 적용</h4>
+                        <button id="apply-sketch-split-btn" disabled>분할 적용</button>
+                        <button id="cancel-sketch-btn">취소</button>
+                    </div>
+                </div>
+            </div>
+            <canvas id="sketch-canvas" style="position: absolute; top: 0; left: 0; display: none; pointer-events: none;"></canvas>
+            <div id="dimension-input-display" style="position: absolute; bottom: 20px; left: 20px; display: none; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 10px 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; pointer-events: none; z-index: 1000;">
+                <span id="dimension-input-text"></span>
+            </div>
+            <div id="snap-indicator-2d" style="position: absolute; display: none; pointer-events: none; z-index: 1001;">
+                <div id="snap-icon" style="width: 20px; height: 20px; position: relative;"></div>
+                <div id="snap-label" style="margin-top: 2px; font-size: 11px; font-weight: bold; color: white; text-shadow: 1px 1px 2px black; white-space: nowrap; text-align: center;"></div>
             </div>
         </div>
         <div class="three-d-properties-panel">

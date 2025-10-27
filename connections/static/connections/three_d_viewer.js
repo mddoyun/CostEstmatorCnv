@@ -9,6 +9,11 @@
     let selectedObject = null;
     let originalMaterials = new Map(); // Store original materials for deselection
 
+    // For cycling through overlapping objects
+    let lastClickPosition = null;
+    let lastIntersects = [];
+    let currentIntersectIndex = 0;
+
     // Cache for cost items with unit price information from BOQ report
     let costItemsWithPrices = [];
 
@@ -469,6 +474,65 @@
             });
         }
 
+        // Sketch split mode controls
+        const sketchSplitBtn = document.getElementById('sketch-split-btn');
+        const sketchControlsPanel = document.getElementById('sketch-controls-panel');
+        const selectFaceBtn = document.getElementById('select-face-btn');
+        const startSketchBtn = document.getElementById('start-sketch-btn');
+        const clearSketchBtn = document.getElementById('clear-sketch-btn');
+        const closeSketchBtn = document.getElementById('close-sketch-btn');
+        const applySketchSplitBtn = document.getElementById('apply-sketch-split-btn');
+        const cancelSketchBtn = document.getElementById('cancel-sketch-btn');
+
+        if (sketchSplitBtn) {
+            sketchSplitBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Entering sketch split mode...");
+                enterSketchMode();
+            });
+        }
+
+        if (selectFaceBtn) {
+            selectFaceBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Select face mode activated");
+                activateFaceSelectionMode();
+            });
+        }
+
+        if (startSketchBtn) {
+            startSketchBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Starting sketch");
+                startSketchMode();
+            });
+        }
+
+        if (clearSketchBtn) {
+            clearSketchBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Clearing sketch");
+                clearSketch();
+            });
+        }
+
+        if (closeSketchBtn) {
+            closeSketchBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Closing sketch");
+                closeSketch();
+            });
+        }
+
+        if (applySketchSplitBtn) {
+            applySketchSplitBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Applying sketch split");
+                applySketchSplit();
+            });
+        }
+
+        if (cancelSketchBtn) {
+            cancelSketchBtn.addEventListener('click', function() {
+                console.log("[3D Viewer] Canceling sketch mode");
+                exitSketchMode();
+            });
+        }
+
         // Setup properties panel tab listeners
         setupPropertiesPanelTabs();
     };
@@ -667,7 +731,71 @@
         const intersects = raycaster.intersectObjects(bimMeshes, true);
 
         if (intersects.length > 0) {
-            let clickedObject = intersects[0].object;
+            // Check if clicking at the same position (for cycling through overlapping objects)
+            const currentClickPos = new THREE.Vector2(mouse.x, mouse.y);
+            const isSamePosition = lastClickPosition &&
+                                  currentClickPos.distanceTo(lastClickPosition) < 0.01; // Small threshold
+
+            if (isSamePosition && lastIntersects.length > 1) {
+                // Cycle to next object at same position
+                currentIntersectIndex = (currentIntersectIndex + 1) % lastIntersects.length;
+                console.log(`[3D Viewer] Cycling through overlapping objects: ${currentIntersectIndex + 1}/${lastIntersects.length}`);
+                showToast(`겹친 객체 ${currentIntersectIndex + 1}/${lastIntersects.length} 선택`, 'info');
+            } else {
+                // New position - reset cycle
+                lastClickPosition = currentClickPos.clone();
+
+                // Filter and deduplicate intersects
+                const seenMeshes = new Set();
+                lastIntersects = [];
+
+                for (let i = 0; i < intersects.length; i++) {
+                    let intersect = intersects[i];
+                    let obj = intersect.object;
+
+                    // Get parent if it's a LineSegments (edge line)
+                    if (obj instanceof THREE.LineSegments && obj.parent) {
+                        obj = obj.parent;
+                    }
+
+                    // Only include valid meshes
+                    if (!(obj instanceof THREE.Mesh && obj.userData &&
+                          (obj.userData.bimObjectId || obj.userData.isSplitPart))) {
+                        continue;
+                    }
+
+                    // Deduplicate: skip if we've already seen this mesh
+                    const meshId = obj.uuid;
+                    if (seenMeshes.has(meshId)) {
+                        continue;
+                    }
+
+                    seenMeshes.add(meshId);
+
+                    // Create new intersect with corrected object reference
+                    lastIntersects.push({
+                        ...intersect,
+                        object: obj  // Replace with parent mesh if it was a LineSegments
+                    });
+                }
+
+                currentIntersectIndex = 0;
+
+                if (lastIntersects.length > 1) {
+                    console.log(`[3D Viewer] Found ${lastIntersects.length} overlapping objects. Click again to cycle.`);
+                    showToast(`${lastIntersects.length}개의 객체가 겹쳐있습니다. 다시 클릭하여 전환`, 'info');
+                }
+            }
+
+            // Get the selected intersection
+            const selectedIntersect = lastIntersects[currentIntersectIndex];
+            if (!selectedIntersect) {
+                console.warn('[3D Viewer] No valid intersection found');
+                deselectObject();
+                return;
+            }
+
+            let clickedObject = selectedIntersect.object;
 
             // If clicked on edge line (LineSegments), get parent mesh
             if (clickedObject instanceof THREE.LineSegments) {
@@ -678,13 +806,22 @@
             // Verify we have a valid mesh with userData
             if (clickedObject instanceof THREE.Mesh && clickedObject.userData &&
                 (clickedObject.userData.bimObjectId || clickedObject.userData.isSplitPart)) {
-                selectObject(clickedObject);
+
+                // Check if we're in face selection mode
+                if (faceSelectionMode) {
+                    handleFaceSelection(selectedIntersect, clickedObject);
+                } else {
+                    selectObject(clickedObject);
+                }
             } else {
                 console.warn('[3D Viewer] Clicked object is not a valid BIM mesh:', clickedObject);
                 deselectObject();
             }
         } else {
-            // Clicked on empty space - deselect
+            // Clicked on empty space - deselect and reset cycle
+            lastClickPosition = null;
+            lastIntersects = [];
+            currentIntersectIndex = 0;
             deselectObject();
         }
     }
@@ -732,6 +869,12 @@
             splitBtn.disabled = false;
         }
 
+        // Enable sketch split button
+        const sketchSplitBtn = document.getElementById('sketch-split-btn');
+        if (sketchSplitBtn) {
+            sketchSplitBtn.disabled = false;
+        }
+
         // Display properties
         displayObjectProperties(object);
 
@@ -759,6 +902,12 @@
         const splitBtn = document.getElementById('split-object-btn');
         if (splitBtn) {
             splitBtn.disabled = true;
+        }
+
+        // Disable sketch split button
+        const sketchSplitBtn = document.getElementById('sketch-split-btn');
+        if (sketchSplitBtn) {
+            sketchSplitBtn.disabled = true;
         }
 
         // Clear properties panel
@@ -1633,8 +1782,18 @@
 
             console.log('[3D Viewer] Geometries computed - normals, bounding boxes, and bounding spheres ready');
 
-            // Remove original object from scene (not just hide)
+            // Clear selection and restore material before removing object
+            if (selectedObject) {
+                const originalMat = originalMaterials.get(selectedObject);
+                if (originalMat) {
+                    selectedObject.material = originalMat;
+                    selectedObject.material.needsUpdate = true;
+                }
+            }
+
+            // Remove original object from scene
             scene.remove(selectedObject);
+            selectedObject = null; // Clear selection
 
             // Add split parts to scene
             scene.add(bottomMesh);
@@ -1657,9 +1816,6 @@
 
             // Exit split mode
             exitSplitMode();
-
-            // Deselect the original object
-            deselectObject();
 
         } catch (error) {
             console.error('[3D Viewer] Split operation failed:', error);
@@ -1949,6 +2105,1406 @@
             vertexCount: vertices.length,
             faceCount: faces.length
         };
+    }
+
+    // ===================================================================
+    // Sketch-Based Splitting Functionality
+    // ===================================================================
+
+    // Sketch mode variables
+    let faceSelectionMode = false;
+    let selectedFace = null;
+    let savedCameraState = null;
+
+    // 3D sketch visualization (no 2D canvas)
+    let sketch3DLine = null;
+    let previewLine = null;
+    let sketchPoints3D = [];
+    let snapIndicator = null;
+    let currentSnapPoint = null;
+    const SNAP_DISTANCE = 0.1; // World units
+    let isSketchDrawing = false;
+
+    // Dimension input mode (for precise distance entry)
+    let dimensionInputMode = false;
+    let dimensionInputBuffer = '';
+    let dimensionDirection = null; // Vector3 (normalized)
+    let dimensionStartPoint = null; // Vector3
+    let dimensionInputDisplay = null; // HTML element
+
+    // 2D snap indicator
+    let snapIndicator2D = null; // HTML element
+    let snapIcon = null; // HTML element
+    let snapLabel = null; // HTML element
+
+    /**
+     * Enter sketch split mode
+     */
+    function enterSketchMode() {
+        if (!selectedObject) {
+            showToast('객체를 먼저 선택하세요', 'warning');
+            return;
+        }
+
+        sketchMode = true;
+        console.log('[3D Viewer] Entered sketch mode');
+
+        // Show sketch controls, hide sketch split button
+        const sketchControlsPanel = document.getElementById('sketch-controls-panel');
+        const sketchSplitBtn = document.getElementById('sketch-split-btn');
+        const splitBtn = document.getElementById('split-object-btn');
+
+        if (sketchControlsPanel) sketchControlsPanel.style.display = 'flex';
+        if (sketchSplitBtn) sketchSplitBtn.style.display = 'none';
+        if (splitBtn) splitBtn.style.display = 'none';
+
+        showToast('작업면을 선택하세요', 'info');
+    }
+
+    /**
+     * Exit sketch split mode
+     */
+    function exitSketchMode() {
+        sketchMode = false;
+        faceSelectionMode = false;
+        selectedFace = null;
+        sketchPoints3D = [];
+        isSketchDrawing = false;
+
+        // Remove 3D visualization objects
+        if (sketch3DLine) {
+            scene.remove(sketch3DLine);
+            sketch3DLine = null;
+        }
+        if (previewLine) {
+            scene.remove(previewLine);
+            previewLine = null;
+        }
+        if (snapIndicator) {
+            scene.remove(snapIndicator);
+            snapIndicator = null;
+        }
+
+        // Remove event listeners if attached
+        if (renderer && renderer.domElement) {
+            renderer.domElement.removeEventListener('mousedown', onSketchMouseDown);
+            renderer.domElement.removeEventListener('mousemove', onSketchMouseMove);
+        }
+        document.removeEventListener('keydown', onSketchKeyDown);
+
+        // Hide dimension input display
+        if (dimensionInputDisplay) {
+            dimensionInputDisplay.style.display = 'none';
+        }
+
+        // Hide 2D snap indicator
+        if (snapIndicator2D) {
+            snapIndicator2D.style.display = 'none';
+        }
+
+        // Reset dimension input mode
+        dimensionInputMode = false;
+        dimensionInputBuffer = '';
+        dimensionDirection = null;
+        dimensionStartPoint = null;
+
+        // Hide sketch controls, show sketch split button
+        const sketchControlsPanel = document.getElementById('sketch-controls-panel');
+        const sketchSplitBtn = document.getElementById('sketch-split-btn');
+        const splitBtn = document.getElementById('split-object-btn');
+
+        if (sketchControlsPanel) sketchControlsPanel.style.display = 'none';
+        if (sketchSplitBtn) sketchSplitBtn.style.display = 'inline-block';
+        if (splitBtn) splitBtn.style.display = 'inline-block';
+
+        // Clear face info
+        const faceInfo = document.getElementById('selected-face-info');
+        if (faceInfo) faceInfo.textContent = '';
+
+        // Restore camera if saved
+        if (savedCameraState) {
+            camera.position.copy(savedCameraState.position);
+            camera.quaternion.copy(savedCameraState.quaternion);
+            if (controls) controls.target.copy(savedCameraState.target);
+            savedCameraState = null;
+        }
+
+        console.log('[3D Viewer] Exited sketch mode');
+    }
+
+    /**
+     * Activate face selection mode
+     */
+    function activateFaceSelectionMode() {
+        if (!selectedObject) {
+            showToast('객체를 먼저 선택하세요', 'warning');
+            return;
+        }
+
+        faceSelectionMode = true;
+        showToast('객체의 면을 클릭하세요', 'info');
+        console.log('[3D Viewer] Face selection mode activated');
+    }
+
+    /**
+     * Handle face selection from raycasting result
+     */
+    function handleFaceSelection(intersection, _mesh) {
+        if (!intersection || !_mesh) return;
+
+        console.log('[3D Viewer] Face clicked:', intersection);
+
+        // Get face information
+        const faceIndex = intersection.faceIndex;
+        const point = intersection.point;
+        const normal = intersection.face.normal.clone();
+
+        // Transform normal to world space
+        const normalMatrix = new THREE.Matrix3().getNormalMatrix(_mesh.matrixWorld);
+        normal.applyMatrix3(normalMatrix).normalize();
+
+        console.log('[3D Viewer] Face normal (world):', normal);
+        console.log('[3D Viewer] Intersection point (world):', point);
+
+        // Store selected face data
+        selectedFace = {
+            mesh: _mesh,
+            faceIndex: faceIndex,
+            point: point.clone(),
+            normal: normal.clone(),
+            localNormal: intersection.face.normal.clone()
+        };
+
+        // Visualize selected face
+        visualizeSelectedFace(_mesh, faceIndex);
+
+        // Move camera to face front
+        moveCameraToFace(selectedFace);
+
+        // Update UI
+        const faceInfo = document.getElementById('selected-face-info');
+        if (faceInfo) {
+            faceInfo.textContent = `면 선택됨 (Normal: ${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)})`;
+        }
+
+        // Enable sketch start button
+        const startSketchBtn = document.getElementById('start-sketch-btn');
+        if (startSketchBtn) {
+            startSketchBtn.disabled = false;
+        }
+
+        // Disable face selection mode
+        faceSelectionMode = false;
+
+        showToast('작업면이 선택되었습니다. 스케치를 시작하세요', 'success');
+        console.log('[3D Viewer] Face selected successfully');
+    }
+
+    /**
+     * Visualize selected face with highlight
+     */
+    function visualizeSelectedFace(mesh, faceIndex) {
+        // Create a helper plane to show selected face
+        // This is optional visualization
+        console.log('[3D Viewer] Visualizing face', faceIndex);
+
+        // TODO: Add visual highlight for selected face
+        // For now, we'll just log it
+    }
+
+    /**
+     * Move camera to face front view
+     */
+    function moveCameraToFace(face) {
+        if (!face || !controls) return;
+
+        // Save current camera state
+        savedCameraState = {
+            position: camera.position.clone(),
+            quaternion: camera.quaternion.clone(),
+            target: controls.target.clone()
+        };
+
+        // Calculate camera position
+        const distance = 10; // Distance from face
+        const cameraTarget = face.point.clone();
+        const cameraPosition = face.point.clone().add(face.normal.clone().multiplyScalar(distance));
+
+        // Animate camera movement
+        const startPos = camera.position.clone();
+        const startTarget = controls.target.clone();
+        const duration = 1000; // 1 second
+        const startTime = Date.now();
+
+        function animateCamera() {
+            const elapsed = Date.now() - startTime;
+            const t = Math.min(elapsed / duration, 1);
+
+            // Ease in-out
+            const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+            camera.position.lerpVectors(startPos, cameraPosition, eased);
+            controls.target.lerpVectors(startTarget, cameraTarget, eased);
+            controls.update();
+
+            if (t < 1) {
+                requestAnimationFrame(animateCamera);
+            } else {
+                console.log('[3D Viewer] Camera moved to face front');
+            }
+        }
+
+        animateCamera();
+    }
+
+    /**
+     * Find snap point near the given 3D position
+     * Returns {point: Vector3, type: 'vertex'|'edge-midpoint'|'edge'|null}
+     */
+    function findSnapPoint(position3D) {
+        if (!selectedFace || !selectedFace.mesh) return null;
+
+        const mesh = selectedFace.mesh;
+        const geometry = mesh.geometry;
+
+        // Update world matrix
+        mesh.updateMatrixWorld(true);
+
+        let closestPoint = null;
+        let closestDistance = SNAP_DISTANCE;
+        let snapType = null;
+
+        // Check vertices (highest priority)
+        const positions = geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            const vertex = new THREE.Vector3(
+                positions.array[i * 3],
+                positions.array[i * 3 + 1],
+                positions.array[i * 3 + 2]
+            );
+
+            // Transform to world space
+            vertex.applyMatrix4(mesh.matrixWorld);
+
+            const distance = vertex.distanceTo(position3D);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestPoint = vertex;
+                snapType = 'vertex';
+            }
+        }
+
+        // Check edges (midpoints and closest points on edges)
+        const indices = geometry.index ? geometry.index.array : null;
+        if (indices) {
+            for (let i = 0; i < indices.length; i += 3) {
+                // For each triangle edge
+                for (let j = 0; j < 3; j++) {
+                    const idx1 = indices[i + j];
+                    const idx2 = indices[i + ((j + 1) % 3)];
+
+                    const v1 = new THREE.Vector3(
+                        positions.array[idx1 * 3],
+                        positions.array[idx1 * 3 + 1],
+                        positions.array[idx1 * 3 + 2]
+                    ).applyMatrix4(mesh.matrixWorld);
+
+                    const v2 = new THREE.Vector3(
+                        positions.array[idx2 * 3],
+                        positions.array[idx2 * 3 + 1],
+                        positions.array[idx2 * 3 + 2]
+                    ).applyMatrix4(mesh.matrixWorld);
+
+                    // Check edge midpoint (higher priority than edge)
+                    const midpoint = new THREE.Vector3().lerpVectors(v1, v2, 0.5);
+                    const distToMid = midpoint.distanceTo(position3D);
+
+                    if (distToMid < closestDistance) {
+                        closestDistance = distToMid;
+                        closestPoint = midpoint;
+                        snapType = 'edge-midpoint';
+                    }
+
+                    // Check closest point on edge line segment
+                    const line = new THREE.Line3(v1, v2);
+                    const closestOnLine = new THREE.Vector3();
+                    line.closestPointToPoint(position3D, true, closestOnLine);
+                    const distToLine = closestOnLine.distanceTo(position3D);
+
+                    // Don't snap to edge if it's too close to vertex or midpoint
+                    const distToV1 = closestOnLine.distanceTo(v1);
+                    const distToV2 = closestOnLine.distanceTo(v2);
+                    const distToMidFromLine = closestOnLine.distanceTo(midpoint);
+
+                    if (distToLine < closestDistance &&
+                        distToV1 > 0.02 && distToV2 > 0.02 &&
+                        distToMidFromLine > 0.02) {
+                        closestDistance = distToLine;
+                        closestPoint = closestOnLine;
+                        snapType = 'edge';
+                    }
+                }
+            }
+        }
+
+        return closestPoint ? { point: closestPoint, type: snapType } : null;
+    }
+
+    /**
+     * Check for orthogonal snap (perpendicular/parallel to face axes)
+     * Returns {point: Vector3, axis: 'x'|'y'|null} or null
+     */
+    function findOrthogonalSnap(position3D) {
+        if (!selectedFace || sketchPoints3D.length === 0) return null;
+
+        const lastPoint = sketchPoints3D[sketchPoints3D.length - 1];
+        const direction = new THREE.Vector3().subVectors(position3D, lastPoint);
+
+        if (direction.length() < 0.01) return null;
+
+        // Get face local coordinate system
+        const faceNormal = selectedFace.normal.clone().normalize();
+
+        // Find two perpendicular vectors in the face plane
+        let xAxis, yAxis;
+
+        // Choose an arbitrary vector not parallel to normal
+        const arbitrary = Math.abs(faceNormal.z) < 0.9
+            ? new THREE.Vector3(0, 0, 1)
+            : new THREE.Vector3(1, 0, 0);
+
+        xAxis = new THREE.Vector3().crossVectors(faceNormal, arbitrary).normalize();
+        yAxis = new THREE.Vector3().crossVectors(faceNormal, xAxis).normalize();
+
+        // Project direction onto each axis
+        const xComponent = direction.dot(xAxis);
+        const yComponent = direction.dot(yAxis);
+
+        const xMagnitude = Math.abs(xComponent);
+        const yMagnitude = Math.abs(yComponent);
+
+        // Orthogonal snap threshold (angle in radians)
+        const snapAngle = 15 * Math.PI / 180; // 15 degrees
+        const totalMagnitude = Math.sqrt(xComponent * xComponent + yComponent * yComponent);
+
+        if (totalMagnitude < 0.01) return null;
+
+        const xRatio = xMagnitude / totalMagnitude;
+        const yRatio = yMagnitude / totalMagnitude;
+
+        // Check if close to X axis
+        if (xRatio > Math.cos(snapAngle) && xRatio > yRatio) {
+            const distance = totalMagnitude * Math.sign(xComponent);
+            const orthoPoint = lastPoint.clone().add(xAxis.clone().multiplyScalar(distance));
+            return { point: orthoPoint, axis: 'x', axisVector: xAxis };
+        }
+
+        // Check if close to Y axis
+        if (yRatio > Math.cos(snapAngle) && yRatio > xRatio) {
+            const distance = totalMagnitude * Math.sign(yComponent);
+            const orthoPoint = lastPoint.clone().add(yAxis.clone().multiplyScalar(distance));
+            return { point: orthoPoint, axis: 'y', axisVector: yAxis };
+        }
+
+        return null;
+    }
+
+    /**
+     * Create or update snap indicator (2D HTML overlay)
+     */
+    function updateSnapIndicator(position, type) {
+        // Hide 2D indicator if no position
+        if (!position || !snapIndicator2D || !snapIcon || !snapLabel) {
+            if (snapIndicator2D) snapIndicator2D.style.display = 'none';
+
+            // Also remove 3D indicator
+            if (snapIndicator) {
+                scene.remove(snapIndicator);
+                snapIndicator = null;
+            }
+            return;
+        }
+
+        // Convert 3D position to 2D screen coordinates
+        const screenPos = position.clone().project(camera);
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = (screenPos.x * 0.5 + 0.5) * rect.width;
+        const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
+
+        // Position the 2D indicator
+        snapIndicator2D.style.left = (x - 10) + 'px'; // Center on point
+        snapIndicator2D.style.top = (y - 10) + 'px';
+        snapIndicator2D.style.display = 'block';
+
+        // Update icon based on type
+        let iconHTML = '';
+        let labelText = '';
+
+        switch (type) {
+            case 'vertex':
+                // Red square (끝점)
+                iconHTML = '<div style="width: 16px; height: 16px; border: 3px solid #ff0000; background: transparent; box-sizing: border-box;"></div>';
+                labelText = '끝점';
+                break;
+
+            case 'edge-midpoint':
+                // Cyan triangle (중간점)
+                iconHTML = '<div style="width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 17px solid #00ffff; margin: 0 auto;"></div>';
+                labelText = '중간점';
+                break;
+
+            case 'edge':
+                // Cyan circle (선상의 점)
+                iconHTML = '<div style="width: 14px; height: 14px; border: 3px solid #00ffff; border-radius: 50%; background: transparent; box-sizing: border-box; margin: 3px auto;"></div>';
+                labelText = '선상의 점';
+                break;
+
+            case 'orthogonal':
+                // Purple X (직교)
+                iconHTML = `<div style="position: relative; width: 20px; height: 20px;">
+                    <div style="position: absolute; width: 20px; height: 3px; background: #ff00ff; transform: rotate(45deg); top: 8px;"></div>
+                    <div style="position: absolute; width: 20px; height: 3px; background: #ff00ff; transform: rotate(-45deg); top: 8px;"></div>
+                </div>`;
+                labelText = '직교';
+                break;
+
+            case 'first':
+                // Green circle (첫 점으로 스냅)
+                iconHTML = '<div style="width: 18px; height: 18px; border: 3px solid #00ff00; border-radius: 50%; background: rgba(0, 255, 0, 0.2); box-sizing: border-box; margin: 1px auto;"></div>';
+                labelText = '첫 점';
+                break;
+
+            default:
+                // Yellow circle (평면)
+                iconHTML = '<div style="width: 12px; height: 12px; border: 2px solid #ffff00; border-radius: 50%; background: transparent; box-sizing: border-box; margin: 4px auto;"></div>';
+                labelText = '평면';
+                break;
+        }
+
+        snapIcon.innerHTML = iconHTML;
+        snapLabel.textContent = labelText;
+
+        // Also create small 3D marker
+        if (snapIndicator) {
+            scene.remove(snapIndicator);
+            snapIndicator = null;
+        }
+
+        const geometry = new THREE.SphereGeometry(0.03, 8, 8);
+        const color = type === 'vertex' ? 0xff0000 :
+                     type === 'edge-midpoint' ? 0x00ffff :
+                     type === 'edge' ? 0x00ffff :
+                     type === 'orthogonal' ? 0xff00ff :
+                     type === 'first' ? 0x00ff00 : 0xffff00;
+
+        const material = new THREE.MeshBasicMaterial({
+            color: color,
+            depthTest: false,
+            transparent: true,
+            opacity: 0.5
+        });
+
+        snapIndicator = new THREE.Mesh(geometry, material);
+        snapIndicator.position.copy(position);
+        snapIndicator.renderOrder = 1001;
+        scene.add(snapIndicator);
+    }
+
+    /**
+     * Update 3D sketch line visualization
+     */
+    function update3DSketchLine() {
+        // Remove old line
+        if (sketch3DLine) {
+            scene.remove(sketch3DLine);
+            sketch3DLine = null;
+        }
+
+        if (sketchPoints3D.length < 2) return;
+
+        // Create line geometry
+        const points = sketchPoints3D.map(p => p.clone());
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color: 0xff0000,
+            linewidth: 2,
+            depthTest: false,
+            transparent: true
+        });
+
+        sketch3DLine = new THREE.Line(geometry, material);
+        sketch3DLine.renderOrder = 999; // Render on top
+        scene.add(sketch3DLine);
+    }
+
+    /**
+     * Update preview line (from last point to current mouse position)
+     */
+    function updatePreviewLine(currentPoint, snapToFirst = false) {
+        // Remove old preview line
+        if (previewLine) {
+            scene.remove(previewLine);
+            previewLine = null;
+        }
+
+        if (!currentPoint || sketchPoints3D.length === 0) return;
+
+        // Determine target point
+        const targetPoint = snapToFirst ? sketchPoints3D[0] : currentPoint;
+        const lastPoint = sketchPoints3D[sketchPoints3D.length - 1];
+
+        // Create preview line
+        const points = [lastPoint, targetPoint];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+        // Color based on snap state
+        const color = snapToFirst ? 0x00ff00 : (currentSnapPoint ? 0x00ffff : 0xffff00);
+        const material = new THREE.LineDashedMaterial({
+            color: color,
+            linewidth: 2,
+            dashSize: 0.1,
+            gapSize: 0.05,
+            depthTest: false,
+            transparent: true
+        });
+
+        previewLine = new THREE.Line(geometry, material);
+        previewLine.computeLineDistances(); // Required for dashed lines
+        previewLine.renderOrder = 1000; // Render on top of sketch line
+        scene.add(previewLine);
+    }
+
+    /**
+     * Start sketch mode (after face is selected)
+     */
+    function startSketchMode() {
+        if (!selectedFace) {
+            showToast('먼저 작업면을 선택하세요', 'warning');
+            return;
+        }
+
+        // Initialize 3D sketch mode
+        sketchPoints3D = [];
+        isSketchDrawing = true;
+
+        // Attach event listeners to renderer canvas (not overlay)
+        if (renderer && renderer.domElement) {
+            renderer.domElement.addEventListener('mousedown', onSketchMouseDown);
+            renderer.domElement.addEventListener('mousemove', onSketchMouseMove);
+            renderer.domElement.style.cursor = 'crosshair';
+        }
+
+        // Attach keyboard event listener for dimension input
+        document.addEventListener('keydown', onSketchKeyDown);
+
+        // Get dimension input display element
+        dimensionInputDisplay = document.getElementById('dimension-input-display');
+
+        // Get 2D snap indicator elements
+        snapIndicator2D = document.getElementById('snap-indicator-2d');
+        snapIcon = document.getElementById('snap-icon');
+        snapLabel = document.getElementById('snap-label');
+
+        // OrbitControls stays enabled - user can rotate/pan with right-click/wheel
+
+        // Enable buttons
+        const clearSketchBtn = document.getElementById('clear-sketch-btn');
+        const closeSketchBtn = document.getElementById('close-sketch-btn');
+        if (clearSketchBtn) clearSketchBtn.disabled = false;
+        if (closeSketchBtn) closeSketchBtn.disabled = false;
+
+        showToast('스케치 시작: 왼쪽 클릭으로 점 추가. 우클릭/휠로 카메라 조작 가능', 'info');
+        console.log('[3D Viewer] 3D Sketch mode started');
+    }
+
+    /**
+     * Sketch event handlers (3D only - no 2D canvas)
+     */
+    function onSketchMouseDown(event) {
+        // Only handle left click for adding points
+        if (event.button !== 0) return;
+
+        if (!isSketchDrawing || !selectedFace) return;
+
+        // Don't add point via click if dimension input mode is active
+        if (dimensionInputMode) {
+            console.log('[3D Viewer] Dimension input mode active - use Enter to confirm');
+            return;
+        }
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // Use current snap point if available, otherwise raycast to face
+        let point3D;
+
+        if (currentSnapPoint) {
+            // Use snap point
+            point3D = currentSnapPoint.clone();
+            console.log('[3D Viewer] Using snap point:', point3D);
+        } else {
+            // Raycast to face plane
+            const mouseNDC = new THREE.Vector2(
+                (x / rect.width) * 2 - 1,
+                -(y / rect.height) * 2 + 1
+            );
+
+            raycaster.setFromCamera(mouseNDC, camera);
+            const facePlane = new THREE.Plane();
+            facePlane.setFromNormalAndCoplanarPoint(selectedFace.normal, selectedFace.point);
+
+            point3D = new THREE.Vector3();
+            raycaster.ray.intersectPlane(facePlane, point3D);
+
+            if (!point3D) {
+                console.warn('[3D Viewer] Could not project mouse to face plane');
+                return;
+            }
+        }
+
+        // Check for snap to first point (close polygon)
+        const snapDistance3D = 0.2; // World units
+        if (sketchPoints3D.length >= 3) {
+            const firstPoint3D = sketchPoints3D[0];
+            const distance3D = point3D.distanceTo(firstPoint3D);
+
+            if (distance3D < snapDistance3D) {
+                // Snap to first point and close sketch automatically
+                console.log('[3D Viewer] Snapped to first point - auto closing sketch');
+                closeSketch();
+                return;
+            }
+        }
+
+        // Add point to 3D array only
+        sketchPoints3D.push(point3D);
+
+        console.log('[3D Viewer] Added sketch point:', point3D, '(total:', sketchPoints3D.length, ')');
+
+        // Update 3D visualization
+        update3DSketchLine();
+    }
+
+    function onSketchMouseMove(event) {
+        if (!isSketchDrawing || !selectedFace) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // Raycast to face plane to get current 3D position
+        const mouseNDC = new THREE.Vector2(
+            (x / rect.width) * 2 - 1,
+            -(y / rect.height) * 2 + 1
+        );
+
+        raycaster.setFromCamera(mouseNDC, camera);
+        const facePlane = new THREE.Plane();
+        facePlane.setFromNormalAndCoplanarPoint(selectedFace.normal, selectedFace.point);
+
+        const point3D = new THREE.Vector3();
+        raycaster.ray.intersectPlane(facePlane, point3D);
+
+        if (!point3D) {
+            // Clear preview and snap indicator if raycast fails
+            updatePreviewLine(null);
+            updateSnapIndicator(null, null);
+            currentSnapPoint = null;
+            return;
+        }
+
+        // If dimension input mode is active, use fixed direction
+        if (dimensionInputMode && dimensionDirection && dimensionStartPoint) {
+            // Calculate point along the direction based on input buffer
+            const distance = parseFloat(dimensionInputBuffer) || 0;
+            const targetPoint = dimensionStartPoint.clone().add(
+                dimensionDirection.clone().multiplyScalar(distance)
+            );
+
+            updatePreviewLine(targetPoint, false);
+            return;
+        }
+
+        // Update direction for potential dimension input (if there's a last point)
+        if (sketchPoints3D.length > 0) {
+            const lastPoint = sketchPoints3D[sketchPoints3D.length - 1];
+            const direction = new THREE.Vector3().subVectors(point3D, lastPoint);
+            const distance = direction.length();
+
+            if (distance > 0.01) { // Avoid zero-length vectors
+                dimensionDirection = direction.normalize();
+                dimensionStartPoint = lastPoint.clone();
+            }
+        }
+
+        // Snap priority (highest to lowest):
+        // 1. First point snap (for closing polygon)
+        // 2. Vertex snap
+        // 3. Edge midpoint snap
+        // 4. Orthogonal snap
+        // 5. Edge snap
+
+        let finalSnapPoint = point3D;
+        let finalSnapType = null;
+        let snapToFirst = false;
+
+        // Check for snap to first point (highest priority when available)
+        const snapDistance3D = 0.2; // World units
+        if (sketchPoints3D.length >= 3) {
+            const firstPoint3D = sketchPoints3D[0];
+            const distance3D = point3D.distanceTo(firstPoint3D);
+
+            if (distance3D < snapDistance3D) {
+                snapToFirst = true;
+                finalSnapPoint = firstPoint3D;
+                finalSnapType = 'first';
+            }
+        }
+
+        // If not snapping to first point, check other snaps
+        if (!snapToFirst) {
+            // Check vertex/edge snaps
+            const snapResult = findSnapPoint(point3D);
+
+            if (snapResult) {
+                // Vertex and midpoint have high priority
+                if (snapResult.type === 'vertex' || snapResult.type === 'edge-midpoint') {
+                    finalSnapPoint = snapResult.point;
+                    finalSnapType = snapResult.type;
+                    currentSnapPoint = snapResult.point;
+                }
+                // Edge snap has lower priority, check orthogonal first
+                else if (snapResult.type === 'edge') {
+                    const orthoSnap = findOrthogonalSnap(point3D);
+                    if (orthoSnap) {
+                        finalSnapPoint = orthoSnap.point;
+                        finalSnapType = 'orthogonal';
+                        currentSnapPoint = orthoSnap.point;
+                    } else {
+                        finalSnapPoint = snapResult.point;
+                        finalSnapType = snapResult.type;
+                        currentSnapPoint = snapResult.point;
+                    }
+                }
+            } else {
+                // No vertex/edge snap, check orthogonal
+                const orthoSnap = findOrthogonalSnap(point3D);
+                if (orthoSnap) {
+                    finalSnapPoint = orthoSnap.point;
+                    finalSnapType = 'orthogonal';
+                    currentSnapPoint = orthoSnap.point;
+                } else {
+                    currentSnapPoint = null;
+                }
+            }
+        }
+
+        // Update snap indicator
+        updateSnapIndicator(finalSnapPoint, finalSnapType);
+
+        // Update 3D preview line
+        updatePreviewLine(finalSnapPoint, snapToFirst);
+    }
+
+    /**
+     * Keyboard input handler for dimension entry
+     */
+    function onSketchKeyDown(event) {
+        if (!isSketchDrawing || !selectedFace) return;
+
+        const key = event.key;
+
+        // Number keys (0-9) or decimal point
+        if (/^[0-9.]$/.test(key)) {
+            event.preventDefault();
+
+            // Activate dimension input mode if there's at least one point
+            if (sketchPoints3D.length > 0 && !dimensionInputMode) {
+                dimensionInputMode = true;
+                console.log('[3D Viewer] Dimension input mode activated');
+            }
+
+            // Add to buffer (prevent multiple decimal points)
+            if (key === '.' && dimensionInputBuffer.includes('.')) {
+                return;
+            }
+
+            dimensionInputBuffer += key;
+            updateDimensionInputDisplay();
+        }
+        // Backspace - remove last character
+        else if (key === 'Backspace') {
+            if (dimensionInputMode && dimensionInputBuffer.length > 0) {
+                event.preventDefault();
+                dimensionInputBuffer = dimensionInputBuffer.slice(0, -1);
+                updateDimensionInputDisplay();
+
+                // Exit dimension mode if buffer is empty
+                if (dimensionInputBuffer.length === 0) {
+                    cancelDimensionInput();
+                }
+            }
+        }
+        // Enter - apply dimension input
+        else if (key === 'Enter') {
+            if (dimensionInputMode && dimensionInputBuffer.length > 0) {
+                event.preventDefault();
+                applyDimensionInput();
+            }
+        }
+        // Escape - cancel dimension input
+        else if (key === 'Escape') {
+            if (dimensionInputMode) {
+                event.preventDefault();
+                cancelDimensionInput();
+            }
+        }
+    }
+
+    /**
+     * Update dimension input display
+     */
+    function updateDimensionInputDisplay() {
+        if (!dimensionInputDisplay) return;
+
+        if (dimensionInputMode && dimensionInputBuffer.length > 0) {
+            dimensionInputDisplay.style.display = 'block';
+            const textElement = document.getElementById('dimension-input-text');
+            if (textElement) {
+                textElement.textContent = `길이: ${dimensionInputBuffer}`;
+            }
+        } else {
+            dimensionInputDisplay.style.display = 'none';
+        }
+    }
+
+    /**
+     * Apply dimension input (Enter key)
+     */
+    function applyDimensionInput() {
+        if (!dimensionDirection || !dimensionStartPoint) {
+            console.warn('[3D Viewer] No direction set for dimension input');
+            cancelDimensionInput();
+            return;
+        }
+
+        const distance = parseFloat(dimensionInputBuffer);
+        if (isNaN(distance) || distance <= 0) {
+            showToast('유효한 거리를 입력하세요', 'warning');
+            cancelDimensionInput();
+            return;
+        }
+
+        // Calculate target point
+        const targetPoint = dimensionStartPoint.clone().add(
+            dimensionDirection.clone().multiplyScalar(distance)
+        );
+
+        // Add point to sketch
+        sketchPoints3D.push(targetPoint);
+
+        console.log('[3D Viewer] Added dimension point:', targetPoint, 'distance:', distance);
+
+        // Update 3D visualization
+        update3DSketchLine();
+
+        // Reset dimension input mode for next input
+        cancelDimensionInput();
+    }
+
+    /**
+     * Cancel dimension input (Escape key or empty buffer)
+     */
+    function cancelDimensionInput() {
+        dimensionInputMode = false;
+        dimensionInputBuffer = '';
+        dimensionDirection = null;
+        dimensionStartPoint = null;
+
+        if (dimensionInputDisplay) {
+            dimensionInputDisplay.style.display = 'none';
+        }
+
+        // Note: Don't hide snap indicator here - it should continue showing geometry snaps
+
+        console.log('[3D Viewer] Dimension input cancelled');
+    }
+
+    /**
+     * Clear sketch
+     */
+    function clearSketch() {
+        sketchPoints3D = [];
+
+        // Remove 3D visualizations
+        if (sketch3DLine) {
+            scene.remove(sketch3DLine);
+            sketch3DLine = null;
+        }
+        if (previewLine) {
+            scene.remove(previewLine);
+            previewLine = null;
+        }
+        if (snapIndicator) {
+            scene.remove(snapIndicator);
+            snapIndicator = null;
+        }
+
+        // Hide 2D snap indicator
+        if (snapIndicator2D) {
+            snapIndicator2D.style.display = 'none';
+        }
+
+        // Reset dimension input
+        cancelDimensionInput();
+
+        const applySketchSplitBtn = document.getElementById('apply-sketch-split-btn');
+        if (applySketchSplitBtn) applySketchSplitBtn.disabled = true;
+
+        console.log('[3D Viewer] Sketch cleared');
+    }
+
+    /**
+     * Close sketch (complete polygon)
+     */
+    function closeSketch() {
+        if (sketchPoints3D.length < 3) {
+            showToast('최소 3개의 점이 필요합니다', 'warning');
+            return;
+        }
+
+        // Add closing line to 3D visualization
+        if (sketch3DLine && sketchPoints3D.length >= 3) {
+            scene.remove(sketch3DLine);
+
+            // Create closed polygon by including first point at the end
+            const closedPoints = [...sketchPoints3D, sketchPoints3D[0]];
+            const geometry = new THREE.BufferGeometry().setFromPoints(closedPoints);
+            const material = new THREE.LineBasicMaterial({
+                color: 0xff0000,
+                linewidth: 2,
+                depthTest: false,
+                transparent: true
+            });
+
+            sketch3DLine = new THREE.Line(geometry, material);
+            sketch3DLine.renderOrder = 999;
+            scene.add(sketch3DLine);
+        }
+
+        // Remove preview line and snap indicator
+        if (previewLine) {
+            scene.remove(previewLine);
+            previewLine = null;
+        }
+        if (snapIndicator) {
+            scene.remove(snapIndicator);
+            snapIndicator = null;
+        }
+
+        // Stop sketch drawing - remove event listeners
+        isSketchDrawing = false;
+        if (renderer && renderer.domElement) {
+            renderer.domElement.removeEventListener('mousedown', onSketchMouseDown);
+            renderer.domElement.removeEventListener('mousemove', onSketchMouseMove);
+            renderer.domElement.style.cursor = 'default';
+        }
+        document.removeEventListener('keydown', onSketchKeyDown);
+
+        // Hide dimension input display
+        if (dimensionInputDisplay) {
+            dimensionInputDisplay.style.display = 'none';
+        }
+
+        // Hide 2D snap indicator
+        if (snapIndicator2D) {
+            snapIndicator2D.style.display = 'none';
+        }
+
+        // Reset dimension input mode
+        dimensionInputMode = false;
+        dimensionInputBuffer = '';
+        dimensionDirection = null;
+        dimensionStartPoint = null;
+
+        // Disable clear and close buttons, enable apply button
+        const clearSketchBtn = document.getElementById('clear-sketch-btn');
+        const closeSketchBtn = document.getElementById('close-sketch-btn');
+        const applySketchSplitBtn = document.getElementById('apply-sketch-split-btn');
+
+        if (clearSketchBtn) clearSketchBtn.disabled = true;
+        if (closeSketchBtn) closeSketchBtn.disabled = true;
+        if (applySketchSplitBtn) applySketchSplitBtn.disabled = false;
+
+        showToast('스케치 완료! 분할을 적용하세요', 'success');
+        console.log('[3D Viewer] Sketch closed with', sketchPoints3D.length, 'points');
+    }
+
+    /**
+     * Apply sketch split
+     */
+    function applySketchSplit() {
+        if (!selectedObject || !selectedFace || sketchPoints3D.length < 3) {
+            showToast('스케치가 완료되지 않았습니다', 'warning');
+            return;
+        }
+
+        console.log('[3D Viewer] Starting sketch split operation...');
+        console.log('[3D Viewer] Sketch points (3D):', sketchPoints3D);
+
+        try {
+            // Step 1: Use already computed 3D points (no conversion needed)
+            const sketch3DPoints = sketchPoints3D;
+            console.log('[3D Viewer] Using 3D sketch points:', sketch3DPoints.length, 'points');
+
+            // Step 2: Create extrusion geometry from sketch
+            const extrusionDepth = calculateExtrusionDepth(selectedObject);
+            const extrusionGeometry = createExtrusionFromSketch(sketch3DPoints, selectedFace, extrusionDepth);
+            console.log('[3D Viewer] Extrusion geometry created');
+
+            // Step 3: Visualize extrusion for debugging
+            visualizeExtrusion(extrusionGeometry);
+
+            // Step 4: Perform Boolean operations using ThreeBSP
+            // Check if ThreeBSP is loaded
+            console.log('[3D Viewer] Checking ThreeBSP library...');
+            console.log('  - ThreeBSP:', typeof ThreeBSP);
+
+            if (typeof ThreeBSP === 'undefined') {
+                console.error('[3D Viewer] ThreeBSP library not loaded. Cannot proceed.');
+                showToast('CSG 라이브러리가 로드되지 않았습니다. 페이지를 새로고침하세요.', 'error');
+                return;
+            }
+
+            console.log('[3D Viewer] Starting ThreeBSP Boolean operations...');
+
+            // Apply transformations to geometries to work in world space
+            selectedObject.updateMatrixWorld(true);
+            const originalGeometry = selectedObject.geometry.clone();
+            originalGeometry.applyMatrix4(selectedObject.matrixWorld);
+
+            console.log('[3D Viewer] Original object world matrix:', selectedObject.matrixWorld);
+            console.log('[3D Viewer] Original geometry transformed to world space');
+
+            // Extrusion is already in world space, no transformation needed
+
+            // Convert to BSP (pass mesh with identity matrix since geometry is already in world space)
+            console.log('[3D Viewer] Converting to BSP format...');
+            const originalMesh = new THREE.Mesh(originalGeometry);
+            originalMesh.updateMatrix(); // Ensure matrix is identity
+
+            const extrusionMesh = new THREE.Mesh(extrusionGeometry);
+            extrusionMesh.updateMatrix(); // Ensure matrix is identity
+
+            const originalBSP = new ThreeBSP(originalMesh);
+            const extrusionBSP = new ThreeBSP(extrusionMesh);
+
+            console.log('[3D Viewer] BSP created with identity matrices (geometry already in world space)');
+
+            console.log('[3D Viewer] Performing SUBTRACT operation...');
+            // Operation 1: Original - Extrusion = Remainder (main object with hole)
+            const remainderBSP = originalBSP.subtract(extrusionBSP);
+
+            console.log('[3D Viewer] Performing INTERSECT operation...');
+            // Operation 2: Original ∩ Extrusion = Extracted part
+            const extractedBSP = originalBSP.intersect(extrusionBSP);
+
+            console.log('[3D Viewer] Converting BSP back to BufferGeometry...');
+            const remainderBufferGeometry = remainderBSP.toGeometry();
+            const extractedBufferGeometry = extractedBSP.toGeometry();
+
+            console.log('[3D Viewer] CSG operations complete');
+            console.log('  - Remainder geometry:', remainderBufferGeometry);
+            console.log('  - Extracted geometry:', extractedBufferGeometry);
+
+            // Validate results
+            if (!remainderBufferGeometry.attributes.position || !extractedBufferGeometry.attributes.position ||
+                remainderBufferGeometry.attributes.position.count === 0 ||
+                extractedBufferGeometry.attributes.position.count === 0) {
+                console.error('[3D Viewer] CSG operation produced empty geometry');
+                showToast('분할 연산 실패: 빈 형상이 생성되었습니다', 'error');
+                return;
+            }
+
+            // Normals are already computed in toGeometry()
+            console.log('[3D Viewer] Geometries validated and ready');
+
+            // Get original material
+            let originalMaterial = originalMaterials.get(selectedObject);
+            if (!originalMaterial) {
+                originalMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xcccccc,
+                    metalness: 0.0,
+                    roughness: 1.0,
+                    flatShading: true,
+                    side: THREE.DoubleSide
+                });
+            }
+
+            const remainderMaterial = originalMaterial.clone();
+            const extractedMaterial = originalMaterial.clone();
+            remainderMaterial.flatShading = true;
+            extractedMaterial.flatShading = true;
+
+            const remainderMesh = new THREE.Mesh(remainderBufferGeometry, remainderMaterial);
+            const extractedMesh = new THREE.Mesh(extractedBufferGeometry, extractedMaterial);
+
+            // Enable shadows
+            remainderMesh.castShadow = true;
+            remainderMesh.receiveShadow = true;
+            extractedMesh.castShadow = true;
+            extractedMesh.receiveShadow = true;
+
+            // Add boundary edges
+            const remainderBoundaryGeometry = getBoundaryEdges(remainderBufferGeometry);
+            const remainderLineSegments = new THREE.LineSegments(
+                remainderBoundaryGeometry,
+                new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+            );
+            remainderMesh.add(remainderLineSegments);
+
+            const extractedBoundaryGeometry = getBoundaryEdges(extractedBufferGeometry);
+            const extractedLineSegments = new THREE.LineSegments(
+                extractedBoundaryGeometry,
+                new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+            );
+            extractedMesh.add(extractedLineSegments);
+
+            // Preserve original color
+            const preservedOriginalColor = selectedObject.userData.originalColor ||
+                                          originalMaterial.color.clone();
+
+            // Store metadata
+            remainderMesh.userData = {
+                ...selectedObject.userData,
+                isSplitPart: true,
+                splitPartType: 'remainder',
+                splitMethod: 'sketch',
+                originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                originalColor: preservedOriginalColor.clone(),
+                displayColor: remainderMaterial.color.clone()
+            };
+
+            extractedMesh.userData = {
+                ...selectedObject.userData,
+                isSplitPart: true,
+                splitPartType: 'extracted',
+                splitMethod: 'sketch',
+                originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                originalColor: preservedOriginalColor.clone(),
+                displayColor: extractedMaterial.color.clone()
+            };
+
+            // Compute bounding boxes and spheres
+            remainderBufferGeometry.computeBoundingBox();
+            remainderBufferGeometry.computeBoundingSphere();
+            extractedBufferGeometry.computeBoundingBox();
+            extractedBufferGeometry.computeBoundingSphere();
+
+            console.log('[3D Viewer] Geometries ready - normals and bounds computed');
+
+            // Clear selection and restore material before removing object
+            if (selectedObject) {
+                const originalMat = originalMaterials.get(selectedObject);
+                if (originalMat) {
+                    selectedObject.material = originalMat;
+                }
+            }
+
+            // Remove original object and visualization
+            scene.remove(selectedObject);
+            selectedObject = null; // Clear selection
+
+            // Remove extrusion visualization
+            const extrusionViz = scene.getObjectByName('sketch-extrusion-visualization');
+            if (extrusionViz) {
+                scene.remove(extrusionViz);
+            }
+
+            // Add split parts to scene
+            scene.add(remainderMesh);
+            scene.add(extractedMesh);
+
+            // Store in original materials map for future operations
+            originalMaterials.set(remainderMesh, remainderMaterial.clone());
+            originalMaterials.set(extractedMesh, extractedMaterial.clone());
+
+            console.log('[3D Viewer] Sketch split complete - objects added to scene');
+            console.log('  - Remainder vertices:', remainderBufferGeometry.attributes.position.count);
+            console.log('  - Extracted vertices:', extractedBufferGeometry.attributes.position.count);
+
+            showToast('스케치 분할 완료', 'success');
+
+            // Exit sketch mode
+            exitSketchMode();
+
+        } catch (error) {
+            console.error('[3D Viewer] Sketch split failed:', error);
+            showToast('스케치 분할 실패: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Convert 2D sketch points to 3D world coordinates
+     */
+    function convertSketchTo3D(points2D, face) {
+        const points3D = [];
+
+        // Get canvas dimensions
+        const canvas = renderer.domElement;
+        const canvasRect = canvas.getBoundingClientRect();
+
+        for (const point2D of points2D) {
+            // Convert canvas coordinates to NDC (Normalized Device Coordinates)
+            const x = (point2D.x / canvasRect.width) * 2 - 1;
+            const y = -(point2D.y / canvasRect.height) * 2 + 1;
+
+            // Create raycaster from screen point
+            const mouse = new THREE.Vector2(x, y);
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+
+            // Intersect with a plane at the selected face
+            const facePlane = new THREE.Plane();
+            facePlane.setFromNormalAndCoplanarPoint(face.normal, face.point);
+
+            const intersection = new THREE.Vector3();
+            raycaster.ray.intersectPlane(facePlane, intersection);
+
+            if (intersection) {
+                points3D.push(intersection);
+            } else {
+                console.warn('[3D Viewer] Could not project point to face plane:', point2D);
+            }
+        }
+
+        return points3D;
+    }
+
+    /**
+     * Calculate appropriate extrusion depth based on object size
+     */
+    function calculateExtrusionDepth(object) {
+        object.geometry.computeBoundingBox();
+        const bbox = object.geometry.boundingBox;
+
+        // Use longest dimension as reference
+        const sizeX = bbox.max.x - bbox.min.x;
+        const sizeY = bbox.max.y - bbox.min.y;
+        const sizeZ = bbox.max.z - bbox.min.z;
+        const maxSize = Math.max(sizeX, sizeY, sizeZ);
+
+        // Extrusion depth = 150% of max size to ensure it cuts through
+        return maxSize * 1.5;
+    }
+
+    /**
+     * Create extrusion geometry from 3D sketch points
+     */
+    function createExtrusionFromSketch(points3D, face, depth) {
+        // Create a shape from the 3D points
+        // We need to project them to a local 2D coordinate system on the face plane
+
+        // Create local coordinate system on the face
+        const normal = face.normal.clone();
+        const tangent = new THREE.Vector3();
+        const bitangent = new THREE.Vector3();
+
+        // Find tangent (perpendicular to normal)
+        if (Math.abs(normal.x) < 0.9) {
+            tangent.set(1, 0, 0);
+        } else {
+            tangent.set(0, 1, 0);
+        }
+        tangent.cross(normal).normalize();
+
+        // Bitangent (perpendicular to both)
+        bitangent.crossVectors(normal, tangent).normalize();
+
+        console.log('[3D Viewer] Local coordinate system:');
+        console.log('  Normal:', normal);
+        console.log('  Tangent:', tangent);
+        console.log('  Bitangent:', bitangent);
+
+        // Project 3D points to 2D local coordinates
+        const points2DLocal = points3D.map(p => {
+            const localPoint = p.clone().sub(face.point);
+            return new THREE.Vector2(
+                localPoint.dot(tangent),
+                localPoint.dot(bitangent)
+            );
+        });
+
+        console.log('[3D Viewer] Local 2D points:', points2DLocal);
+
+        // Create Three.js Shape
+        const shape = new THREE.Shape();
+        if (points2DLocal.length > 0) {
+            shape.moveTo(points2DLocal[0].x, points2DLocal[0].y);
+            for (let i = 1; i < points2DLocal.length; i++) {
+                shape.lineTo(points2DLocal[i].x, points2DLocal[i].y);
+            }
+            shape.lineTo(points2DLocal[0].x, points2DLocal[0].y); // Close the shape
+        }
+
+        // Extrude the shape
+        const extrudeSettings = {
+            depth: depth,
+            bevelEnabled: false
+        };
+
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+
+        // Transform geometry to world space
+        // The extrusion is in local 2D space, we need to transform it
+        const matrix = new THREE.Matrix4();
+
+        // Create transformation matrix from local coordinate system
+        // Column 1: tangent, Column 2: bitangent, Column 3: -normal (extrude inward)
+        matrix.set(
+            tangent.x, bitangent.x, -normal.x, face.point.x,
+            tangent.y, bitangent.y, -normal.y, face.point.y,
+            tangent.z, bitangent.z, -normal.z, face.point.z,
+            0, 0, 0, 1
+        );
+
+        geometry.applyMatrix4(matrix);
+
+        return geometry;
+    }
+
+    /**
+     * Visualize extrusion for debugging
+     */
+    function visualizeExtrusion(geometry) {
+        // Remove previous visualization
+        const oldVisualization = scene.getObjectByName('sketch-extrusion-visualization');
+        if (oldVisualization) {
+            scene.remove(oldVisualization);
+        }
+
+        // Create mesh with semi-transparent material
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide,
+            wireframe: false
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = 'sketch-extrusion-visualization';
+        scene.add(mesh);
+
+        // Add wireframe
+        const wireframe = new THREE.WireframeGeometry(geometry);
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
+        const wireframeMesh = new THREE.LineSegments(wireframe, lineMaterial);
+        mesh.add(wireframeMesh);
+
+        console.log('[3D Viewer] Extrusion visualized (green semi-transparent)');
+        showToast('녹색 반투명 영역이 분할될 부분입니다', 'info');
     }
 
 })();
