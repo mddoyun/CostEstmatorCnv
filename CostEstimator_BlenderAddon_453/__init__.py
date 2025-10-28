@@ -323,12 +323,12 @@ def process_event_queue_timer():
     global timer_call_count
     timer_call_count += 1
 
-    # Only print every 50 calls to avoid spam, unless there's a message
-    if timer_call_count % 50 == 0:
-        print(f"[DEBUG] Timer running (call #{timer_call_count}), queue size: {event_queue.qsize()}")
+    # Print every call when debugging connectivity issues
+    queue_size = event_queue.qsize()
+    if timer_call_count % 10 == 0 or queue_size > 0:
+        print(f"[DEBUG] Timer tick #{timer_call_count}, queue size: {queue_size}")
 
     try:
-        queue_size = event_queue.qsize()
         if queue_size > 0:
             print(f"[DEBUG] Queue has {queue_size} messages (timer call #{timer_call_count})")
 

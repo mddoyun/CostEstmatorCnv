@@ -6,8 +6,8 @@ from django.db.models import F
 # ▼▼▼ [추가] Count 임포트 ▼▼▼
 from django.db.models import Count
 # ▲▲▲ [추가] 여기까지 ▲▲▲
-# ▼▼▼ [수정] AIModel 임포트 추가 ▼▼▼
-from .models import Project, RawElement, QuantityClassificationTag, QuantityMember, AIModel
+# ▼▼▼ [수정] AIModel, SplitElement 임포트 추가 ▼▼▼
+from .models import Project, RawElement, QuantityClassificationTag, QuantityMember, AIModel, SplitElement
 # ▲▲▲ [수정] 여기까지 ▲▲▲
 import asyncio
 # --- 데이터 직렬화 헬퍼 함수들 ---
@@ -118,6 +118,83 @@ def serialize_specific_elements(element_ids):
         # 디버깅: 오류 발생
         print(f"[ERROR][DB Async][serialize_specific_elements] Exception: {e}")
         return []
+
+@database_sync_to_async
+def get_split_elements_for_project(project_id):
+    """
+    프로젝트의 모든 활성 분할 객체를 가져옵니다.
+
+    Returns:
+        tuple: (split_elements_list, raw_element_ids_with_splits_set)
+        - split_elements_list: 분할 객체 목록 (직렬화됨)
+        - raw_element_ids_with_splits_set: 분할이 있는 RawElement ID 목록 (set)
+    """
+    print(f"[DEBUG][DB Async][get_split_elements_for_project] Querying split elements for project: {project_id}")
+
+    try:
+        # 활성 분할 객체 조회
+        split_elements = SplitElement.objects.filter(
+            project_id=project_id,
+            is_active=True
+        ).select_related('raw_element').values(
+            'id',
+            'raw_element_id',
+            'parent_split_id',
+            'original_geometry_volume',
+            'geometry_volume',
+            'volume_ratio',
+            'split_method',
+            'split_axis',
+            'split_position',
+            'split_part_type',
+            'geometry_data',
+            'sketch_data',
+            'metadata',
+            'created_at',
+            'updated_at'
+        )
+
+        split_elements_list = list(split_elements)
+
+        # 분할이 있는 RawElement ID들을 수집
+        raw_element_ids_with_splits = set()
+
+        # 직렬화 및 RawElement ID 수집
+        for split_data in split_elements_list:
+            # UUID를 문자열로 변환
+            split_data['id'] = str(split_data['id'])
+            split_data['raw_element_id'] = str(split_data['raw_element_id'])
+
+            # 분할이 있는 RawElement ID 추가
+            raw_element_ids_with_splits.add(split_data['raw_element_id'])
+
+            if split_data.get('parent_split_id'):
+                split_data['parent_split_id'] = str(split_data['parent_split_id'])
+
+            # Decimal을 float로 변환
+            if split_data.get('original_geometry_volume') is not None:
+                split_data['original_geometry_volume'] = float(split_data['original_geometry_volume'])
+            if split_data.get('geometry_volume') is not None:
+                split_data['geometry_volume'] = float(split_data['geometry_volume'])
+            if split_data.get('volume_ratio') is not None:
+                split_data['volume_ratio'] = float(split_data['volume_ratio'])
+            if split_data.get('split_position') is not None:
+                split_data['split_position'] = float(split_data['split_position'])
+
+            # Datetime을 ISO 형식 문자열로 변환
+            split_data['created_at'] = split_data['created_at'].isoformat()
+            split_data['updated_at'] = split_data['updated_at'].isoformat()
+
+        print(f"[DEBUG][DB Async][get_split_elements_for_project] Found {len(split_elements_list)} active split elements")
+        print(f"[DEBUG][DB Async][get_split_elements_for_project] {len(raw_element_ids_with_splits)} RawElements have splits")
+
+        return split_elements_list, raw_element_ids_with_splits
+
+    except Exception as e:
+        print(f"[ERROR][DB Async][get_split_elements_for_project] Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return [], set()
 
 class RevitConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -360,7 +437,21 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                 print(f"\n[DEBUG] 프론트엔드로부터 '{project_id}' 프로젝트의 모든 객체 데이터 요청을 받았습니다.") # 기존 print 유지
                 total_elements = await get_total_element_count(project_id)
                 print(f"[DEBUG] 총 {total_elements}개의 객체를 전송 시작합니다.") # 기존 print 유지
-                await self.send(text_data=json.dumps({'type': 'revit_data_start', 'payload': {'total': total_elements}}))
+
+                # ▼▼▼ [추가] 분할 객체 데이터 조회 ▼▼▼
+                split_elements, raw_element_ids_with_splits = await get_split_elements_for_project(project_id)
+                print(f"[DEBUG] {len(split_elements)}개의 활성 분할 객체를 찾았습니다.")
+                print(f"[DEBUG] {len(raw_element_ids_with_splits)}개의 BIM 원본 객체가 분할되었습니다.")
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+                await self.send(text_data=json.dumps({
+                    'type': 'revit_data_start',
+                    'payload': {
+                        'total': total_elements,
+                        'split_elements': split_elements,  # ▼▼▼ [추가] 분할 객체 데이터 전송 ▼▼▼
+                        'raw_element_ids_with_splits': list(raw_element_ids_with_splits)  # ▼▼▼ [추가] 분할된 BIM 원본 ID 목록 ▼▼▼
+                    }
+                }))
 
                 CHUNK_SIZE = 1000 # 성능 테스트 후 조절 가능
                 sent_count = 0
@@ -453,6 +544,29 @@ class FrontendConsumer(AsyncWebsocketConsumer):
              else:
                  print(f"[WARN] 유효하지 않거나 완료된 Task ID({task_id})에 대한 상태 요청 수신.")
         # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        # ▼▼▼ [추가] 3D 객체 분할 저장 처리 ▼▼▼
+        elif msg_type == 'save_split':
+            print(f"[DEBUG] 3D 객체 분할 저장 요청 수신")
+            try:
+                split_id = await self.db_save_split_element(payload)
+                print(f"[DEBUG] 분할 객체 저장 성공: {split_id}")
+                await self.send(text_data=json.dumps({
+                    'type': 'split_saved',
+                    'split_id': str(split_id),
+                    'success': True
+                }))
+            except Exception as e:
+                print(f"[ERROR] 분할 객체 저장 실패: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                await self.send(text_data=json.dumps({
+                    'type': 'split_save_error',
+                    'error': str(e),
+                    'success': False
+                }))
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
+
         else:
             # 디버깅: 알 수 없는 메시지 타입
             print(f"[WARNING][{self.__class__.__name__}] 처리되지 않은 메시지 유형: {msg_type}")
@@ -573,3 +687,78 @@ class FrontendConsumer(AsyncWebsocketConsumer):
             print(f"[DEBUG][DB Async][db_clear_tags] Tag clearing complete. {cleared_count} elements had tags cleared.")
         except Exception as e:
             print(f"[ERROR][DB Async][db_clear_tags] Exception during clearing: {e}")
+
+    # ▼▼▼ [추가] 3D 객체 분할 저장 메서드 ▼▼▼
+    @database_sync_to_async
+    def db_save_split_element(self, payload):
+        """
+        3D 뷰어에서 생성된 분할 객체를 DB에 저장
+
+        payload 구조:
+        {
+            'project_id': UUID,
+            'raw_element_id': UUID,
+            'parent_split_id': UUID (optional),
+            'original_geometry_volume': Decimal,
+            'geometry_volume': Decimal,
+            'volume_ratio': Decimal,
+            'split_method': 'plane' | 'sketch',
+            'split_axis': 'x' | 'y' | 'z' (plane only),
+            'split_position': Decimal (plane only),
+            'split_part_type': 'bottom' | 'top' | 'remainder' | 'extracted',
+            'geometry_data': {...},
+            'sketch_data': {...} (sketch only)
+        }
+        """
+        print(f"[DEBUG][DB Async][db_save_split_element] Saving split element...")
+
+        try:
+            # Project와 RawElement 가져오기
+            project = Project.objects.get(id=payload['project_id'])
+            raw_element = RawElement.objects.get(id=payload['raw_element_id'])
+
+            # Parent split (optional)
+            parent_split = None
+            if payload.get('parent_split_id'):
+                parent_split = SplitElement.objects.get(id=payload['parent_split_id'])
+
+            # SplitElement 생성
+            split_element = SplitElement.objects.create(
+                project=project,
+                raw_element=raw_element,
+                parent_split=parent_split,
+                original_geometry_volume=payload['original_geometry_volume'],
+                geometry_volume=payload['geometry_volume'],
+                volume_ratio=payload['volume_ratio'],
+                split_method=payload['split_method'],
+                split_axis=payload.get('split_axis'),  # plane only
+                split_position=payload.get('split_position'),  # plane only
+                split_part_type=payload['split_part_type'],
+                geometry_data=payload.get('geometry_data', {}),
+                sketch_data=payload.get('sketch_data', {}),
+                is_active=True
+            )
+
+            print(f"[DEBUG][DB Async][db_save_split_element] Split element saved successfully:")
+            print(f"  - ID: {split_element.id}")
+            print(f"  - RawElement: {raw_element.element_unique_id}")
+            print(f"  - Method: {split_element.split_method}")
+            print(f"  - Part Type: {split_element.split_part_type}")
+            print(f"  - Volume: {split_element.geometry_volume}")
+            print(f"  - Ratio: {float(split_element.volume_ratio) * 100:.2f}%")
+
+            return split_element.id
+
+        except Project.DoesNotExist:
+            print(f"[ERROR][DB Async][db_save_split_element] Project {payload.get('project_id')} not found")
+            raise Exception(f"Project {payload.get('project_id')} not found")
+        except RawElement.DoesNotExist:
+            print(f"[ERROR][DB Async][db_save_split_element] RawElement {payload.get('raw_element_id')} not found")
+            raise Exception(f"RawElement {payload.get('raw_element_id')} not found")
+        except SplitElement.DoesNotExist:
+            print(f"[ERROR][DB Async][db_save_split_element] Parent split {payload.get('parent_split_id')} not found")
+            raise Exception(f"Parent split {payload.get('parent_split_id')} not found")
+        except Exception as e:
+            print(f"[ERROR][DB Async][db_save_split_element] Exception during save: {e}")
+            raise e
+    # ▲▲▲ [추가] 여기까지 ▲▲▲

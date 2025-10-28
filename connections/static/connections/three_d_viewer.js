@@ -128,7 +128,8 @@
         renderer.setSize(width, height);
     }
 
-    function loadPlaceholderGeometry() {
+    // ▼▼▼ [수정] 전역으로 노출하여 websocket.js에서 호출 가능하도록 ▼▼▼
+    window.loadPlaceholderGeometry = function() {
         if (!scene) {
             console.error("[3D Viewer] Scene not initialized!");
             return;
@@ -136,6 +137,11 @@
 
         // Load actual BIM geometry from allRevitData
         console.log("[3D Viewer] Loading BIM geometry from allRevitData...");
+
+        // ▼▼▼ [추가] 분할된 BIM 원본 객체 ID 집합 확인 ▼▼▼
+        const rawElementIdsWithSplits = window.rawElementIdsWithSplits || new Set();
+        console.log(`[3D Viewer] ${rawElementIdsWithSplits.size} BIM objects have splits and will be hidden`);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Filter objects that have geometry data
         if (!window.allRevitData || window.allRevitData.length === 0) {
@@ -155,19 +161,57 @@
             return;
         }
 
+        // ▼▼▼ [수정] 분할된 BIM 원본 객체는 제외하고 필터링 ▼▼▼
         const geometryObjects = window.allRevitData
-            .filter(obj => obj.raw_data && obj.raw_data.Parameters && obj.raw_data.Parameters.Geometry)
+            .filter(obj => {
+                // BIM 원본 객체가 분할되었으면 제외
+                if (rawElementIdsWithSplits.has(obj.id)) {
+                    return false;
+                }
+                // 지오메트리 데이터가 있는 객체만 포함
+                return obj.raw_data && obj.raw_data.Parameters && obj.raw_data.Parameters.Geometry;
+            })
             .map(obj => ({
                 id: obj.id,
+                geometry_volume: obj.geometry_volume,
                 geometry: {
                     vertices: obj.raw_data.Parameters.Geometry.verts,
                     faces: obj.raw_data.Parameters.Geometry.faces,
                     matrix: obj.raw_data.Parameters.Geometry.matrix
                 }
             }));
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-        if (geometryObjects.length === 0) {
-            console.warn("[3D Viewer] No objects with geometry found in allRevitData. Loading placeholder cube instead.");
+        // ▼▼▼ [추가] 분할 객체 데이터 준비 ▼▼▼
+        const splitObjects = (window.allSplitElements || []).map(split => ({
+            id: split.id,
+            geometry_volume: split.geometry_volume,
+            geometry: {
+                vertices: split.geometry_data.vertices,
+                faces: split.geometry_data.faces,
+                matrix: split.geometry_data.matrix
+            },
+            // 분할 객체 메타데이터
+            isSplitElement: true,
+            rawElementId: split.raw_element_id,
+            parentSplitId: split.parent_split_id,
+            originalGeometryVolume: split.original_geometry_volume,
+            volumeRatio: split.volume_ratio,
+            splitMethod: split.split_method,
+            splitAxis: split.split_axis,
+            splitPosition: split.split_position,
+            splitPartType: split.split_part_type
+        }));
+
+        console.log(`[3D Viewer] Found ${geometryObjects.length} unsplit BIM objects with geometry data.`);
+        console.log(`[3D Viewer] Found ${splitObjects.length} split objects to load.`);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [수정] BIM 원본 객체와 분할 객체 합치기 ▼▼▼
+        const allObjectsToLoad = [...geometryObjects, ...splitObjects];
+
+        if (allObjectsToLoad.length === 0) {
+            console.warn("[3D Viewer] No objects with geometry found. Loading placeholder cube instead.");
 
             if (geometryLoaded) {
                 window.clearScene();
@@ -183,21 +227,22 @@
             return;
         }
 
-        console.log(`[3D Viewer] Found ${geometryObjects.length} objects with geometry data.`);
+        console.log(`[3D Viewer] Total objects to load: ${allObjectsToLoad.length}`);
 
         // [DEBUG] Check first object's matrix
-        if (geometryObjects.length > 0) {
-            console.log('[DEBUG] First geometry object:', geometryObjects[0]);
-            console.log('[DEBUG] Matrix:', geometryObjects[0].geometry.matrix);
-            console.log('[DEBUG] Matrix length:', geometryObjects[0].geometry.matrix ? geometryObjects[0].geometry.matrix.length : 'null');
-            console.log('[DEBUG] Matrix type:', typeof geometryObjects[0].geometry.matrix);
-            console.log('[DEBUG] Vertices sample:', geometryObjects[0].geometry.vertices.slice(0, 3));
-            console.log('[DEBUG] Faces sample:', geometryObjects[0].geometry.faces.slice(0, 3));
+        if (allObjectsToLoad.length > 0) {
+            console.log('[DEBUG] First geometry object:', allObjectsToLoad[0]);
+            console.log('[DEBUG] Matrix:', allObjectsToLoad[0].geometry.matrix);
+            console.log('[DEBUG] Matrix length:', allObjectsToLoad[0].geometry.matrix ? allObjectsToLoad[0].geometry.matrix.length : 'null');
+            console.log('[DEBUG] Matrix type:', typeof allObjectsToLoad[0].geometry.matrix);
+            console.log('[DEBUG] Vertices sample:', allObjectsToLoad[0].geometry.vertices.slice(0, 3));
+            console.log('[DEBUG] Faces sample:', allObjectsToLoad[0].geometry.faces.slice(0, 3));
         }
 
         // Load BIM geometry using the dedicated function
-        window.loadBimGeometry(geometryObjects);
-    }
+        window.loadBimGeometry(allObjectsToLoad);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+    };  // ▼▼▼ [수정] 전역 함수이므로 세미콜론 추가 ▼▼▼
 
     window.clearScene = function() {
         if (!scene) {
@@ -404,18 +449,35 @@
         const clearBtn = document.getElementById('clear-scene-btn');
         const splitBtn = document.getElementById('split-object-btn');
 
+        // Use onclick to avoid duplicate event listeners
         if (loadBtn) {
-            loadBtn.addEventListener('click', function() {
+            loadBtn.onclick = function() {
                 console.log("[3D Viewer] Load Geometry button clicked.");
-                loadPlaceholderGeometry();
-            });
+
+                // ▼▼▼ [수정] 서버에서 최신 데이터 요청 (분할 객체 포함) ▼▼▼
+                if (window.currentProjectId && window.frontendSocket && window.frontendSocket.readyState === WebSocket.OPEN) {
+                    console.log("[3D Viewer] Requesting fresh data from server (including split elements)...");
+                    window.frontendSocket.send(JSON.stringify({
+                        type: 'get_all_elements',
+                        payload: {
+                            project_id: window.currentProjectId
+                        }
+                    }));
+                    // Note: loadPlaceholderGeometry() will be called automatically
+                    // when 'revit_data_complete' is received via WebSocket
+                } else {
+                    console.warn("[3D Viewer] No project selected or WebSocket not connected. Loading from cached data.");
+                    loadPlaceholderGeometry();
+                }
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
+            };
         }
 
         if (clearBtn) {
-            clearBtn.addEventListener('click', function() {
+            clearBtn.onclick = function() {
                 console.log("[3D Viewer] Clear Scene button clicked.");
                 window.clearScene();
-            });
+            };
         }
 
         // Split mode controls
@@ -428,50 +490,50 @@
         const cancelSplitBtn = document.getElementById('cancel-split-btn');
 
         if (splitBtn) {
-            splitBtn.addEventListener('click', function() {
+            splitBtn.onclick = function() {
                 console.log("[3D Viewer] Entering split mode...");
                 // Show split controls, hide split button
                 if (splitControlsPanel) splitControlsPanel.style.display = 'flex';
                 splitBtn.style.display = 'none';
                 showSplitPlaneHelper();
-            });
+            };
         }
 
         if (splitAxisSelect) {
-            splitAxisSelect.addEventListener('change', function() {
+            splitAxisSelect.onchange = function() {
                 updateSliderRange();
                 updateSplitPlaneHelper();
-            });
+            };
         }
 
         if (splitPositionSlider) {
-            splitPositionSlider.addEventListener('input', function() {
+            splitPositionSlider.oninput = function() {
                 const value = parseFloat(this.value);
                 if (splitPositionValue) splitPositionValue.textContent = value + '%';
                 updateSplitPlaneHelper();
-            });
+            };
         }
 
         if (previewSplitBtn) {
-            previewSplitBtn.addEventListener('click', function() {
+            previewSplitBtn.onclick = function() {
                 console.log("[3D Viewer] Preview split plane");
                 updateSplitPlaneHelper();
-            });
+            };
         }
 
         if (applySplitBtn) {
-            applySplitBtn.addEventListener('click', function() {
+            applySplitBtn.onclick = function() {
                 console.log("[3D Viewer] Applying split...");
                 splitSelectedObject();
                 // exitSplitMode() is called inside splitSelectedObject()
-            });
+            };
         }
 
         if (cancelSplitBtn) {
-            cancelSplitBtn.addEventListener('click', function() {
+            cancelSplitBtn.onclick = function() {
                 console.log("[3D Viewer] Canceling split mode");
                 exitSplitMode();
-            });
+            };
         }
 
         // Sketch split mode controls
@@ -484,53 +546,54 @@
         const applySketchSplitBtn = document.getElementById('apply-sketch-split-btn');
         const cancelSketchBtn = document.getElementById('cancel-sketch-btn');
 
+        // Use onclick to avoid duplicate event listeners
         if (sketchSplitBtn) {
-            sketchSplitBtn.addEventListener('click', function() {
+            sketchSplitBtn.onclick = function() {
                 console.log("[3D Viewer] Entering sketch split mode...");
                 enterSketchMode();
-            });
+            };
         }
 
         if (selectFaceBtn) {
-            selectFaceBtn.addEventListener('click', function() {
+            selectFaceBtn.onclick = function() {
                 console.log("[3D Viewer] Select face mode activated");
                 activateFaceSelectionMode();
-            });
+            };
         }
 
         if (startSketchBtn) {
-            startSketchBtn.addEventListener('click', function() {
+            startSketchBtn.onclick = function() {
                 console.log("[3D Viewer] Starting sketch");
                 startSketchMode();
-            });
+            };
         }
 
         if (clearSketchBtn) {
-            clearSketchBtn.addEventListener('click', function() {
+            clearSketchBtn.onclick = function() {
                 console.log("[3D Viewer] Clearing sketch");
                 clearSketch();
-            });
+            };
         }
 
         if (closeSketchBtn) {
-            closeSketchBtn.addEventListener('click', function() {
+            closeSketchBtn.onclick = function() {
                 console.log("[3D Viewer] Closing sketch");
                 closeSketch();
-            });
+            };
         }
 
         if (applySketchSplitBtn) {
-            applySketchSplitBtn.addEventListener('click', function() {
+            applySketchSplitBtn.onclick = function() {
                 console.log("[3D Viewer] Applying sketch split");
                 applySketchSplit();
-            });
+            };
         }
 
         if (cancelSketchBtn) {
-            cancelSketchBtn.addEventListener('click', function() {
+            cancelSketchBtn.onclick = function() {
                 console.log("[3D Viewer] Canceling sketch mode");
                 exitSketchMode();
-            });
+            };
         }
 
         // Setup properties panel tab listeners
@@ -641,8 +704,10 @@
                 const lineSegments = new THREE.LineSegments(boundaryGeometry, lineMaterial);
                 mesh.add(lineSegments);
 
+                // ▼▼▼ [수정] 분할 객체는 이미 world space이므로 변환 건너뛰기 ▼▼▼
                 // Apply transformation matrix if available
-                if (geomData.matrix && geomData.matrix.length === 16) {
+                // Split objects are already in world space, so skip transformation
+                if (!bimObject.isSplitElement && geomData.matrix && geomData.matrix.length === 16) {
                     // IFC transformation matrix (4x4) - column-major format
                     const ifcMatrix = new THREE.Matrix4();
                     ifcMatrix.fromArray(geomData.matrix);
@@ -662,11 +727,33 @@
                     finalMatrix.multiplyMatrices(zUpToYUp, ifcMatrix);
                     mesh.applyMatrix4(finalMatrix);
                 }
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-                // Store BIM object ID for property lookup
-                mesh.userData = {
-                    bimObjectId: bimObject.id || index
-                };
+                // ▼▼▼ [수정] BIM 원본 객체와 분할 객체 구분하여 userData 설정 ▼▼▼
+                if (bimObject.isSplitElement) {
+                    // 분할 객체인 경우
+                    mesh.userData = {
+                        isSplitElement: true,
+                        splitId: bimObject.id,
+                        rawElementId: bimObject.rawElementId,
+                        parentSplitId: bimObject.parentSplitId,
+                        originalGeometryVolume: bimObject.originalGeometryVolume,
+                        geometryVolume: bimObject.geometry_volume,
+                        volumeRatio: bimObject.volumeRatio,
+                        splitMethod: bimObject.splitMethod,
+                        splitAxis: bimObject.splitAxis,
+                        splitPosition: bimObject.splitPosition,
+                        splitPartType: bimObject.splitPartType
+                    };
+                } else {
+                    // BIM 원본 객체인 경우
+                    mesh.userData = {
+                        bimObjectId: bimObject.id || index,
+                        rawElementId: bimObject.id || index,  // Same as bimObjectId, used for split DB storage
+                        geometry_volume: bimObject.geometry_volume  // DB volume for original BIM object
+                    };
+                }
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 scene.add(mesh);
 
@@ -720,11 +807,13 @@
         // Get all BIM meshes (exclude helpers like axes, grid, lights)
         const bimMeshes = [];
         scene.traverse(function(object) {
-            // Include both original BIM objects and split parts
+            // ▼▼▼ [수정] DB에서 로드한 분할 객체(isSplitElement)도 포함 ▼▼▼
+            // Include both original BIM objects and split parts (isSplitPart from runtime split, isSplitElement from DB)
             if (object instanceof THREE.Mesh && object.userData &&
-                (object.userData.bimObjectId || object.userData.isSplitPart)) {
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement)) {
                 bimMeshes.push(object);
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         });
 
         // Check for intersections (recursive to include edge lines)
@@ -758,11 +847,13 @@
                         obj = obj.parent;
                     }
 
+                    // ▼▼▼ [수정] DB에서 로드한 분할 객체(isSplitElement)도 포함 ▼▼▼
                     // Only include valid meshes
                     if (!(obj instanceof THREE.Mesh && obj.userData &&
-                          (obj.userData.bimObjectId || obj.userData.isSplitPart))) {
+                          (obj.userData.bimObjectId || obj.userData.isSplitPart || obj.userData.isSplitElement))) {
                         continue;
                     }
+                    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                     // Deduplicate: skip if we've already seen this mesh
                     const meshId = obj.uuid;
@@ -803,9 +894,10 @@
                 console.log('[3D Viewer] Clicked on edge line, selecting parent mesh');
             }
 
+            // ▼▼▼ [수정] DB에서 로드한 분할 객체(isSplitElement)도 포함 ▼▼▼
             // Verify we have a valid mesh with userData
             if (clickedObject instanceof THREE.Mesh && clickedObject.userData &&
-                (clickedObject.userData.bimObjectId || clickedObject.userData.isSplitPart)) {
+                (clickedObject.userData.bimObjectId || clickedObject.userData.isSplitPart || clickedObject.userData.isSplitElement)) {
 
                 // Check if we're in face selection mode
                 if (faceSelectionMode) {
@@ -817,6 +909,7 @@
                 console.warn('[3D Viewer] Clicked object is not a valid BIM mesh:', clickedObject);
                 deselectObject();
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         } else {
             // Clicked on empty space - deselect and reset cycle
             lastClickPosition = null;
@@ -856,7 +949,10 @@
         object.material = highlightMaterial;
         object.material.needsUpdate = true;
 
-        console.log("[3D Viewer] Object selected:", object.userData.bimObjectId);
+        // ▼▼▼ [수정] 분할 객체와 BIM 원본 모두 처리 ▼▼▼
+        const objectId = object.userData.bimObjectId || object.userData.splitId || object.userData.rawElementId;
+        console.log("[3D Viewer] Object selected:", objectId);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         console.log("[3D Viewer] Highlight material applied:", {
             color: highlightMaterial.color,
             opacity: highlightMaterial.opacity,
@@ -893,15 +989,27 @@
                 console.log('  - Volume Ratio:', (object.userData.volumeRatio * 100).toFixed(2) + '%');
             }
 
-            if (object.userData.originalVolume !== undefined) {
-                console.log('  - Original Volume:', object.userData.originalVolume.toFixed(6), 'cubic units');
+            if (object.userData.originalGeometryVolume !== undefined) {
+                console.log('  - Original BIM Volume:', object.userData.originalGeometryVolume.toFixed(6), 'cubic units');
             }
 
-            if (object.userData.isSplitPart) {
+            // ▼▼▼ [수정] DB에서 로드한 분할 객체(isSplitElement)도 포함 ▼▼▼
+            if (object.userData.isSplitPart || object.userData.isSplitElement) {
                 console.log('  - Split Part Type:', object.userData.splitPartType);
-                console.log('  - Split Axis:', object.userData.splitAxis);
-                console.log('  - Split Position:', object.userData.splitPosition.toFixed(2));
+
+                if (object.userData.splitMethod) {
+                    console.log('  - Split Method:', object.userData.splitMethod);
+                }
+
+                if (object.userData.splitAxis) {
+                    console.log('  - Split Axis:', object.userData.splitAxis.toUpperCase());
+                }
+
+                if (object.userData.splitPosition !== undefined) {
+                    console.log('  - Split Position:', object.userData.splitPosition.toFixed(2));
+                }
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
             console.log('[3D Viewer] =======================');
         }
     }
@@ -998,13 +1106,15 @@
         const propertiesContent = document.getElementById('three-d-properties-content');
         if (!propertiesContent) return;
 
-        // Find full BIM object from allRevitData using the stored ID (use originalObjectId for split parts)
-        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId;
+        // ▼▼▼ [수정] DB에서 로드한 분할 객체(rawElementId)도 포함 ▼▼▼
+        // Find full BIM object from allRevitData using the stored ID (use originalObjectId for split parts, rawElementId for DB-loaded splits)
+        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId || object.userData.rawElementId;
 
         if (!bimObjectId) {
             propertiesContent.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
             return;
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] Looking up BIM object with ID:', bimObjectId);
 
@@ -1085,13 +1195,15 @@
         const listContainer = document.getElementById('three-d-quantity-members-list');
         if (!listContainer) return;
 
-        // Get BIM object ID (use originalObjectId for split parts)
-        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId;
+        // ▼▼▼ [수정] DB에서 로드한 분할 객체(rawElementId)도 포함 ▼▼▼
+        // Get BIM object ID (use originalObjectId for split parts, rawElementId for DB-loaded splits)
+        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId || object.userData.rawElementId;
 
         if (!bimObjectId) {
             listContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
             return;
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Find all quantity members linked to this BIM object
         const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
@@ -1254,13 +1366,15 @@
             return;
         }
 
-        // Get BIM object ID (use originalObjectId for split parts)
-        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId;
+        // ▼▼▼ [수정] DB에서 로드한 분할 객체(rawElementId)도 포함 ▼▼▼
+        // Get BIM object ID (use originalObjectId for split parts, rawElementId for DB-loaded splits)
+        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId || object.userData.rawElementId;
 
         if (!bimObjectId) {
             tableContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
             return;
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] BIM Object ID:', bimObjectId);
 
@@ -1856,28 +1970,49 @@
             console.log('[3D Viewer] Geometries computed - normals, bounding boxes, and bounding spheres ready');
 
             // ===== Volume Ratio Calculation =====
-            // Use volumes already calculated above
+            // Determine the original BIM object volume (최초 BIM 원본 volume)
+            // This should remain constant across multiple splits
+            let originalBIMVolume;
+            if (selectedObject.userData.originalGeometryVolume) {
+                // Already a split part - preserve original BIM volume
+                originalBIMVolume = selectedObject.userData.originalGeometryVolume;
+                console.log('[3D Viewer] Using parent originalGeometryVolume:', originalBIMVolume.toFixed(6));
+            } else if (selectedObject.userData.geometry_volume) {
+                // First split of original BIM object - use DB volume
+                originalBIMVolume = selectedObject.userData.geometry_volume;
+                console.log('[3D Viewer] Using BIM geometry_volume from DB:', originalBIMVolume.toFixed(6));
+            } else {
+                // Fallback: use calculated volume
+                originalBIMVolume = originalGeometryVolume;
+                console.log('[3D Viewer] Using calculated volume as original:', originalBIMVolume.toFixed(6));
+            }
+
             const totalSplitVolume = bottomVolume + topVolume;
 
-            // Calculate volume ratios
-            const bottomRatio = totalSplitVolume > 0 ? bottomVolume / totalSplitVolume : 0.5;
-            const topRatio = totalSplitVolume > 0 ? topVolume / totalSplitVolume : 0.5;
+            // Calculate volume ratios based on ORIGINAL BIM VOLUME (not immediate parent)
+            // This ensures ratios always reference the initial BIM object
+            const bottomRatio = originalBIMVolume > 0 ? bottomVolume / originalBIMVolume : 0.5;
+            const topRatio = originalBIMVolume > 0 ? topVolume / originalBIMVolume : 0.5;
 
             console.log('[3D Viewer] Final volume summary:');
             console.log('  - Bottom: ' + bottomVolume.toFixed(6) + ' (' + (bottomRatio * 100).toFixed(2) + '%)');
             console.log('  - Top: ' + topVolume.toFixed(6) + ' (' + (topRatio * 100).toFixed(2) + '%)');
-            console.log('  - Total: ' + totalSplitVolume.toFixed(6));
-            console.log('  - Original: ' + originalGeometryVolume.toFixed(6));
+            console.log('  - Total split: ' + totalSplitVolume.toFixed(6));
+            console.log('  - Immediate parent: ' + originalGeometryVolume.toFixed(6));
+            console.log('  - Original BIM: ' + originalBIMVolume.toFixed(6));
             console.log('  - Preservation: ' + ((totalSplitVolume / originalGeometryVolume) * 100).toFixed(2) + '%');
 
             // Update userData with volume information
+            // IMPORTANT: originalGeometryVolume is the ORIGINAL BIM volume (constant)
+            //            geometryVolume is the current object's volume
+            //            volumeRatio is relative to ORIGINAL BIM volume
+            bottomMesh.userData.originalGeometryVolume = originalBIMVolume;  // 최초 BIM 원본 (변하지 않음)
             bottomMesh.userData.geometryVolume = bottomVolume;
             bottomMesh.userData.volumeRatio = bottomRatio;
-            bottomMesh.userData.originalVolume = originalGeometryVolume;
 
+            topMesh.userData.originalGeometryVolume = originalBIMVolume;  // 최초 BIM 원본 (변하지 않음)
             topMesh.userData.geometryVolume = topVolume;
             topMesh.userData.volumeRatio = topRatio;
-            topMesh.userData.originalVolume = originalGeometryVolume;
 
             // Clear selection and restore material before removing object
             if (selectedObject) {
@@ -1910,6 +2045,13 @@
             console.log('[3D Viewer] Top geometry data:', topGeomData);
 
             showToast('객체가 정확하게 분할되었습니다', 'success');
+
+            // Save split elements to database
+            const splitInfo = {
+                method: 'plane'
+            };
+            saveSplitToDatabase(bottomMesh, splitInfo);
+            saveSplitToDatabase(topMesh, splitInfo);
 
             // Exit split mode
             exitSplitMode();
@@ -2303,8 +2445,17 @@
      * Extract geometry data from a mesh (for saving to database)
      */
     function extractGeometryData(geometry, mesh) {
-        const positions = geometry.attributes.position.array;
-        const indices = geometry.index ? geometry.index.array : null;
+        // ▼▼▼ [수정] World space로 변환된 geometry를 저장 ▼▼▼
+        // mesh의 변환을 geometry에 적용하여 world space로 변환
+        mesh.updateMatrix();
+        mesh.updateMatrixWorld(true);
+
+        // Clone geometry to avoid modifying the original
+        const worldGeometry = geometry.clone();
+        worldGeometry.applyMatrix4(mesh.matrixWorld);
+
+        const positions = worldGeometry.attributes.position.array;
+        const indices = worldGeometry.index ? worldGeometry.index.array : null;
 
         // Convert to nested arrays format
         const vertices = [];
@@ -2319,16 +2470,74 @@
             }
         }
 
-        // Get transformation matrix
-        const matrix = mesh.matrix.toArray();
+        // Dispose cloned geometry
+        worldGeometry.dispose();
+
+        // Identity matrix since geometry is already in world space
+        const identityMatrix = new THREE.Matrix4().identity().toArray();
 
         return {
             vertices: vertices,
             faces: faces,
-            matrix: matrix,
+            matrix: identityMatrix,
             vertexCount: vertices.length,
             faceCount: faces.length
         };
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+    }
+
+    /**
+     * Save split element to database via WebSocket
+     */
+    function saveSplitToDatabase(mesh, splitInfo) {
+        if (!window.frontendSocket || window.frontendSocket.readyState !== WebSocket.OPEN) {
+            console.warn('[3D Viewer] WebSocket not connected. Cannot save split to database.');
+            return;
+        }
+
+        if (!window.currentProjectId) {
+            console.warn('[3D Viewer] No project selected. Cannot save split to database.');
+            return;
+        }
+
+        if (!mesh.userData.rawElementId) {
+            console.warn('[3D Viewer] No raw_element_id found in mesh userData. Cannot save split.');
+            return;
+        }
+
+        console.log('[3D Viewer] Saving split to database...');
+
+        // Extract geometry data
+        const geometryData = extractGeometryData(mesh.geometry, mesh);
+
+        // Build payload
+        const payload = {
+            project_id: window.currentProjectId,
+            raw_element_id: mesh.userData.rawElementId,
+            parent_split_id: mesh.userData.parentSplitId || null,
+            original_geometry_volume: mesh.userData.originalGeometryVolume,
+            geometry_volume: mesh.userData.geometryVolume,
+            volume_ratio: mesh.userData.volumeRatio,
+            split_method: splitInfo.method,
+            split_part_type: mesh.userData.splitPartType,
+            geometry_data: geometryData
+        };
+
+        // Add method-specific data
+        if (splitInfo.method === 'plane') {
+            payload.split_axis = mesh.userData.splitAxis;
+            payload.split_position = mesh.userData.splitPosition;
+        } else if (splitInfo.method === 'sketch') {
+            payload.sketch_data = splitInfo.sketchData || {};
+        }
+
+        console.log('[3D Viewer] Split payload:', payload);
+
+        // Send to server
+        window.frontendSocket.send(JSON.stringify({
+            type: 'save_split',
+            payload: payload
+        }));
     }
 
     /**
@@ -3606,7 +3815,7 @@
             const preservedOriginalColor = selectedObject.userData.originalColor ||
                                           originalMaterial.color.clone();
 
-            // Store metadata
+            // Store metadata (will be updated with volume info after calculation)
             remainderMesh.userData = {
                 ...selectedObject.userData,
                 isSplitPart: true,
@@ -3634,6 +3843,58 @@
             extractedBufferGeometry.computeBoundingSphere();
 
             console.log('[3D Viewer] Geometries ready - normals and bounds computed');
+
+            // ===== Calculate volumes for sketch split =====
+            console.log('[3D Viewer] Calculating volumes for sketch split...');
+
+            // Calculate original geometry volume (before split)
+            const originalSketchGeometry = selectedObject.geometry;
+            const originalSketchVolume = calculateGeometryVolume(originalSketchGeometry);
+
+            console.log('[3D Viewer] === REMAINDER GEOMETRY VOLUME CALCULATION ===');
+            const remainderVolume = calculateGeometryVolume(remainderBufferGeometry, true);
+
+            console.log('[3D Viewer] === EXTRACTED GEOMETRY VOLUME CALCULATION ===');
+            const extractedVolume = calculateGeometryVolume(extractedBufferGeometry, true);
+
+            // Determine the original BIM object volume (최초 BIM 원본 volume)
+            let originalBIMVolume;
+            if (selectedObject.userData.originalGeometryVolume) {
+                // Already a split part - preserve original BIM volume
+                originalBIMVolume = selectedObject.userData.originalGeometryVolume;
+                console.log('[3D Viewer] Using parent originalGeometryVolume:', originalBIMVolume.toFixed(6));
+            } else if (selectedObject.userData.geometry_volume) {
+                // First split of original BIM object - use DB volume
+                originalBIMVolume = selectedObject.userData.geometry_volume;
+                console.log('[3D Viewer] Using BIM geometry_volume from DB:', originalBIMVolume.toFixed(6));
+            } else {
+                // Fallback: use calculated volume
+                originalBIMVolume = originalSketchVolume;
+                console.log('[3D Viewer] Using calculated volume as original:', originalBIMVolume.toFixed(6));
+            }
+
+            const totalSketchSplitVolume = remainderVolume + extractedVolume;
+
+            // Calculate volume ratios based on ORIGINAL BIM VOLUME
+            const remainderRatio = originalBIMVolume > 0 ? remainderVolume / originalBIMVolume : 0.5;
+            const extractedRatio = originalBIMVolume > 0 ? extractedVolume / originalBIMVolume : 0.5;
+
+            console.log('[3D Viewer] Sketch split volume summary:');
+            console.log('  - Remainder: ' + remainderVolume.toFixed(6) + ' (' + (remainderRatio * 100).toFixed(2) + '%)');
+            console.log('  - Extracted: ' + extractedVolume.toFixed(6) + ' (' + (extractedRatio * 100).toFixed(2) + '%)');
+            console.log('  - Total split: ' + totalSketchSplitVolume.toFixed(6));
+            console.log('  - Immediate parent: ' + originalSketchVolume.toFixed(6));
+            console.log('  - Original BIM: ' + originalBIMVolume.toFixed(6));
+            console.log('  - Preservation: ' + ((totalSketchSplitVolume / originalSketchVolume) * 100).toFixed(2) + '%');
+
+            // Update userData with volume information
+            remainderMesh.userData.originalGeometryVolume = originalBIMVolume;  // 최초 BIM 원본 (변하지 않음)
+            remainderMesh.userData.geometryVolume = remainderVolume;
+            remainderMesh.userData.volumeRatio = remainderRatio;
+
+            extractedMesh.userData.originalGeometryVolume = originalBIMVolume;  // 최초 BIM 원본 (변하지 않음)
+            extractedMesh.userData.geometryVolume = extractedVolume;
+            extractedMesh.userData.volumeRatio = extractedRatio;
 
             // Clear selection and restore material before removing object
             if (selectedObject) {
@@ -3666,6 +3927,21 @@
             console.log('  - Extracted vertices:', extractedBufferGeometry.attributes.position.count);
 
             showToast('스케치 분할 완료', 'success');
+
+            // Save split elements to database
+            const sketchInfo = {
+                method: 'sketch',
+                sketchData: {
+                    sketchPoints: sketchPoints3D.map(p => [p.x, p.y, p.z]),
+                    faceNormal: selectedFace ? [
+                        selectedFace.normal.x,
+                        selectedFace.normal.y,
+                        selectedFace.normal.z
+                    ] : null
+                }
+            };
+            saveSplitToDatabase(remainderMesh, sketchInfo);
+            saveSplitToDatabase(extractedMesh, sketchInfo);
 
             // Exit sketch mode
             exitSketchMode();

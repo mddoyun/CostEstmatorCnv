@@ -5,6 +5,8 @@ import decimal # <--- decimal 임포트 추가 (정확한 계산 위해)
 # ▼▼▼ [추가] AI 모델 저장을 위한 BinaryField 임포트 ▼▼▼
 from django.db.models import BinaryField
 # ▲▲▲ [추가] 여기까지 ▲▲▲
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 
 # -----------------------------------------------------------------------------
 # 1. 프로젝트 관리 모듈
@@ -538,3 +540,221 @@ class SpaceAssignmentRule(models.Model):
         # 디버깅: 공간 할당 규칙 정보 반환 확인
         # print(f"[DEBUG][SpaceAssignmentRule.__str__] Returning space assignment rule: {self.name}") # 너무 빈번할 수 있어 주석 처리
         return self.name
+
+# -----------------------------------------------------------------------------
+# 3D 객체 분할 관리
+# -----------------------------------------------------------------------------
+class SplitElement(models.Model):
+    """3D 뷰어에서 분할된 객체를 저장하고 관리"""
+
+    # Split method choices
+    SPLIT_METHOD_PLANE = 'plane'
+    SPLIT_METHOD_SKETCH = 'sketch'
+    SPLIT_METHOD_CHOICES = [
+        (SPLIT_METHOD_PLANE, 'Plane Split'),
+        (SPLIT_METHOD_SKETCH, 'Sketch Split'),
+    ]
+
+    # Split axis choices (plane split only)
+    SPLIT_AXIS_X = 'x'
+    SPLIT_AXIS_Y = 'y'
+    SPLIT_AXIS_Z = 'z'
+    SPLIT_AXIS_CHOICES = [
+        (SPLIT_AXIS_X, 'X Axis'),
+        (SPLIT_AXIS_Y, 'Y Axis'),
+        (SPLIT_AXIS_Z, 'Z Axis'),
+    ]
+
+    # Split part type choices
+    SPLIT_PART_BOTTOM = 'bottom'
+    SPLIT_PART_TOP = 'top'
+    SPLIT_PART_REMAINDER = 'remainder'
+    SPLIT_PART_EXTRACTED = 'extracted'
+    SPLIT_PART_TYPE_CHOICES = [
+        (SPLIT_PART_BOTTOM, 'Bottom Part (Plane Split)'),
+        (SPLIT_PART_TOP, 'Top Part (Plane Split)'),
+        (SPLIT_PART_REMAINDER, 'Remainder Part (Sketch Split)'),
+        (SPLIT_PART_EXTRACTED, 'Extracted Part (Sketch Split)'),
+    ]
+
+    # Primary key
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Foreign keys
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='split_elements',
+        help_text="프로젝트"
+    )
+
+    raw_element = models.ForeignKey(
+        RawElement,
+        on_delete=models.CASCADE,
+        related_name='split_elements',
+        help_text="원본 BIM 객체 (최초 분할 대상)"
+    )
+
+    parent_split = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        related_name='child_splits',
+        null=True,
+        blank=True,
+        help_text="부모 분할 객체 (분할의 분할인 경우)"
+    )
+
+    # Volume information
+    original_geometry_volume = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        help_text="원본 BIM 객체의 geometry_volume (최초 BIM 원본 기준, 캐시됨)"
+    )
+
+    geometry_volume = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        help_text="이 분할 객체의 실제 geometry volume"
+    )
+
+    volume_ratio = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        help_text="원본 BIM 대비 체적 비율 (geometry_volume / original_geometry_volume)"
+    )
+
+    # Split information
+    split_method = models.CharField(
+        max_length=20,
+        choices=SPLIT_METHOD_CHOICES,
+        help_text="분할 방식 (plane: 평면 분할, sketch: 스케치 분할)"
+    )
+
+    split_axis = models.CharField(
+        max_length=1,
+        choices=SPLIT_AXIS_CHOICES,
+        null=True,
+        blank=True,
+        help_text="분할 축 (plane split only: x, y, z)"
+    )
+
+    split_position = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="분할 위치 (plane split only: 0-100 백분율)"
+    )
+
+    split_part_type = models.CharField(
+        max_length=20,
+        choices=SPLIT_PART_TYPE_CHOICES,
+        help_text="분할 부분 타입 (bottom/top for plane, remainder/extracted for sketch)"
+    )
+
+    # Geometry data for reconstruction
+    geometry_data = models.JSONField(
+        default=dict,
+        help_text="3D 뷰 재생성을 위한 geometry 데이터 (vertices, faces, matrix 등)"
+    )
+
+    # Sketch split specific data
+    sketch_data = models.JSONField(
+        default=dict,
+        null=True,
+        blank=True,
+        help_text="스케치 분할 정보 (스케치 포인트, 평면 법선 등)"
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="활성 상태 (BIM 원본이 변경되면 False로 설정)"
+    )
+
+    # Additional metadata
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="추가 메타데이터 (사용자 메모, 태그 등)"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['raw_element', 'is_active']),
+            models.Index(fields=['project', 'is_active']),
+            models.Index(fields=['parent_split']),
+        ]
+
+    def __str__(self):
+        return f"{self.raw_element.element_unique_id} - {self.split_part_type} ({self.split_method})"
+
+    def invalidate_on_bim_change(self):
+        """
+        BIM 원본 객체가 변경되었을 때 이 분할 객체와 모든 하위 분할을 무효화
+        """
+        self.is_active = False
+        self.save(update_fields=['is_active', 'updated_at'])
+
+        # 모든 하위 분할도 무효화
+        for child in self.child_splits.all():
+            child.invalidate_on_bim_change()
+
+    def get_split_hierarchy(self):
+        """
+        분할 계층 구조를 반환 (원본 BIM → 중간 분할들 → 현재 분할)
+        """
+        hierarchy = []
+        current = self
+        while current:
+            hierarchy.insert(0, current)
+            current = current.parent_split
+        return hierarchy
+
+    def calculate_effective_volume_ratio(self):
+        """
+        원본 BIM 대비 실제 비율 계산
+        (중간에 여러 번 분할된 경우에도 최종 비율 계산)
+        """
+        if self.original_geometry_volume and self.original_geometry_volume > 0:
+            return float(self.geometry_volume) / float(self.original_geometry_volume)
+        return 0.0
+
+
+# -----------------------------------------------------------------------------
+# Signals for automatic updates
+# -----------------------------------------------------------------------------
+
+@receiver(pre_save, sender=RawElement)
+def invalidate_splits_on_bim_change(sender, instance, **kwargs):
+    """
+    RawElement의 geometry_volume이 변경되면 관련된 모든 분할 객체를 무효화
+    """
+    if instance.pk:  # 기존 객체인 경우만 (신규 생성 시 제외)
+        try:
+            old_instance = RawElement.objects.get(pk=instance.pk)
+
+            # geometry_volume이 변경되었는지 확인
+            if old_instance.geometry_volume != instance.geometry_volume:
+                print(f"[DEBUG] RawElement {instance.element_unique_id} geometry_volume changed:")
+                print(f"  - Old: {old_instance.geometry_volume}")
+                print(f"  - New: {instance.geometry_volume}")
+                print(f"  - Invalidating all related split elements...")
+
+                # 이 RawElement와 연결된 모든 활성 분할 객체 무효화
+                split_count = 0
+                for split_element in instance.split_elements.filter(is_active=True):
+                    split_element.invalidate_on_bim_change()
+                    split_count += 1
+
+                if split_count > 0:
+                    print(f"  - Invalidated {split_count} split elements")
+
+        except RawElement.DoesNotExist:
+            # 객체가 존재하지 않으면 무시 (새로 생성되는 경우)
+            pass

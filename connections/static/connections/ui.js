@@ -66,7 +66,7 @@ function populateFieldSelection() {
 
     if (allRevitData.length === 0) return;
 
-    const systemKeys = ['id', 'element_unique_id', 'classification_tags'];
+    const systemKeys = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
     const revitKeysSet = new Set();
     allRevitData.forEach((item) => {
         const raw = item.raw_data;
@@ -3031,7 +3031,7 @@ function renderAssignedElementsModal(elements, spaceName) {
 
         // 해당 객체의 모든 속성을 수집합니다.
         const properties = [];
-        const systemKeys = ['id', 'element_unique_id', 'classification_tags'];
+        const systemKeys = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
         const revitKeysSet = new Set();
         const raw = item.raw_data;
 

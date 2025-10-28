@@ -80,6 +80,23 @@ window.setupWebSocket = function() {
                 lowerValueCache?.clear?.();
                 allRevitData = [];
                 const payload = data.payload ?? {};
+
+                // ▼▼▼ [추가] 분할 객체 데이터 저장 ▼▼▼
+                if (payload.split_elements) {
+                    window.allSplitElements = payload.split_elements;
+                    console.log(`[WebSocket] Received ${payload.split_elements.length} split elements`);
+                } else {
+                    window.allSplitElements = [];
+                }
+
+                if (payload.raw_element_ids_with_splits) {
+                    window.rawElementIdsWithSplits = new Set(payload.raw_element_ids_with_splits);
+                    console.log(`[WebSocket] ${payload.raw_element_ids_with_splits.length} BIM objects have splits`);
+                } else {
+                    window.rawElementIdsWithSplits = new Set();
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 const { hasTotal, total } = parseProgressTotal(payload);
                 const clampedTotal = hasTotal && total > 0 ? total : 1;
                 progressBar.dataset.totalKnown = hasTotal ? '1' : '0';
@@ -206,6 +223,13 @@ window.setupWebSocket = function() {
                         'space-management'
                     );
                 }
+
+                // ▼▼▼ [추가] 3D 뷰어에 geometry 자동 로드 ▼▼▼
+                if (typeof loadPlaceholderGeometry === 'function') {
+                    console.log("[WebSocket] Auto-loading 3D geometry after data complete...");
+                    loadPlaceholderGeometry();
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
 
                 setTimeout(() => {
                     progressContainer.style.display = 'none';
@@ -471,6 +495,21 @@ window.setupWebSocket = function() {
                     ); // 디버깅
                 }
                 break;
+
+            // ▼▼▼ [추가] 3D 객체 분할 저장 응답 처리 ▼▼▼
+            case 'split_saved':
+                console.log('[WebSocket] Split saved successfully:', data.split_id);
+                // Optional: UI feedback or update
+                break;
+
+            case 'split_save_error':
+                console.error('[WebSocket] Split save failed:', data.error);
+                if (typeof showToast === 'function') {
+                    showToast('분할 객체 저장 실패: ' + data.error, 'error');
+                }
+                break;
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             default:
                 console.warn(
                     '[WebSocket] Received unknown message type:',
