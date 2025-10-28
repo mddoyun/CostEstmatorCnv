@@ -126,4 +126,8 @@ urlpatterns = [
     path('api/sd/cost-items/<uuid:project_id>/', views.get_sd_cost_items, name='get_sd_cost_items'),
     # ▲▲▲ [추가] 여기까지 ▲▲▲
     path('api/ai-training/download-temp/', views.download_temp_file_api, name='download_temp_file_api'),
+
+    # ▼▼▼ [추가] 분할 객체 관리 API ▼▼▼
+    path('api/projects/<uuid:project_id>/split-elements/delete-all/', views.delete_all_split_elements, name='delete_all_split_elements'),
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 ]

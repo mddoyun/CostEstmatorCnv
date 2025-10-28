@@ -52,7 +52,8 @@ from .models import (
     SpaceClassificationRule,
     SpaceAssignmentRule, # <--- 이 부분을 추가해주세요.
     UnitPriceType, # <--- 추가 확인
-    UnitPrice      # <--- 추가 확인
+    UnitPrice,     # <--- 추가 확인
+    SplitElement   # <--- 분할 객체 모델 추가
 
 )
 from tensorflow.keras import models # <<< models 임포트 추가
@@ -4440,3 +4441,46 @@ def predict_sd_cost(request, project_id, model_id):
             try: os.remove(temp_model_path)
             except Exception as e_remove: print(f"[WARN][predict_sd_cost] Failed to delete temp file: {e_remove}")
 # ▲▲▲ [교체] 여기까지 ▲▲▲
+
+# --- Split Element Management API ---
+
+@require_http_methods(["DELETE"])
+def delete_all_split_elements(request, project_id):
+    """
+    특정 프로젝트의 모든 분할 객체(SplitElement)를 삭제합니다.
+    개발/테스트 목적으로 사용됩니다.
+
+    DELETE /connections/api/projects/<project_id>/split-elements/delete-all/
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+
+        # 삭제 전 개수 확인
+        split_count = SplitElement.objects.filter(project=project).count()
+
+        if split_count == 0:
+            return JsonResponse({
+                'status': 'success',
+                'message': '삭제할 분할 객체가 없습니다.',
+                'deleted_count': 0
+            })
+
+        # CASCADE로 연관된 QuantityMember, CostItem도 함께 삭제됨
+        deleted_count, deleted_details = SplitElement.objects.filter(project=project).delete()
+
+        print(f"[API][delete_all_split_elements] Deleted {deleted_count} split elements from project {project.name}")
+        print(f"[API][delete_all_split_elements] Cascade deletion details: {deleted_details}")
+
+        return JsonResponse({
+            'status': 'success',
+            'message': f'{split_count}개의 분할 객체가 삭제되었습니다.',
+            'deleted_count': split_count,
+            'cascade_details': str(deleted_details)
+        })
+
+    except Exception as e:
+        print(f"[ERROR][delete_all_split_elements] {e}")
+        return JsonResponse({
+            'status': 'error',
+            'message': f'분할 객체 삭제 중 오류 발생: {str(e)}'
+        }, status=500)

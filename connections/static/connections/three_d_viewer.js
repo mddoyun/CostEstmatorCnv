@@ -458,6 +458,7 @@
         const loadBtn = document.getElementById('load-geometry-btn');
         const clearBtn = document.getElementById('clear-scene-btn');
         const splitBtn = document.getElementById('split-object-btn');
+        const deleteAllSplitsBtn = document.getElementById('delete-all-splits-btn');
 
         // Use onclick to avoid duplicate event listeners
         if (loadBtn) {
@@ -489,6 +490,60 @@
                 window.clearScene();
             };
         }
+
+        // ▼▼▼ [추가] 모든 분할 객체 삭제 버튼 ▼▼▼
+        if (deleteAllSplitsBtn) {
+            deleteAllSplitsBtn.onclick = async function() {
+                console.log("[3D Viewer] Delete All Splits button clicked.");
+
+                if (!window.currentProjectId) {
+                    showToast('프로젝트를 먼저 선택하세요', 'warning');
+                    return;
+                }
+
+                // 확인 대화상자
+                const confirmed = confirm('정말로 모든 분할 객체를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 연관된 산출부재와 산출항목도 함께 삭제됩니다.');
+
+                if (!confirmed) {
+                    console.log("[3D Viewer] Delete operation cancelled by user.");
+                    return;
+                }
+
+                try {
+                    console.log("[3D Viewer] Calling API to delete all split elements...");
+
+                    const response = await fetch(`/connections/api/projects/${window.currentProjectId}/split-elements/delete-all/`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': window.csrfToken || document.querySelector('[name=csrfmiddlewaretoken]')?.value
+                        }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        console.log(`[3D Viewer] Successfully deleted ${result.deleted_count} split elements`);
+                        console.log(`[3D Viewer] Cascade details:`, result.cascade_details);
+
+                        showToast(result.message, 'success');
+
+                        // 화면 새로고침 - Load Geometry 버튼 클릭
+                        console.log("[3D Viewer] Reloading geometry after deletion...");
+                        if (loadBtn) {
+                            loadBtn.click();
+                        }
+                    } else {
+                        console.error('[3D Viewer] Delete failed:', result.message);
+                        showToast(`삭제 실패: ${result.message}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('[3D Viewer] Error deleting split elements:', error);
+                    showToast('분할 객체 삭제 중 오류가 발생했습니다', 'error');
+                }
+            };
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Split mode controls
         const splitControlsPanel = document.getElementById('split-controls-panel');
