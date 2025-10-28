@@ -353,6 +353,12 @@ class QuantityMember(models.Model):
     space_classifications = models.ManyToManyField(SpaceClassification, related_name='quantity_members', blank=True)
 
     cost_code_expressions = models.JSONField(default=list, blank=True, help_text="개별 부재에 적용될 공사코드 표현식 목록 (JSON)")
+
+    # Split-related fields
+    is_active = models.BooleanField(default=True, help_text="활성 상태 (분할된 경우 원본은 False)")
+    split_element = models.ForeignKey('SplitElement', on_delete=models.CASCADE, related_name='quantity_members', null=True, blank=True, help_text="이 산출부재가 속한 분할 객체")
+    source_quantity_member = models.ForeignKey('self', on_delete=models.SET_NULL, related_name='derived_members', null=True, blank=True, help_text="원본 산출부재 (분할 전)")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -385,6 +391,13 @@ class CostItem(models.Model):
         )
 
     description = models.TextField(blank=True, null=True, help_text="수동 생성 시 특이사항 기록")
+
+    # Split-related fields
+    is_active = models.BooleanField(default=True, help_text="활성 상태 (분할된 경우 원본은 False)")
+    split_element = models.ForeignKey('SplitElement', on_delete=models.CASCADE, related_name='cost_items', null=True, blank=True, help_text="이 산출항목이 속한 분할 객체")
+    source_cost_item = models.ForeignKey('self', on_delete=models.SET_NULL, related_name='derived_items', null=True, blank=True, help_text="원본 산출항목 (분할 전)")
+    volume_ratio_applied = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True, help_text="적용된 체적 비율 (quantity = 원본 quantity × volume_ratio)")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
