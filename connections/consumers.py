@@ -6,8 +6,8 @@ from django.db.models import F
 # ▼▼▼ [추가] Count 임포트 ▼▼▼
 from django.db.models import Count
 # ▲▲▲ [추가] 여기까지 ▲▲▲
-# ▼▼▼ [수정] AIModel, SplitElement 임포트 추가 ▼▼▼
-from .models import Project, RawElement, QuantityClassificationTag, QuantityMember, AIModel, SplitElement
+# ▼▼▼ [수정] AIModel, SplitElement, CostItem 임포트 추가 ▼▼▼
+from .models import Project, RawElement, QuantityClassificationTag, QuantityMember, AIModel, SplitElement, CostItem
 # ▲▲▲ [수정] 여기까지 ▲▲▲
 import asyncio
 # --- 데이터 직렬화 헬퍼 함수들 ---
@@ -385,7 +385,16 @@ def cleanup_old_elements(project_id, incoming_uids):
         if to_delete_uids:
             print(f"    - 삭제 대상 ID (최대 10개 표시): {list(to_delete_uids)[:10]}") # 기존 print 유지
 
-            # ▼▼▼ [추가] RawElement를 삭제하기 전에, 연관된 QuantityMember를 먼저 삭제하는 로직입니다. ▼▼▼
+            # ▼▼▼ [추가] RawElement를 삭제하기 전에, 연관된 데이터 확인 및 정리 ▼▼▼
+
+            # 1. 연관된 SplitElement 확인 (CASCADE로 자동 삭제됨)
+            split_elements_count = SplitElement.objects.filter(
+                project=project,
+                raw_element__element_unique_id__in=to_delete_uids
+            ).count()
+            print(f"    - [SplitElement Cleanup] {split_elements_count}개의 분할 객체가 CASCADE로 자동 삭제될 예정입니다.") # 기존 print 유지
+
+            # 2. 연관된 QuantityMember 확인 및 삭제 (SET_NULL이므로 명시적 삭제)
             print(f"    - [QuantityMember Cleanup] 삭제될 RawElement와 연관된 수량산출부재를 먼저 삭제합니다.") # 기존 print 유지
 
             # raw_element 필드가 null이 아닌(즉, BIM 객체와 연계된) 수량산출부재 중에서
@@ -401,6 +410,7 @@ def cleanup_old_elements(project_id, incoming_uids):
 
             deleted_count, deleted_raw_details = project.raw_elements.filter(element_unique_id__in=to_delete_uids).delete()
             print(f"    - DB에서 {deleted_count}개의 오래된 RawElement 객체를 성공적으로 삭제했습니다. Details: {deleted_raw_details}") # 기존 print 유지 (상세 정보 추가)
+            print(f"    - ✅ CASCADE 효과로 인해 관련된 SplitElement, QuantityMember(분할), CostItem(분할)도 함께 삭제되었습니다.")
         else:
             print("    - 삭제할 객체가 없습니다. 모든 데이터가 최신 상태입니다.") # 기존 print 유지
 
