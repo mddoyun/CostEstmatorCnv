@@ -249,9 +249,9 @@ async function generateBoqReport(preserveColumnOrder = false) {
 function setupBoqTableInteractions() {
     console.log("[DEBUG] Setting up BOQ table interactions...");
     const tableContainer = document.getElementById("boq-table-container");
-    const table = tableContainer.querySelector(".boq-table");
+    const table = tableContainer?.querySelector(".boq-table");
     if (!table) {
-        console.warn("[WARN] BOQ table element not found for interactions.");
+        console.log("[DEBUG] BOQ table not yet rendered (no data or still loading).");
         return;
     }
 
@@ -543,9 +543,6 @@ function handleBoqSelectInClientFromDetail(costItemId) {
  */
 function updateBoqDetailsPanel(itemIds) {
     const listContainer = document.getElementById("boq-item-list-container");
-    console.log(
-        `[DEBUG][UI] updateBoqDetailsPanel called with ${itemIds?.length} item IDs.`
-    );
 
     // 숫자 포매팅 헬퍼 함수
     const formatNumber = (value, precision = 3) => {
@@ -555,12 +552,15 @@ function updateBoqDetailsPanel(itemIds) {
     };
 
     if (!itemIds || itemIds.length === 0) {
+        console.log("[DEBUG][UI] updateBoqDetailsPanel called with no items (expected when no data selected).");
         listContainer.innerHTML =
             '<p style="padding: 10px;">이 그룹에 포함된 산출항목이 없습니다.</p>';
         renderBoqItemProperties(null);
         renderBoqBimObjectCostSummary(null);
         return;
     }
+
+    console.log(`[DEBUG][UI] updateBoqDetailsPanel rendering ${itemIds.length} items.`);
 
     const itemsToRender = (loadedDdCostItems || []).filter((item) =>
         itemIds.includes(item.id)

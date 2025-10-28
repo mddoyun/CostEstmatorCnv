@@ -224,12 +224,12 @@ window.setupWebSocket = function() {
                     );
                 }
 
-                // ▼▼▼ [추가] 3D 뷰어에 geometry 자동 로드 ▼▼▼
-                if (typeof loadPlaceholderGeometry === 'function') {
+                // ▼▼▼ [수정] 3D 뷰어 탭이 활성화된 경우에만 geometry 자동 로드 ▼▼▼
+                if (typeof loadPlaceholderGeometry === 'function' && activeTab === 'three-d-viewer') {
                     console.log("[WebSocket] Auto-loading 3D geometry after data complete...");
                     loadPlaceholderGeometry();
                 }
-                // ▲▲▲ [추가] 여기까지 ▲▲▲
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 setTimeout(() => {
                     progressContainer.style.display = 'none';

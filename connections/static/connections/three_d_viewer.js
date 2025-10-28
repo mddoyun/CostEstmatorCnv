@@ -141,6 +141,7 @@
         // ▼▼▼ [추가] 분할된 BIM 원본 객체 ID 집합 확인 ▼▼▼
         const rawElementIdsWithSplits = window.rawElementIdsWithSplits || new Set();
         console.log(`[3D Viewer] ${rawElementIdsWithSplits.size} BIM objects have splits and will be hidden`);
+        console.log('[3D Viewer] IDs with splits:', Array.from(rawElementIdsWithSplits));
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Filter objects that have geometry data
@@ -162,14 +163,22 @@
         }
 
         // ▼▼▼ [수정] 분할된 BIM 원본 객체는 제외하고 필터링 ▼▼▼
+        let filteredOutCount = 0;
         const geometryObjects = window.allRevitData
             .filter(obj => {
-                // BIM 원본 객체가 분할되었으면 제외
-                if (rawElementIdsWithSplits.has(obj.id)) {
+                // 지오메트리 데이터가 없으면 먼저 제외
+                if (!obj.raw_data || !obj.raw_data.Parameters || !obj.raw_data.Parameters.Geometry) {
                     return false;
                 }
-                // 지오메트리 데이터가 있는 객체만 포함
-                return obj.raw_data && obj.raw_data.Parameters && obj.raw_data.Parameters.Geometry;
+
+                // BIM 원본 객체가 분할되었으면 제외
+                if (rawElementIdsWithSplits.has(obj.id)) {
+                    console.log(`[3D Viewer] Filtering out split BIM object: ${obj.id}`);
+                    filteredOutCount++;
+                    return false;
+                }
+
+                return true;
             })
             .map(obj => ({
                 id: obj.id,
@@ -180,6 +189,7 @@
                     matrix: obj.raw_data.Parameters.Geometry.matrix
                 }
             }));
+        console.log(`[3D Viewer] Filtered out ${filteredOutCount} BIM objects that have splits`);
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // ▼▼▼ [추가] 분할 객체 데이터 준비 ▼▼▼
@@ -959,17 +969,29 @@
             transparent: highlightMaterial.transparent
         });
 
-        // Enable split button
+        // ▼▼▼ [수정] 분할 객체가 아닌 경우에만 분할 버튼 활성화 ▼▼▼
+        const isSplitObject = object.userData.isSplitPart || object.userData.isSplitElement;
+
         const splitBtn = document.getElementById('split-object-btn');
         if (splitBtn) {
-            splitBtn.disabled = false;
+            splitBtn.disabled = isSplitObject;
+            if (isSplitObject) {
+                splitBtn.title = "이미 분할된 객체는 재분할할 수 없습니다";
+            } else {
+                splitBtn.title = "객체 분할";
+            }
         }
 
-        // Enable sketch split button
         const sketchSplitBtn = document.getElementById('sketch-split-btn');
         if (sketchSplitBtn) {
-            sketchSplitBtn.disabled = false;
+            sketchSplitBtn.disabled = isSplitObject;
+            if (isSplitObject) {
+                sketchSplitBtn.title = "이미 분할된 객체는 재분할할 수 없습니다";
+            } else {
+                sketchSplitBtn.title = "스케치로 분할";
+            }
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Display properties
         displayObjectProperties(object);
@@ -1729,6 +1751,15 @@
             showToast('분할할 객체를 먼저 선택하세요', 'warning');
             return;
         }
+
+        // ▼▼▼ [추가] 이미 분할된 객체는 재분할 불가 ▼▼▼
+        if (selectedObject.userData.isSplitPart || selectedObject.userData.isSplitElement) {
+            console.warn('[3D Viewer] Cannot split an already-split object');
+            showToast('이미 분할된 객체는 다시 분할할 수 없습니다. 원본 BIM 객체만 분할 가능합니다.', 'error');
+            exitSplitMode();
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] Starting precise plane-based split operation on object:', selectedObject.userData.bimObjectId);
 
@@ -3689,6 +3720,15 @@
             showToast('스케치가 완료되지 않았습니다', 'warning');
             return;
         }
+
+        // ▼▼▼ [추가] 이미 분할된 객체는 재분할 불가 ▼▼▼
+        if (selectedObject.userData.isSplitPart || selectedObject.userData.isSplitElement) {
+            console.warn('[3D Viewer] Cannot split an already-split object');
+            showToast('이미 분할된 객체는 다시 분할할 수 없습니다. 원본 BIM 객체만 분할 가능합니다.', 'error');
+            exitSketchMode();
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] Starting sketch split operation...');
         console.log('[3D Viewer] Sketch points (3D):', sketchPoints3D);
