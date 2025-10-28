@@ -859,7 +859,10 @@ def create_quantity_members_auto_view(request, project_id):
                     project=project,
                     raw_element=element,
                     classification_tag=tag,
-                    defaults={'name': f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}"}
+                    defaults={
+                        'name': f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}",
+                        'is_active': True  # ← is_active 필드 추가
+                    }
                 )
 
                 if created: created_count += 1
@@ -1414,7 +1417,8 @@ def create_cost_items_auto_view(request, project_id):
                 item, created = CostItem.objects.get_or_create(
                     project=project,
                     quantity_member=member,
-                    cost_code=cost_code
+                    cost_code=cost_code,
+                    defaults={'is_active': True}  # ← is_active 필드 추가
                 )
                 
                 if created: created_count += 1
