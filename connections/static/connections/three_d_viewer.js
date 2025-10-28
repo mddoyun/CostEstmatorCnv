@@ -446,8 +446,8 @@
 
         if (splitPositionSlider) {
             splitPositionSlider.addEventListener('input', function() {
-                const value = parseFloat(this.value).toFixed(2);
-                if (splitPositionValue) splitPositionValue.textContent = value;
+                const value = parseFloat(this.value);
+                if (splitPositionValue) splitPositionValue.textContent = value + '%';
                 updateSplitPlaneHelper();
             });
         }
@@ -883,6 +883,27 @@
 
         // Display cost items
         displayCostItems(object);
+
+        // Display volume information if available (for split objects)
+        if (object.userData.geometryVolume !== undefined) {
+            console.log('[3D Viewer] === Volume Information ===');
+            console.log('  - Geometry Volume:', object.userData.geometryVolume.toFixed(6), 'cubic units');
+
+            if (object.userData.volumeRatio !== undefined) {
+                console.log('  - Volume Ratio:', (object.userData.volumeRatio * 100).toFixed(2) + '%');
+            }
+
+            if (object.userData.originalVolume !== undefined) {
+                console.log('  - Original Volume:', object.userData.originalVolume.toFixed(6), 'cubic units');
+            }
+
+            if (object.userData.isSplitPart) {
+                console.log('  - Split Part Type:', object.userData.splitPartType);
+                console.log('  - Split Axis:', object.userData.splitAxis);
+                console.log('  - Split Position:', object.userData.splitPosition.toFixed(2));
+            }
+            console.log('[3D Viewer] =======================');
+        }
     }
 
     // Deselect current object
@@ -1426,32 +1447,17 @@
 
         if (!slider) return;
 
-        let min, max, midValue;
-
-        if (axis === 'z') {
-            min = bbox.min.z;
-            max = bbox.max.z;
-        } else if (axis === 'x') {
-            min = bbox.min.x;
-            max = bbox.max.x;
-        } else if (axis === 'y') {
-            min = bbox.min.y;
-            max = bbox.max.y;
-        }
-
-        midValue = (min + max) / 2;
-
-        // Use setAttribute to ensure absolute coordinate values
-        slider.setAttribute('min', min.toString());
-        slider.setAttribute('max', max.toString());
-        slider.setAttribute('step', ((max - min) / 100).toString());
-        slider.setAttribute('value', midValue.toString());
+        // Use percentage-based slider (0-100%)
+        slider.setAttribute('min', '0');
+        slider.setAttribute('max', '100');
+        slider.setAttribute('step', '1');
+        slider.setAttribute('value', '50');  // Default to middle (50%)
 
         if (valueDisplay) {
-            valueDisplay.textContent = midValue.toFixed(2);
+            valueDisplay.textContent = '50%';
         }
 
-        console.log('[3D Viewer] Slider range updated - Axis:', axis, 'Min:', min.toFixed(2), 'Max:', max.toFixed(2), 'Mid:', midValue.toFixed(2));
+        console.log('[3D Viewer] Slider range updated - Axis:', axis, 'Range: 0-100%');
     }
 
     /**
@@ -1468,25 +1474,31 @@
 
         // Get split parameters
         const axis = document.getElementById('split-axis-select')?.value || 'z';
-        const position = parseFloat(document.getElementById('split-position-slider')?.value || '0');
+        const positionPercent = parseFloat(document.getElementById('split-position-slider')?.value || '50');
 
         // Calculate bounding box
         selectedObject.geometry.computeBoundingBox();
         const bbox = selectedObject.geometry.boundingBox;
 
-        // Calculate split position (now using absolute values)
+        // Calculate split position - convert percentage to actual coordinate
         let planePosition, planeNormal, planeSize;
 
         if (axis === 'z') {
-            planePosition = parseFloat(position);
+            const min = bbox.min.z;
+            const max = bbox.max.z;
+            planePosition = min + (max - min) * (positionPercent / 100.0);
             planeNormal = new THREE.Vector3(0, 0, 1);  // Z축 선택 → Z normal (수직)
             planeSize = [bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y];
         } else if (axis === 'x') {
-            planePosition = parseFloat(position);
+            const min = bbox.min.x;
+            const max = bbox.max.x;
+            planePosition = min + (max - min) * (positionPercent / 100.0);
             planeNormal = new THREE.Vector3(1, 0, 0);
             planeSize = [bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z];
         } else if (axis === 'y') {
-            planePosition = parseFloat(position);
+            const min = bbox.min.y;
+            const max = bbox.max.y;
+            planePosition = min + (max - min) * (positionPercent / 100.0);
             planeNormal = new THREE.Vector3(0, 1, 0);  // Y축 선택 → Y normal (수평)
             planeSize = [bbox.max.x - bbox.min.x, bbox.max.z - bbox.min.z];
         }
@@ -1566,7 +1578,7 @@
         scene.add(splitPlaneHelper);
         console.log('[3D Viewer] Split plane helper updated');
         console.log('  - Axis:', axis);
-        console.log('  - Slider value (local):', position);
+        console.log('  - Slider value (percent):', positionPercent + '%');
         console.log('  - Plane position (local):', planePosition);
         console.log('  - Plane position (world):', worldPlanePos);
         console.log('  - BBox range (local):', axis === 'z' ? [bbox.min.z, bbox.max.z] : (axis === 'x' ? [bbox.min.x, bbox.max.x] : [bbox.min.y, bbox.max.y]));
@@ -1616,19 +1628,26 @@
             const bbox = selectedObject.geometry.boundingBox;
             console.log('[3D Viewer] Bounding box:', bbox);
 
-            // Calculate split plane based on selected axis and position (now using absolute values)
+            // Calculate split plane based on selected axis and position
+            // Convert slider percentage (0-100) to actual bbox coordinate
             let planePosition, planeNormal, axisName;
 
             if (axis === 'z') {
-                planePosition = position;
+                const min = bbox.min.z;
+                const max = bbox.max.z;
+                planePosition = min + (max - min) * (position / 100.0);
                 planeNormal = new THREE.Vector3(0, 0, 1);  // Z축 → Z normal (수직)
                 axisName = 'Z';
             } else if (axis === 'x') {
-                planePosition = position;
+                const min = bbox.min.x;
+                const max = bbox.max.x;
+                planePosition = min + (max - min) * (position / 100.0);
                 planeNormal = new THREE.Vector3(1, 0, 0);
                 axisName = 'X';
             } else if (axis === 'y') {
-                planePosition = position;
+                const min = bbox.min.y;
+                const max = bbox.max.y;
+                planePosition = min + (max - min) * (position / 100.0);
                 planeNormal = new THREE.Vector3(0, 1, 0);  // Y축 → Y normal (수평)
                 axisName = 'Y';
             }
@@ -1637,23 +1656,62 @@
             // No conversion needed - geometry vertices are already in local coords
             const planeDistance = -planePosition;
 
+            // Get bbox range for the selected axis
+            let bboxMin, bboxMax;
+            if (axis === 'z') {
+                bboxMin = bbox.min.z;
+                bboxMax = bbox.max.z;
+            } else if (axis === 'x') {
+                bboxMin = bbox.min.x;
+                bboxMax = bbox.max.x;
+            } else if (axis === 'y') {
+                bboxMin = bbox.min.y;
+                bboxMax = bbox.max.y;
+            }
+
             console.log('[3D Viewer] Split operation starting');
             console.log('  - Axis:', axisName);
-            console.log('  - Plane position (local):', planePosition.toFixed(2));
-            console.log('  - Plane distance:', planeDistance.toFixed(2));
-            console.log('  - BBox (local):', bbox);
+            console.log('  - Slider value:', position + '%');
+            console.log('  - BBox range [min, max]:', [bboxMin.toFixed(4), bboxMax.toFixed(4)]);
+            console.log('  - Plane position (local):', planePosition.toFixed(4));
+            console.log('  - Plane distance:', planeDistance.toFixed(4));
+            console.log('  - Expected ratio:', (position / 100.0 * 100).toFixed(2) + '%');
 
             // Get geometry data
             const positions = selectedObject.geometry.attributes.position.array;
             const indices = selectedObject.geometry.index ? selectedObject.geometry.index.array : null;
 
-            console.log('[3D Viewer] Original geometry - vertices:', positions.length / 3, 'faces:', indices ? indices.length / 3 : 'N/A');
+            // Calculate original geometry volume for verification
+            const originalGeometryVolume = calculateGeometryVolume(selectedObject.geometry);
+            console.log('[3D Viewer] Original geometry info:');
+            console.log('  - Vertices:', positions.length / 3);
+            console.log('  - Faces:', indices ? indices.length / 3 : 'N/A');
+            console.log('  - Calculated volume from geometry:', originalGeometryVolume.toFixed(6));
+            console.log('  - DB volume (geometry_volume):', selectedObject.userData.geometry_volume || 'not available');
 
-            // Split geometry with precise intersection (using local coordinates)
+            // Debug: Print all vertices
+            console.log('[3D Viewer] Original vertices:');
+            for (let i = 0; i < Math.min(positions.length / 3, 8); i++) {
+                const x = positions[i * 3].toFixed(4);
+                const y = positions[i * 3 + 1].toFixed(4);
+                const z = positions[i * 3 + 2].toFixed(4);
+                console.log(`  v${i}: (${x}, ${y}, ${z})`);
+            }
+
+            // Use plane-based split
+            console.log('[3D Viewer] Using plane-based split...');
+
+            // Split geometry with precise intersection
             const splitResult = splitGeometryByPlane(positions, indices, planeNormal, planeDistance);
 
             console.log('[3D Viewer] Split complete - Bottom faces:', splitResult.bottomFaces.length, 'Top faces:', splitResult.topFaces.length);
             console.log('[3D Viewer] New vertices created:', splitResult.newVertices.length / 3);
+
+            // Debug: Print bottom and top face counts breakdown
+            console.log('[3D Viewer] Split faces breakdown:');
+            console.log('  - Total allVertices:', splitResult.allVertices.length / 3);
+            console.log('  - Bottom faces:', splitResult.bottomFaces.length);
+            console.log('  - Top faces:', splitResult.topFaces.length);
 
             // Check if split produced valid results
             if (splitResult.bottomFaces.length === 0 || splitResult.topFaces.length === 0) {
@@ -1666,6 +1724,10 @@
             let bottomGeometry = createGeometryFromSplitResult(splitResult.allVertices, splitResult.bottomFaces);
             let topGeometry = createGeometryFromSplitResult(splitResult.allVertices, splitResult.topFaces);
 
+            console.log('[3D Viewer] Geometries created');
+            console.log('  - Bottom geometry vertices:', bottomGeometry.attributes.position.count);
+            console.log('  - Top geometry vertices:', topGeometry.attributes.position.count);
+
             // Validate geometries
             if (!bottomGeometry || !topGeometry ||
                 bottomGeometry.attributes.position.count === 0 ||
@@ -1675,12 +1737,22 @@
                 return;
             }
 
-            // Merge duplicate vertices for proper normal calculation
-            // Use higher tolerance (1e-3) to ensure vertices are properly merged
-            bottomGeometry.deleteAttribute('normal');
-            topGeometry.deleteAttribute('normal');
-            bottomGeometry = THREE.BufferGeometryUtils.mergeVertices(bottomGeometry, 1e-3);
-            topGeometry = THREE.BufferGeometryUtils.mergeVertices(topGeometry, 1e-3);
+            // Calculate volume from split geometries
+            console.log('[3D Viewer] === BOTTOM GEOMETRY VOLUME CALCULATION ===');
+            const bottomVolume = calculateGeometryVolume(bottomGeometry, true);
+            console.log('[3D Viewer] === TOP GEOMETRY VOLUME CALCULATION ===');
+            const topVolume = calculateGeometryVolume(topGeometry, true);
+
+            console.log('[3D Viewer] Volume from split geometries:');
+            console.log('  - Bottom:', bottomVolume.toFixed(6));
+            console.log('  - Top:', topVolume.toFixed(6));
+            console.log('  - Total:', (bottomVolume + topVolume).toFixed(6));
+            console.log('  - Original:', originalGeometryVolume.toFixed(6));
+            console.log('  - Preservation:', ((bottomVolume + topVolume) / originalGeometryVolume * 100).toFixed(2) + '%');
+
+            // NOTE: Plane-based split without capping may not preserve exact volume
+            // We use the calculated volumes of split parts for ratio calculation
+            console.log('[3D Viewer] NOTE: Using actual split geometry volumes for ratio calculation');
 
             // Recompute normals for smooth shading
             bottomGeometry.computeVertexNormals();
@@ -1749,7 +1821,8 @@
             const preservedOriginalColor = selectedObject.userData.originalColor ||
                                           originalMaterial.color.clone();
 
-            // Store metadata including original colors for selection highlighting
+            // Note: Volume calculation will be added after geometry computation
+            // Placeholder userData - will be updated with volume info below
             bottomMesh.userData = {
                 ...selectedObject.userData,
                 isSplitPart: true,
@@ -1781,6 +1854,30 @@
             topGeometry.computeBoundingSphere();
 
             console.log('[3D Viewer] Geometries computed - normals, bounding boxes, and bounding spheres ready');
+
+            // ===== Volume Ratio Calculation =====
+            // Use volumes already calculated above
+            const totalSplitVolume = bottomVolume + topVolume;
+
+            // Calculate volume ratios
+            const bottomRatio = totalSplitVolume > 0 ? bottomVolume / totalSplitVolume : 0.5;
+            const topRatio = totalSplitVolume > 0 ? topVolume / totalSplitVolume : 0.5;
+
+            console.log('[3D Viewer] Final volume summary:');
+            console.log('  - Bottom: ' + bottomVolume.toFixed(6) + ' (' + (bottomRatio * 100).toFixed(2) + '%)');
+            console.log('  - Top: ' + topVolume.toFixed(6) + ' (' + (topRatio * 100).toFixed(2) + '%)');
+            console.log('  - Total: ' + totalSplitVolume.toFixed(6));
+            console.log('  - Original: ' + originalGeometryVolume.toFixed(6));
+            console.log('  - Preservation: ' + ((totalSplitVolume / originalGeometryVolume) * 100).toFixed(2) + '%');
+
+            // Update userData with volume information
+            bottomMesh.userData.geometryVolume = bottomVolume;
+            bottomMesh.userData.volumeRatio = bottomRatio;
+            bottomMesh.userData.originalVolume = originalGeometryVolume;
+
+            topMesh.userData.geometryVolume = topVolume;
+            topMesh.userData.volumeRatio = topRatio;
+            topMesh.userData.originalVolume = originalGeometryVolume;
 
             // Clear selection and restore material before removing object
             if (selectedObject) {
@@ -1872,6 +1969,7 @@
 
     /**
      * Split geometry by plane with precise triangle-plane intersection
+     * Uses edge-based intersection to avoid duplicate intersection points
      * @param {Float32Array} positions - Vertex positions
      * @param {Uint16Array|Uint32Array} indices - Face indices
      * @param {THREE.Vector3} planeNormal - Plane normal vector
@@ -1896,8 +1994,23 @@
             return planeNormal.x * x + planeNormal.y * y + planeNormal.z * z + planeDistance;
         }
 
-        // Helper: Calculate intersection point between two vertices
-        function intersectEdge(i0, i1) {
+        // Helper: Create edge key (use smaller index first for consistency)
+        function edgeKey(i0, i1) {
+            return i0 < i1 ? `${i0}-${i1}` : `${i1}-${i0}`;
+        }
+
+        // Step 1: Build edge→intersection mapping
+        // This ensures each edge is processed exactly once
+        const edgeIntersections = new Map();
+
+        function getOrCreateIntersection(i0, i1) {
+            const key = edgeKey(i0, i1);
+
+            if (edgeIntersections.has(key)) {
+                return edgeIntersections.get(key);
+            }
+
+            // Calculate intersection
             const x0 = positions[i0 * 3], y0 = positions[i0 * 3 + 1], z0 = positions[i0 * 3 + 2];
             const x1 = positions[i1 * 3], y1 = positions[i1 * 3 + 1], z1 = positions[i1 * 3 + 2];
 
@@ -1908,11 +2021,17 @@
             const t = d0 / (d0 - d1);
 
             // Intersection point
-            return {
-                x: x0 + t * (x1 - x0),
-                y: y0 + t * (y1 - y0),
-                z: z0 + t * (z1 - z0)
-            };
+            const intX = x0 + t * (x1 - x0);
+            const intY = y0 + t * (y1 - y0);
+            const intZ = z0 + t * (z1 - z0);
+
+            // Add new vertex
+            const idx = allVertices.length / 3;
+            allVertices.push(intX, intY, intZ);
+            newVertices.push(intX, intY, intZ);
+
+            edgeIntersections.set(key, idx);
+            return idx;
         }
 
         // Process each triangle
@@ -1951,79 +2070,176 @@
                     topFaces.push([i0, i1, i2]);
                 }
                 // Case 2: Triangle crosses the plane
+                // Handle all 6 crossing configurations explicitly to preserve winding order
                 else if (belowCount > 0 && aboveCount > 0) {
-                    // Find vertices on each side
-                    const belowVerts = [];
-                    const aboveVerts = [];
-                    const vertIndices = [i0, i1, i2];
-                    const dists = [d0, d1, d2];
+                    // Determine configuration based on which vertices are below/above
+                    // We need to preserve the original [v0, v1, v2] order
 
-                    for (let j = 0; j < 3; j++) {
-                        if (dists[j] < -EPSILON) {
-                            belowVerts.push(vertIndices[j]);
-                        } else if (dists[j] > EPSILON) {
-                            aboveVerts.push(vertIndices[j]);
-                        } else {
-                            // On plane - add to both
-                            belowVerts.push(vertIndices[j]);
-                            aboveVerts.push(vertIndices[j]);
-                        }
+                    // Case 2a: v0 below, v1 v2 above (001 configuration)
+                    if (below0 && above1 && above2) {
+                        const int01 = getOrCreateIntersection(i0, i1);
+                        const int02 = getOrCreateIntersection(i0, i2);
+                        // Original triangle: [v0, v1, v2]
+                        // Bottom: [v0, int01, int02] (preserves CCW)
+                        bottomFaces.push([i0, int01, int02]);
+                        // Top: quad [int01, v1, v2, int02] split into 2 triangles
+                        topFaces.push([int01, i1, i2]);
+                        topFaces.push([int01, i2, int02]);
                     }
-
-                    // Case 2a: 1 below, 2 above
-                    if (belowVerts.length === 1 && aboveVerts.length === 2) {
-                        const vBelow = belowVerts[0];
-                        const vAbove1 = aboveVerts[0];
-                        const vAbove2 = aboveVerts[1];
-
-                        // Create intersection points
-                        const int1 = intersectEdge(vBelow, vAbove1);
-                        const int2 = intersectEdge(vBelow, vAbove2);
-
-                        // Add new vertices
-                        const idx1 = allVertices.length / 3;
-                        allVertices.push(int1.x, int1.y, int1.z);
-                        newVertices.push(int1.x, int1.y, int1.z);
-
-                        const idx2 = allVertices.length / 3;
-                        allVertices.push(int2.x, int2.y, int2.z);
-                        newVertices.push(int2.x, int2.y, int2.z);
-
-                        // Bottom: 1 triangle (vBelow, int1, int2)
-                        bottomFaces.push([vBelow, idx1, idx2]);
-
-                        // Top: 2 triangles (int1, vAbove1, vAbove2) and (int1, vAbove2, int2)
-                        topFaces.push([idx1, vAbove1, vAbove2]);
-                        topFaces.push([idx1, vAbove2, idx2]);
+                    // Case 2b: v0 v1 below, v2 above (110 configuration)
+                    else if (below0 && below1 && above2) {
+                        const int12 = getOrCreateIntersection(i1, i2);
+                        const int02 = getOrCreateIntersection(i0, i2);
+                        // Bottom: quad [v0, v1, int12, int02] split into 2 triangles
+                        bottomFaces.push([i0, i1, int12]);
+                        bottomFaces.push([i0, int12, int02]);
+                        // Top: [int02, int12, v2] (preserves CCW)
+                        topFaces.push([int02, int12, i2]);
                     }
-                    // Case 2b: 2 below, 1 above
-                    else if (belowVerts.length === 2 && aboveVerts.length === 1) {
-                        const vBelow1 = belowVerts[0];
-                        const vBelow2 = belowVerts[1];
-                        const vAbove = aboveVerts[0];
-
-                        // Create intersection points
-                        const int1 = intersectEdge(vAbove, vBelow1);
-                        const int2 = intersectEdge(vAbove, vBelow2);
-
-                        // Add new vertices
-                        const idx1 = allVertices.length / 3;
-                        allVertices.push(int1.x, int1.y, int1.z);
-                        newVertices.push(int1.x, int1.y, int1.z);
-
-                        const idx2 = allVertices.length / 3;
-                        allVertices.push(int2.x, int2.y, int2.z);
-                        newVertices.push(int2.x, int2.y, int2.z);
-
-                        // Bottom: 2 triangles (vBelow1, vBelow2, int1) and (vBelow2, int2, int1)
-                        bottomFaces.push([vBelow1, vBelow2, idx1]);
-                        bottomFaces.push([vBelow2, idx2, idx1]);
-
-                        // Top: 1 triangle (vAbove, int1, int2)
-                        topFaces.push([vAbove, idx1, idx2]);
+                    // Case 2c: v0 above, v1 below, v2 above (101 configuration)
+                    else if (above0 && below1 && above2) {
+                        const int01 = getOrCreateIntersection(i0, i1);
+                        const int12 = getOrCreateIntersection(i1, i2);
+                        // Bottom: [int01, v1, int12] (preserves CCW)
+                        bottomFaces.push([int01, i1, int12]);
+                        // Top: quad [v0, int01, int12, v2] split into 2 triangles
+                        topFaces.push([i0, int01, int12]);
+                        topFaces.push([i0, int12, i2]);
+                    }
+                    // Case 2d: v0 v2 below, v1 above (011 configuration)
+                    else if (below0 && above1 && below2) {
+                        const int01 = getOrCreateIntersection(i0, i1);
+                        const int12 = getOrCreateIntersection(i1, i2);
+                        // Bottom: quad [v0, int01, int12, v2] split into 2 triangles
+                        bottomFaces.push([i0, int01, int12]);
+                        bottomFaces.push([i0, int12, i2]);
+                        // Top: [int01, v1, int12] (preserves CCW)
+                        topFaces.push([int01, i1, int12]);
+                    }
+                    // Case 2e: v0 above, v1 v2 below (100 configuration)
+                    else if (above0 && below1 && below2) {
+                        const int01 = getOrCreateIntersection(i0, i1);
+                        const int02 = getOrCreateIntersection(i0, i2);
+                        // Bottom: quad [int01, v1, v2, int02] split into 2 triangles
+                        bottomFaces.push([int01, i1, i2]);
+                        bottomFaces.push([int01, i2, int02]);
+                        // Top: [v0, int01, int02] (preserves CCW)
+                        topFaces.push([i0, int01, int02]);
+                    }
+                    // Case 2f: v0 v1 above, v2 below (010 configuration)
+                    else if (above0 && above1 && below2) {
+                        const int12 = getOrCreateIntersection(i1, i2);
+                        const int02 = getOrCreateIntersection(i0, i2);
+                        // Bottom: [int02, int12, v2] (preserves CCW)
+                        bottomFaces.push([int02, int12, i2]);
+                        // Top: quad [v0, v1, int12, int02] split into 2 triangles
+                        topFaces.push([i0, i1, int12]);
+                        topFaces.push([i0, int12, int02]);
                     }
                 }
             }
+        }
+
+        console.log('[3D Viewer] Edge-based split: Created', edgeIntersections.size, 'unique intersection points');
+
+        // ===== ADD CAPPING FACES =====
+        // Collect intersection vertices (already unique due to edge-based approach)
+        const cappingVertices = [];
+
+        for (let i = 0; i < newVertices.length; i += 3) {
+            cappingVertices.push({
+                x: newVertices[i],
+                y: newVertices[i + 1],
+                z: newVertices[i + 2],
+                index: (allVertices.length - newVertices.length) / 3 + i / 3
+            });
+        }
+
+        console.log('[3D Viewer] Capping: Found', cappingVertices.length, 'unique intersection points');
+
+        // Debug: Print all capping vertices
+        console.log('[3D Viewer] Capping vertices:', cappingVertices.map(v => `(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`));
+
+        if (cappingVertices.length >= 3) {
+            // Calculate centroid of intersection points
+            let cx = 0, cy = 0, cz = 0;
+            for (let i = 0; i < cappingVertices.length; i++) {
+                cx += cappingVertices[i].x;
+                cy += cappingVertices[i].y;
+                cz += cappingVertices[i].z;
+            }
+            cx /= cappingVertices.length;
+            cy /= cappingVertices.length;
+            cz /= cappingVertices.length;
+
+            console.log('[3D Viewer] Capping centroid:', `(${cx.toFixed(4)}, ${cy.toFixed(4)}, ${cz.toFixed(4)})`);
+
+            // Add centroid as a new vertex
+            const centroidIndex = allVertices.length / 3;
+            allVertices.push(cx, cy, cz);
+
+            // Sort vertices around centroid
+            // Project onto 2D plane perpendicular to plane normal
+            const sortedVerts = cappingVertices.slice();
+
+            // Get two perpendicular vectors on the plane
+            let tempVec, u, v;
+            if (Math.abs(planeNormal.x) < 0.9) {
+                tempVec = new THREE.Vector3(1, 0, 0);
+            } else {
+                tempVec = new THREE.Vector3(0, 1, 0);
+            }
+            u = new THREE.Vector3().crossVectors(tempVec, planeNormal).normalize();
+            v = new THREE.Vector3().crossVectors(planeNormal, u).normalize();
+
+            console.log('[3D Viewer] Capping basis vectors:');
+            console.log('  - planeNormal:', planeNormal);
+            console.log('  - u:', u);
+            console.log('  - v:', v);
+
+            // Convert to 2D coordinates and calculate angle
+            sortedVerts.forEach(vert => {
+                const dx = vert.x - cx;
+                const dy = vert.y - cy;
+                const dz = vert.z - cz;
+                const u_coord = dx * u.x + dy * u.y + dz * u.z;
+                const v_coord = dx * v.x + dy * v.y + dz * v.z;
+                vert.angle = Math.atan2(v_coord, u_coord);
+            });
+
+            // Sort by angle
+            sortedVerts.sort((a, b) => a.angle - b.angle);
+
+            console.log('[3D Viewer] Sorted capping vertices by angle:');
+            sortedVerts.forEach((v, i) => {
+                console.log(`  ${i}: angle=${(v.angle * 180 / Math.PI).toFixed(1)}° pos=(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`);
+            });
+
+            // Create triangle fan from centroid
+            // For signed volume: need outward normals
+            // Bottom part: plane is TOP surface -> normal should point UP (along plane normal)
+            // Top part: plane is BOTTOM surface -> normal should point DOWN (opposite plane normal)
+            const bottomCappingTriangles = [];
+            const topCappingTriangles = [];
+
+            for (let i = 0; i < sortedVerts.length; i++) {
+                const v1 = sortedVerts[i].index;
+                const v2 = sortedVerts[(i + 1) % sortedVerts.length].index;
+
+                // Bottom part capping: normal points UP (along plane normal)
+                // Counter-clockwise when viewed from above: [centroid, v1, v2]
+                bottomFaces.push([centroidIndex, v1, v2]);
+                bottomCappingTriangles.push([centroidIndex, v1, v2]);
+
+                // Top part capping: normal points DOWN (opposite plane normal)
+                // Counter-clockwise when viewed from below: [centroid, v2, v1]
+                topFaces.push([centroidIndex, v2, v1]);
+                topCappingTriangles.push([centroidIndex, v2, v1]);
+            }
+
+            console.log('[3D Viewer] Capping: Added', sortedVerts.length, 'capping triangles to each part');
+            console.log('[3D Viewer] Capping: Bottom triangles:', bottomCappingTriangles);
+            console.log('[3D Viewer] Capping: Top triangles:', topCappingTriangles);
         }
 
         return {
@@ -2041,6 +2257,10 @@
         const vertices = [];
         const indices = [];
         const vertexMap = new Map();
+
+        console.log('[3D Viewer] createGeometryFromSplitResult called:');
+        console.log('  - Input allVertices:', allVertices.length / 3);
+        console.log('  - Input faces:', faces.length);
 
         // Build new vertex array with only used vertices
         for (let i = 0; i < faces.length; i++) {
@@ -2063,6 +2283,10 @@
                 indices.push(vertexMap.get(oldIndex));
             }
         }
+
+        console.log('  - Output vertices:', vertices.length / 3);
+        console.log('  - Output indices:', indices.length);
+        console.log('  - Output faces:', indices.length / 3);
 
         // Create BufferGeometry
         const geometry = new THREE.BufferGeometry();
@@ -2105,6 +2329,113 @@
             vertexCount: vertices.length,
             faceCount: faces.length
         };
+    }
+
+    /**
+     * Convert old Geometry to BufferGeometry (for Three.js r140+)
+     * @param {THREE.Geometry} geometry - Old geometry format
+     * @returns {THREE.BufferGeometry} - New BufferGeometry format
+     */
+    function geometryToBufferGeometry(geometry) {
+        const bufferGeometry = new THREE.BufferGeometry();
+
+        // Extract vertices
+        const vertices = [];
+        for (let i = 0; i < geometry.vertices.length; i++) {
+            const v = geometry.vertices[i];
+            vertices.push(v.x, v.y, v.z);
+        }
+
+        // Extract faces (convert to indices)
+        const indices = [];
+        for (let i = 0; i < geometry.faces.length; i++) {
+            const f = geometry.faces[i];
+            indices.push(f.a, f.b, f.c);
+        }
+
+        // Set attributes
+        bufferGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        bufferGeometry.setIndex(indices);
+
+        return bufferGeometry;
+    }
+
+    /**
+     * Calculate volume of a geometry using signed volume method
+     * Uses the same algorithm as the Python backend (tetrahedron formula)
+     * @param {THREE.BufferGeometry} geometry - The geometry to calculate volume for
+     * @param {boolean} debug - Enable debug logging
+     * @returns {number} - The calculated volume in cubic units
+     */
+    function calculateGeometryVolume(geometry, debug = false) {
+        if (!geometry || !geometry.attributes.position) {
+            console.warn('[3D Viewer] Cannot calculate volume: invalid geometry');
+            return 0;
+        }
+
+        const positions = geometry.attributes.position.array;
+        const indices = geometry.index ? geometry.index.array : null;
+
+        if (!indices) {
+            console.warn('[3D Viewer] Cannot calculate volume: geometry has no indices');
+            return 0;
+        }
+
+        let signedVolume = 0.0;
+        let positiveContribution = 0.0;
+        let negativeContribution = 0.0;
+
+        if (debug) {
+            console.log('[3D Viewer] Volume calculation details:');
+            console.log('  - Total faces:', indices.length / 3);
+        }
+
+        // Iterate through each triangle (face)
+        for (let i = 0; i < indices.length; i += 3) {
+            const i0 = indices[i];
+            const i1 = indices[i + 1];
+            const i2 = indices[i + 2];
+
+            // Get vertex positions
+            const v0x = positions[i0 * 3];
+            const v0y = positions[i0 * 3 + 1];
+            const v0z = positions[i0 * 3 + 2];
+
+            const v1x = positions[i1 * 3];
+            const v1y = positions[i1 * 3 + 1];
+            const v1z = positions[i1 * 3 + 2];
+
+            const v2x = positions[i2 * 3];
+            const v2y = positions[i2 * 3 + 1];
+            const v2z = positions[i2 * 3 + 2];
+
+            // Cross product: v1 × v2
+            const crossX = v1y * v2z - v1z * v2y;
+            const crossY = v1z * v2x - v1x * v2z;
+            const crossZ = v1x * v2y - v1y * v2x;
+
+            // Signed volume of tetrahedron: v0 · (v1 × v2)
+            const faceContribution = (v0x * crossX + v0y * crossY + v0z * crossZ);
+            signedVolume += faceContribution;
+
+            if (faceContribution > 0) {
+                positiveContribution += faceContribution;
+            } else {
+                negativeContribution += faceContribution;
+            }
+        }
+
+        if (debug) {
+            console.log('  - Positive contribution:', (positiveContribution / 6.0).toFixed(6));
+            console.log('  - Negative contribution:', (negativeContribution / 6.0).toFixed(6));
+            console.log('  - Signed volume:', (signedVolume / 6.0).toFixed(6));
+            console.log('  - Absolute volume:', (Math.abs(signedVolume / 6.0)).toFixed(6));
+        }
+
+        // Take absolute value and divide by 6 (tetrahedron formula)
+        const volume = Math.abs(signedVolume / 6.0);
+
+        return volume;
     }
 
     // ===================================================================

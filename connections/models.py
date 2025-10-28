@@ -232,11 +232,101 @@ class RawElement(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='raw_elements')
     element_unique_id = models.CharField(max_length=255)
     raw_data = models.JSONField()
+    geometry_volume = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Geometry Volume",
+        help_text="Geometry의 체적 (cubic units)"
+    )
     classification_tags = models.ManyToManyField(QuantityClassificationTag, related_name='raw_elements', blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('project', 'element_unique_id')
+
+    def calculate_geometry_volume(self):
+        """
+        Geometry의 체적을 계산 (Signed volume method)
+        Vertices와 faces를 사용하여 tetrahedron 공식으로 계산
+
+        지원하는 데이터 구조:
+        1. raw_data['geometry'] (Revit/일반 형식)
+        2. raw_data['Parameters']['Geometry'] (Blender IFC 형식)
+        """
+        if not self.raw_data:
+            return None
+
+        # Geometry 데이터 찾기 (여러 경로 지원)
+        geometry = None
+
+        # 경로 1: raw_data['geometry'] (Revit 형식)
+        if 'geometry' in self.raw_data:
+            geometry = self.raw_data['geometry']
+        # 경로 2: raw_data['Parameters']['Geometry'] (Blender IFC 형식)
+        elif 'Parameters' in self.raw_data and isinstance(self.raw_data['Parameters'], dict):
+            if 'Geometry' in self.raw_data['Parameters']:
+                geometry = self.raw_data['Parameters']['Geometry']
+
+        if not geometry:
+            return None
+
+        # Vertices 찾기 (여러 키 이름 지원)
+        vertices = geometry.get('vertices') or geometry.get('verts', [])
+        faces = geometry.get('faces', [])
+
+        if not vertices or not faces:
+            return None
+
+        signed_volume = 0.0
+
+        # 각 삼각형(face)에 대해 signed volume 계산
+        for face in faces:
+            if len(face) != 3:
+                continue  # 삼각형이 아니면 스킵
+
+            i0, i1, i2 = face[0], face[1], face[2]
+
+            # 인덱스 범위 체크
+            if i0 >= len(vertices) or i1 >= len(vertices) or i2 >= len(vertices):
+                continue
+
+            # 꼭짓점 좌표
+            v0 = vertices[i0]
+            v1 = vertices[i1]
+            v2 = vertices[i2]
+
+            if len(v0) != 3 or len(v1) != 3 or len(v2) != 3:
+                continue
+
+            v0x, v0y, v0z = v0[0], v0[1], v0[2]
+            v1x, v1y, v1z = v1[0], v1[1], v1[2]
+            v2x, v2y, v2z = v2[0], v2[1], v2[2]
+
+            # Cross product: v1 × v2
+            cross_x = v1y * v2z - v1z * v2y
+            cross_y = v1z * v2x - v1x * v2z
+            cross_z = v1x * v2y - v1y * v2x
+
+            # Signed volume of tetrahedron: v0 · (v1 × v2)
+            signed_volume += (v0x * cross_x + v0y * cross_y + v0z * cross_z)
+
+        # 절대값을 취하고 6으로 나눔 (tetrahedron 공식)
+        volume = abs(signed_volume / 6.0)
+
+        return round(volume, 6)  # 소수점 6자리까지
+
+    def update_geometry_volume(self):
+        """
+        Geometry 체적을 계산하고 저장
+        """
+        volume = self.calculate_geometry_volume()
+        if volume is not None:
+            self.geometry_volume = volume
+            self.save(update_fields=['geometry_volume'])
+            return volume
+        return None
 
     def __str__(self):
         # 디버깅: RawElement 정보 반환 확인

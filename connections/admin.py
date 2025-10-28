@@ -2,10 +2,21 @@
 
 from django.contrib import admin
 # ▼▼▼ [수정] AIModel 임포트 추가 ▼▼▼
-from .models import UnitPriceType, UnitPrice, AIModel
+from .models import UnitPriceType, UnitPrice, AIModel, RawElement
 # ▲▲▲ [수정] 여기까지 ▲▲▲
 
 # Register your models here.
+
+@admin.register(RawElement)
+class RawElementAdmin(admin.ModelAdmin):
+    list_display = ('element_unique_id', 'project', 'geometry_volume', 'updated_at')
+    list_filter = ('project',)
+    search_fields = ('element_unique_id',)
+    readonly_fields = ('geometry_volume', 'updated_at')
+
+    def save_model(self, request, obj, form, change):
+        print(f"[DEBUG][RawElementAdmin.save_model] Saving RawElement: {obj.element_unique_id}")
+        super().save_model(request, obj, form, change)
 
 # ▼▼▼ [추가] AIModel 관리자 설정 추가 ▼▼▼
 @admin.register(AIModel)

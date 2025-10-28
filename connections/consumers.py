@@ -42,7 +42,7 @@ def get_serialized_element_chunk(project_id, offset, limit):
         element_chunk_values = list(
             RawElement.objects.filter(project_id=project_id)
             .order_by('id')
-            .values('id', 'project_id', 'element_unique_id', 'updated_at', 'raw_data')[offset:offset + limit]
+            .values('id', 'project_id', 'element_unique_id', 'geometry_volume', 'updated_at', 'raw_data')[offset:offset + limit]
         )
         if not element_chunk_values:
              # 디버깅: 빈 청크
@@ -67,6 +67,9 @@ def get_serialized_element_chunk(project_id, offset, limit):
             element_data['classification_tags'] = tags_by_element_id.get(element_id, [])
             element_data['id'] = str(element_id)
             element_data['project_id'] = str(element_data['project_id'])
+            # Convert Decimal to float for JSON serialization
+            if element_data.get('geometry_volume') is not None:
+                element_data['geometry_volume'] = float(element_data['geometry_volume'])
             element_data['updated_at'] = element_data['updated_at'].isoformat()
         # 디버깅: 청크 직렬화 완료
         # print(f"[DEBUG][DB Async][get_serialized_element_chunk] Serialized {len(element_chunk_values)} elements in chunk.") # 너무 빈번하여 주석 처리
@@ -256,9 +259,32 @@ class RevitConsumer(AsyncWebsocketConsumer):
                 updated_ids = [el.id for el in to_update] # 디버깅용
                 RawElement.objects.bulk_update(to_update, ['raw_data'])
                 print(f"    - {len(to_update)}개 객체 정보 업데이트 완료. (IDs: {updated_ids[:5]}...)") # 기존 print 유지 (ID 추가)
+
+                # Geometry volume 계산 및 업데이트
+                updated_with_volume = []
+                for elem in to_update:
+                    volume = elem.calculate_geometry_volume()
+                    if volume is not None:
+                        elem.geometry_volume = volume
+                        updated_with_volume.append(elem)
+                if updated_with_volume:
+                    RawElement.objects.bulk_update(updated_with_volume, ['geometry_volume'])
+                    print(f"    - {len(updated_with_volume)}개 객체의 Geometry volume 계산 완료.")
+
             if to_create:
                 created_objs = RawElement.objects.bulk_create(to_create, ignore_conflicts=True)
                 print(f"    - {len(created_objs)}개 객체 새로 생성 완료.") # 기존 print 유지 (실제 생성된 수 사용)
+
+                # Geometry volume 계산 및 업데이트
+                created_with_volume = []
+                for elem in created_objs:
+                    volume = elem.calculate_geometry_volume()
+                    if volume is not None:
+                        elem.geometry_volume = volume
+                        created_with_volume.append(elem)
+                if created_with_volume:
+                    RawElement.objects.bulk_update(created_with_volume, ['geometry_volume'])
+                    print(f"    - {len(created_with_volume)}개 객체의 Geometry volume 계산 완료.")
 
         except Exception as e:
             print(f"[ERROR] sync_chunk_of_elements DB 작업 중 오류 발생: {e}") # 기존 print 유지
