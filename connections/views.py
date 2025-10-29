@@ -718,10 +718,10 @@ def quantity_members_api(request, project_id, member_id=None):
         data = []
         for m in members:
             item = {
-                'id': str(m.id), 
-                'name': m.name, 
-                'classification_tag_id': str(m.classification_tag.id) if m.classification_tag else '', 
-                'classification_tag_name': m.classification_tag.name if m.classification_tag else '미지정', 
+                'id': str(m.id),
+                'name': m.name,
+                'classification_tag_id': str(m.classification_tag.id) if m.classification_tag else '',
+                'classification_tag_name': m.classification_tag.name if m.classification_tag else '미지정',
                 'properties': m.properties,
                 'mapping_expression': m.mapping_expression,
                 'member_mark_expression': m.member_mark_expression,
@@ -731,6 +731,9 @@ def quantity_members_api(request, project_id, member_id=None):
                 'member_mark_id': str(m.member_mark.id) if m.member_mark else None,
                 # ▼▼▼ [추가] 할당된 공간분류 정보를 추가합니다. ▼▼▼
                 'space_classification_ids': [str(sc.id) for sc in m.space_classifications.all()],
+                # ▼▼▼ [추가] 분할 관련 필드 추가 ▼▼▼
+                'is_active': m.is_active,
+                'split_element_id': str(m.split_element_id) if m.split_element_id else None,
             }
             data.append(item)
         return JsonResponse(data, safe=False)
