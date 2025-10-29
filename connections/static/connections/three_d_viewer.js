@@ -1385,12 +1385,25 @@
             return [];
         }
 
-        // is_active=True이고 raw_element_id가 일치하며 split되지 않은 QuantityMember 조회
+        // ▼▼▼ [수정] is_active=True 조건만 사용 (split_element_id 조건 제거) ▼▼▼
+        // 원본이 분할되면 is_active=False로 자동 변경되므로 split_element_id 체크 불필요
         const results = window.loadedQuantityMembers.filter(qm => {
-            return qm.raw_element_id &&
-                   qm.raw_element_id.toString() === rawElementId.toString() &&
-                   qm.is_active === true &&
-                   !qm.split_element_id;  // 분할되지 않은 원본만
+            const match = qm.raw_element_id &&
+                          qm.raw_element_id.toString() === rawElementId.toString() &&
+                          qm.is_active === true;
+
+            // 디버깅: 필터링 과정 출력
+            if (qm.raw_element_id && qm.raw_element_id.toString() === rawElementId.toString()) {
+                console.log('[3D Viewer] QM found with matching raw_element_id:', {
+                    id: qm.id,
+                    name: qm.name,
+                    is_active: qm.is_active,
+                    split_element_id: qm.split_element_id,
+                    matched: match
+                });
+            }
+
+            return match;
         });
 
         console.log('[3D Viewer] Found matching quantity members:', results);
