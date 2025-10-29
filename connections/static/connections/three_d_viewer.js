@@ -1027,14 +1027,14 @@
             transparent: highlightMaterial.transparent
         });
 
-        // ▼▼▼ [수정] 분할 객체가 아닌 경우에만 분할 버튼 활성화 ▼▼▼
+        // ▼▼▼ [수정] 모든 객체에 대해 분할 버튼 활성화 ▼▼▼
         const isSplitObject = object.userData.isSplitPart || object.userData.isSplitElement;
 
         const splitBtn = document.getElementById('split-object-btn');
         if (splitBtn) {
-            splitBtn.disabled = isSplitObject;
+            splitBtn.disabled = false;  // 모든 객체 분할 가능
             if (isSplitObject) {
-                splitBtn.title = "이미 분할된 객체는 재분할할 수 없습니다";
+                splitBtn.title = "분할된 객체 재분할 (중첩 분할)";
             } else {
                 splitBtn.title = "객체 분할";
             }
@@ -1042,9 +1042,9 @@
 
         const sketchSplitBtn = document.getElementById('sketch-split-btn');
         if (sketchSplitBtn) {
-            sketchSplitBtn.disabled = isSplitObject;
+            sketchSplitBtn.disabled = false;  // 모든 객체 분할 가능
             if (isSplitObject) {
-                sketchSplitBtn.title = "이미 분할된 객체는 재분할할 수 없습니다";
+                sketchSplitBtn.title = "분할된 객체 스케치 재분할 (중첩 분할)";
             } else {
                 sketchSplitBtn.title = "스케치로 분할";
             }
@@ -1275,18 +1275,24 @@
         const listContainer = document.getElementById('three-d-quantity-members-list');
         if (!listContainer) return;
 
-        // ▼▼▼ [수정] DB에서 로드한 분할 객체(rawElementId)도 포함 ▼▼▼
-        // Get BIM object ID (use originalObjectId for split parts, rawElementId for DB-loaded splits)
-        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId || object.userData.rawElementId;
+        // ▼▼▼ [수정] 분할 객체인 경우 split_element_id로 조회 ▼▼▼
+        let quantityMembers = [];
 
-        if (!bimObjectId) {
-            listContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
-            return;
+        if (object.userData.splitElementId) {
+            // 분할 객체인 경우: split_element_id로 연결된 QuantityMember 조회
+            console.log('[3D Viewer] Split object selected, searching by split_element_id:', object.userData.splitElementId);
+            quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+        } else {
+            // 원본 BIM 객체인 경우: raw_element_id로 조회
+            const bimObjectId = object.userData.bimObjectId || object.userData.rawElementId;
+            if (!bimObjectId) {
+                listContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+                return;
+            }
+            console.log('[3D Viewer] Original BIM object selected, searching by raw_element_id:', bimObjectId);
+            quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
         }
         // ▲▲▲ [수정] 여기까지 ▲▲▲
-
-        // Find all quantity members linked to this BIM object
-        const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
 
         if (quantityMembers.length === 0) {
             listContainer.innerHTML = '<p class="no-selection">연관된 수량산출부재가 없습니다</p>';
@@ -1337,6 +1343,31 @@
         });
     }
 
+    // Find quantity members by split element ID
+    function findQuantityMembersBySplitElementId(splitElementId) {
+        if (!window.loadedQuantityMembers || !Array.isArray(window.loadedQuantityMembers)) {
+            console.warn('[3D Viewer] loadedQuantityMembers not found in global scope');
+            return [];
+        }
+
+        console.log('[3D Viewer] Searching for quantity members with split_element_id:', splitElementId);
+
+        if (!splitElementId) {
+            console.warn('[3D Viewer] splitElementId is null or undefined');
+            return [];
+        }
+
+        // is_active=True이고 split_element_id가 일치하는 QuantityMember 조회
+        const results = window.loadedQuantityMembers.filter(qm => {
+            return qm.split_element_id &&
+                   qm.split_element_id.toString() === splitElementId.toString() &&
+                   qm.is_active === true;
+        });
+
+        console.log('[3D Viewer] Found matching quantity members for split:', results);
+        return results;
+    }
+
     // Find quantity members by raw element ID
     function findQuantityMembersByRawElementId(rawElementId) {
         // Check if loadedQuantityMembers exists in global scope
@@ -1354,10 +1385,12 @@
             return [];
         }
 
-        // Find all quantity members where raw_element_id matches this ID
+        // is_active=True이고 raw_element_id가 일치하며 split되지 않은 QuantityMember 조회
         const results = window.loadedQuantityMembers.filter(qm => {
-            // raw_element_id can be number or string, so convert both to string for comparison
-            return qm.raw_element_id && qm.raw_element_id.toString() === rawElementId.toString();
+            return qm.raw_element_id &&
+                   qm.raw_element_id.toString() === rawElementId.toString() &&
+                   qm.is_active === true &&
+                   !qm.split_element_id;  // 분할되지 않은 원본만
         });
 
         console.log('[3D Viewer] Found matching quantity members:', results);
@@ -1446,20 +1479,24 @@
             return;
         }
 
-        // ▼▼▼ [수정] DB에서 로드한 분할 객체(rawElementId)도 포함 ▼▼▼
-        // Get BIM object ID (use originalObjectId for split parts, rawElementId for DB-loaded splits)
-        const bimObjectId = object.userData.bimObjectId || object.userData.originalObjectId || object.userData.rawElementId;
+        // ▼▼▼ [수정] 분할 객체인 경우 split_element_id로 조회 ▼▼▼
+        let quantityMembers = [];
 
-        if (!bimObjectId) {
-            tableContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
-            return;
+        if (object.userData.splitElementId) {
+            // 분할 객체인 경우: split_element_id로 연결된 QuantityMember 조회
+            console.log('[3D Viewer] Split object selected for cost items, split_element_id:', object.userData.splitElementId);
+            quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+        } else {
+            // 원본 BIM 객체인 경우: raw_element_id로 조회
+            const bimObjectId = object.userData.bimObjectId || object.userData.rawElementId;
+            if (!bimObjectId) {
+                tableContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+                return;
+            }
+            console.log('[3D Viewer] Original BIM object selected for cost items, raw_element_id:', bimObjectId);
+            quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
         }
         // ▲▲▲ [수정] 여기까지 ▲▲▲
-
-        console.log('[3D Viewer] BIM Object ID:', bimObjectId);
-
-        // Find all quantity members linked to this BIM object
-        const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
         console.log('[3D Viewer] Found quantity members for cost items:', quantityMembers);
 
         if (quantityMembers.length === 0) {
@@ -1483,10 +1520,14 @@
         console.log('[3D Viewer] Cost items with prices available:', costItemsWithPrices.length, 'items');
 
         // Find cost items with unit price information that match these quantity members
+        // ▼▼▼ [수정] is_active=True 필터 추가 ▼▼▼
         const matchingCostItems = costItemsWithPrices.filter(item => {
             if (!item.quantity_member_id) return false;
+            // is_active=True인 항목만 표시
+            if (item.is_active === false) return false;
             return qmIds.some(id => id.toString() === item.quantity_member_id.toString());
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] Found matching cost items with prices:', matchingCostItems);
 
