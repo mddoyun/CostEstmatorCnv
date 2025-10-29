@@ -120,10 +120,7 @@ namespace RevitDjangoConnector
                     ProcessGeometryObject(instanceObj, allVerts, allFaces, transform);
                 }
             }
-            else if (geomObj is Mesh mesh)
-            {
-                ProcessMesh(mesh, allVerts, allFaces, parentTransform);
-            }
+            // Mesh 처리는 Solid로 충분히 커버됨 - 제거
         }
 
         private static void ProcessSolid(Solid solid, List<double> allVerts, List<int> allFaces, Transform transform)
@@ -157,29 +154,6 @@ namespace RevitDjangoConnector
                     }
                 }
                 catch { /* 실패 시 건너뛰기 */ }
-            }
-        }
-
-        private static void ProcessMesh(Mesh mesh, List<double> allVerts, List<int> allFaces, Transform transform)
-        {
-            if (mesh == null) return;
-
-            int vertexOffset = allVerts.Count / 3;
-
-            for (int i = 0; i < mesh.NumTriangles; i++)
-            {
-                var triangle = mesh.get_Triangle(i);
-                for (int j = 0; j < 3; j++)
-                {
-                    XYZ vertex = triangle.get_Vertex(j);
-                    XYZ transformedVertex = transform.OfPoint(vertex);
-
-                    allVerts.Add(transformedVertex.X);
-                    allVerts.Add(transformedVertex.Y);
-                    allVerts.Add(transformedVertex.Z);
-
-                    allFaces.Add(vertexOffset + i * 3 + j);
-                }
             }
         }
 
