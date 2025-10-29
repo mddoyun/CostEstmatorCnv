@@ -86,11 +86,9 @@ namespace RevitDjangoConnector
 
         private async void ConnectButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_serverProcess == null || _serverProcess.HasExited)
-            {
-                MessageBox.Show("Please start the server first.", "Server Not Running", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            // ▼▼▼ [제거] 서버 프로세스 체크 제거 - 외부 서버에도 연결 가능 ▼▼▼
+            // 사용자가 직접 Python으로 서버를 실행하거나, Blender에서 실행한 서버에도 연결 가능
+            // ▲▲▲ [제거] 여기까지 ▲▲▲
 
             var serverUrl = ServerUrlTextBox.Text;
             if (string.IsNullOrWhiteSpace(serverUrl))
@@ -124,10 +122,32 @@ namespace RevitDjangoConnector
                         UpdateStatus($"Could not open browser: {ex.Message}");
                     }
                 }
+                else
+                {
+                    // ▼▼▼ [추가] 연결 실패 시 안내 메시지 ▼▼▼
+                    MessageBox.Show(
+                        "Could not connect to the server.\n\n" +
+                        "Please make sure:\n" +
+                        "1. The server is running (Python manage.py runserver)\n" +
+                        "2. Or click 'Start Server' button first\n" +
+                        "3. The server URL is correct",
+                        "Connection Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    // ▲▲▲ [추가] 여기까지 ▲▲▲
+                }
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Failed to connect: {ex.Message}");
+                // ▼▼▼ [추가] 예외 발생 시 안내 메시지 ▼▼▼
+                MessageBox.Show(
+                    $"Connection error: {ex.Message}\n\n" +
+                    "Please check if the server is running.",
+                    "Connection Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
             }
         }
 
