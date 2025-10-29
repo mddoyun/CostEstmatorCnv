@@ -763,19 +763,19 @@ class FrontendConsumer(AsyncWebsocketConsumer):
             # 1. 원본 QuantityMembers 조회 (parent_split 또는 raw_element에서)
             if parent_split:
                 # 부모 분할 객체에 연결된 QuantityMember 복제
+                # ▼▼▼ [수정] is_active 필터 제거: 첫 번째 split에서 비활성화되어도 두 번째 split에서 복제 가능 ▼▼▼
                 source_members = QuantityMember.objects.filter(
-                    split_element=parent_split,
-                    is_active=True
+                    split_element=parent_split
                 )
-                print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} active QMs from parent split")
+                print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} QMs from parent split")
             else:
                 # 원본 BIM 객체에 연결된 QuantityMember 복제
+                # ▼▼▼ [수정] is_active 필터 제거: 첫 번째 split에서 비활성화되어도 두 번째 split에서 복제 가능 ▼▼▼
                 source_members = QuantityMember.objects.filter(
                     raw_element=raw_element,
-                    split_element__isnull=True,  # 분할되지 않은 원본만
-                    is_active=True
+                    split_element__isnull=True  # 분할되지 않은 원본만
                 )
-                print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} active QMs from raw element")
+                print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} QMs from raw element")
 
             created_qm_count = 0
             created_ci_count = 0
@@ -807,9 +807,9 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                 source_member.save(update_fields=['is_active'])
 
                 # 4. CostItem 복제 및 수량 적용
+                # ▼▼▼ [수정] is_active 필터 제거: 첫 번째 split에서 비활성화되어도 두 번째 split에서 복제 가능 ▼▼▼
                 source_cost_items = CostItem.objects.filter(
-                    quantity_member=source_member,
-                    is_active=True
+                    quantity_member=source_member
                 )
 
                 for source_item in source_cost_items:
