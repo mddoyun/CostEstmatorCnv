@@ -294,7 +294,7 @@ async def websocket_handler(uri):
                     message_data = json.loads(message_str)
                     print(f"[DEBUG] Received message: {message_data.get('command', 'unknown')}")
                     event_queue.put(message_data)  # Use standard queue.put() instead of await
-                    print(f"[DEBUG] Message added to queue, queue size: {event_queue.qsize()}")
+                    print(f"[DEBUG] Message added to queue")
                 except asyncio.TimeoutError: continue
                 except websockets.exceptions.ConnectionClosed:
                     print("[DEBUG] WebSocket connection closed")
@@ -323,31 +323,35 @@ def process_event_queue_timer():
     global timer_call_count
     timer_call_count += 1
 
-    # ▼▼▼ [CRITICAL FIX] 전체를 try로 감싸서 타이머 죽지 않도록 보호 ▼▼▼
+    # ▼▼▼ [CRITICAL FIX] 전체를 try로 감싸고 qsize() 제거 ▼▼▼
     try:
-        # Print every call when debugging connectivity issues
-        queue_size = event_queue.qsize()
-        if timer_call_count % 10 == 0 or queue_size > 0:
-            print(f"[DEBUG] Timer tick #{timer_call_count}, queue size: {queue_size}")
+        # qsize()는 스레드 간 충돌 가능성 있음 - empty() 사용
+        is_empty = event_queue.empty()
 
-        if queue_size > 0:
-            print(f"[DEBUG] Queue has {queue_size} messages (timer call #{timer_call_count})")
+        if timer_call_count % 10 == 0 or not is_empty:
+            print(f"[DEBUG] Timer tick #{timer_call_count}, queue empty: {is_empty}")
+
+        if not is_empty:
+            print(f"[DEBUG] Queue has messages (timer call #{timer_call_count})")
 
         while not event_queue.empty():
-            command_data = event_queue.get_nowait()
-            command = command_data.get("command")
-            print(f"[DEBUG] Processing command: {command}")
-            if command == "fetch_all_elements_chunked":
-                print("[DEBUG] Scheduling handle_fetch_all_elements")
-                schedule_blender_task(handle_fetch_all_elements, command_data)
-            elif command == "get_selection":
-                print("[DEBUG] Scheduling handle_get_selection")
-                schedule_blender_task(handle_get_selection)
-            elif command == "select_elements":
-                print("[DEBUG] Scheduling select_elements_by_guids")
-                schedule_blender_task(select_elements_by_guids, command_data.get("unique_ids", []))
-            else:
-                print(f"[WARN] Unknown command: {command}")
+            try:
+                command_data = event_queue.get_nowait()
+                command = command_data.get("command")
+                print(f"[DEBUG] Processing command: {command}")
+                if command == "fetch_all_elements_chunked":
+                    print("[DEBUG] Scheduling handle_fetch_all_elements")
+                    schedule_blender_task(handle_fetch_all_elements, command_data)
+                elif command == "get_selection":
+                    print("[DEBUG] Scheduling handle_get_selection")
+                    schedule_blender_task(handle_get_selection)
+                elif command == "select_elements":
+                    print("[DEBUG] Scheduling select_elements_by_guids")
+                    schedule_blender_task(select_elements_by_guids, command_data.get("unique_ids", []))
+                else:
+                    print(f"[WARN] Unknown command: {command}")
+            except queue.Empty:
+                break  # 큐가 비었으면 종료
     except Exception as e:
         print(f"[ERROR] 타이머 오류 (계속 실행됨): {e}")
         traceback.print_exc()
