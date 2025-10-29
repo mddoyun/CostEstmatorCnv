@@ -564,6 +564,8 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({
                     'type': 'split_saved',
                     'split_id': str(split_id),
+                    'raw_element_id': str(payload.get('raw_element_id')),
+                    'split_part_type': payload.get('split_part_type'),
                     'success': True
                 }))
             except Exception as e:

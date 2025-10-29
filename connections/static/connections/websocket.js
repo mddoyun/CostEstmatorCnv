@@ -499,7 +499,29 @@ window.setupWebSocket = function() {
             // ▼▼▼ [추가] 3D 객체 분할 저장 응답 처리 ▼▼▼
             case 'split_saved':
                 console.log('[WebSocket] Split saved successfully:', data.split_id);
-                // Optional: UI feedback or update
+                console.log('[WebSocket] Split details:', {
+                    raw_element_id: data.raw_element_id,
+                    split_part_type: data.split_part_type
+                });
+
+                // Find the corresponding mesh in the scene and set splitElementId
+                if (window.scene && data.raw_element_id && data.split_part_type) {
+                    window.scene.traverse((object) => {
+                        if (object.isMesh &&
+                            object.userData.rawElementId === data.raw_element_id &&
+                            object.userData.splitPartType === data.split_part_type &&
+                            object.userData.isSplitPart === true &&
+                            !object.userData.splitElementId) {  // Only update if not already set
+
+                            object.userData.splitElementId = data.split_id;
+                            console.log('[WebSocket] Set splitElementId on mesh:', {
+                                raw_element_id: data.raw_element_id,
+                                split_part_type: data.split_part_type,
+                                split_id: data.split_id
+                            });
+                        }
+                    });
+                }
                 break;
 
             case 'split_save_error':

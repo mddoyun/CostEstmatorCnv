@@ -853,12 +853,14 @@ def create_quantity_members_auto_view(request, project_id):
         # [수정] 대용량 처리를 위해 iterator 사용
         for element in elements_qs.iterator(chunk_size=500):
             element_tags = element.classification_tags.all()
-            
+
             for tag in element_tags:
+                # ▼▼▼ [수정] 분할되지 않은 원본 QuantityMember만 대상으로 함 ▼▼▼
                 member, created = QuantityMember.objects.update_or_create(
                     project=project,
                     raw_element=element,
                     classification_tag=tag,
+                    split_element__isnull=True,  # 분할되지 않은 원본만
                     defaults={
                         'name': f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}",
                         'is_active': True  # ← is_active 필드 추가
@@ -885,8 +887,13 @@ def create_quantity_members_auto_view(request, project_id):
                         member.save(update_fields=['properties'])
 
                 valid_member_ids.add(member.id)
-        
-        deletable_members = QuantityMember.objects.filter(project=project, raw_element__isnull=False).exclude(id__in=valid_member_ids)
+
+        # ▼▼▼ [수정] 분할된 객체의 QuantityMember는 삭제 대상에서 제외 ▼▼▼
+        deletable_members = QuantityMember.objects.filter(
+            project=project,
+            raw_element__isnull=False,
+            split_element__isnull=True  # 분할되지 않은 원본만 삭제 대상
+        ).exclude(id__in=valid_member_ids)
         
         deletable_count = deletable_members.count()
         if deletable_count > 0:
