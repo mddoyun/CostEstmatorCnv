@@ -799,16 +799,19 @@
                     // 분할 객체인 경우
                     mesh.userData = {
                         isSplitElement: true,
-                        splitId: bimObject.id,
+                        isSplitPart: true,  // 분할된 부분임을 표시
+                        splitElementId: bimObject.id,  // DB의 SplitElement.id (재분할 시 parentSplitId로 사용)
                         rawElementId: bimObject.rawElementId,
                         parentSplitId: bimObject.parentSplitId,
                         originalGeometryVolume: bimObject.originalGeometryVolume,
                         geometryVolume: bimObject.geometry_volume,
+                        geometry_volume: bimObject.geometry_volume,  // 일관성을 위해 추가
                         volumeRatio: bimObject.volumeRatio,
                         splitMethod: bimObject.splitMethod,
                         splitAxis: bimObject.splitAxis,
                         splitPosition: bimObject.splitPosition,
-                        splitPartType: bimObject.splitPartType
+                        splitPartType: bimObject.splitPartType,
+                        originalColor: new THREE.Color(0xcccccc)  // 기본 색상 저장
                     };
                 } else {
                     // BIM 원본 객체인 경우
