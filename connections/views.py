@@ -1701,7 +1701,7 @@ def get_boq_grouping_fields_api(request, project_id):
     add_field('cost_code__name', '공사코드 - 품명')
     add_field('cost_code__spec', '공사코드 - 규격')
     add_field('cost_code__unit', '공사코드 - 단위')
-    add_field('cost_code__category', '공사코드 - 카테고리')
+    add_field('cost_code__category', '공사코드 - 공정')
     add_field('quantity_member__name', '산출부재 - 이름')
     add_field('quantity_member__classification_tag__name', '산출부재 - 수량산출분류')
     add_field('quantity_member__member_mark__mark', '일람부호 - 부호명')

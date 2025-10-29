@@ -57,7 +57,7 @@ function renderCostCodesTable(codes, editId = null) {
                 <th>품명</th>
                 <th>규격</th>
                 <th>단위</th>
-                <th>카테고리</th>
+                <th>공정</th>
                 <th>설명</th>
                 <!-- [ADD] 새 컬럼 2개 -->
                 <th>AI개략견적</th>
@@ -96,7 +96,7 @@ function renderCostCodesTable(codes, editId = null) {
                 }" placeholder="단위"></td>
                 <td><input type="text" class="cost-category-input" value="${
                     code.category || ''
-                }" placeholder="카테고리"></td>
+                }" placeholder="공정"></td>
                 <td><input type="text" class="cost-description-input" value="${
                     code.description || ''
                 }" placeholder="설명"></td>
