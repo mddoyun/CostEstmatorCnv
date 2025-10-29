@@ -1747,11 +1747,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Developments\\CostEstimator_RevitAddin_2026\\AiBimCost.csproj",
+      "projectUniqueName": "C:\\Developments\\CostEstmatorCnv\\CostEstimator_RevitAddin_2026\\AiBimCost.csproj",
       "projectName": "AiBimCost",
-      "projectPath": "C:\\Developments\\CostEstimator_RevitAddin_2026\\AiBimCost.csproj",
+      "projectPath": "C:\\Developments\\CostEstmatorCnv\\CostEstimator_RevitAddin_2026\\AiBimCost.csproj",
       "packagesPath": "C:\\Users\\mddoyun\\.nuget\\packages\\",
-      "outputPath": "C:\\Developments\\CostEstimator_RevitAddin_2026\\obj\\",
+      "outputPath": "C:\\Developments\\CostEstmatorCnv\\CostEstimator_RevitAddin_2026\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "e8RcK1QKVq8=",
+  "dgSpecHash": "On3yn0uUo7o=",
   "success": true,
-  "projectFilePath": "C:\\Developments\\CostEstimator_RevitAddin_2026\\AiBimCost.csproj",
+  "projectFilePath": "C:\\Developments\\CostEstmatorCnv\\CostEstimator_RevitAddin_2026\\AiBimCost.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\mddoyun\\.nuget\\packages\\epplus\\8.0.2\\epplus.8.0.2.nupkg.sha512",
     "C:\\Users\\mddoyun\\.nuget\\packages\\epplus.interfaces\\8.0.0\\epplus.interfaces.8.0.0.nupkg.sha512",

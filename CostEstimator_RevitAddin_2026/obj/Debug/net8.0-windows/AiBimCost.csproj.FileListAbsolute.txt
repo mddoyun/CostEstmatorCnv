@@ -568,3 +568,10 @@ C:\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost
 C:\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\refint\AiBimCost.dll
 C:\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost.pdb
 C:\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\ref\AiBimCost.dll
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost.csproj.AssemblyReference.cache
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\MainTools\QuantityTakeoff_web\ConnectorWindow.g.cs
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost_MarkupCompile.cache
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost_MarkupCompile.lref
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost.dll
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\refint\AiBimCost.dll
+C:\Developments\CostEstmatorCnv\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost.pdb
