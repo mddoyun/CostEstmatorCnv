@@ -14,11 +14,30 @@
     let lastIntersects = [];
     let currentIntersectIndex = 0;
 
+    // Visibility state management
+    let hiddenObjectIds = new Set(); // Store IDs of hidden objects
+
     // Cache for cost items with unit price information from BOQ report
     let costItemsWithPrices = [];
 
+    // Retry counters for data loading
+    let displayCostItemsRetryCount = new Map(); // mesh -> retry count
+
+    // Camera state for restoration after reload (전역으로 노출)
+    window.savedCameraState = null;
+
     window.initThreeDViewer = function() {
         console.log("[3D Viewer] Initializing 3D Viewer...");
+
+        // Check if already initialized
+        if (scene && renderer && camera && controls) {
+            console.log("[3D Viewer] 3D Viewer already initialized, skipping...");
+            // Restore visibility state if returning from another tab
+            if (typeof restoreVisibilityState === 'function') {
+                restoreVisibilityState();
+            }
+            return;
+        }
 
         const container = document.querySelector('.three-d-viewer-container');
         const canvas = document.getElementById('three-d-canvas');
@@ -102,6 +121,12 @@
 
         // Handle window resize
         window.addEventListener('resize', onWindowResize, false);
+
+        // ▼▼▼ [추가] camera와 controls를 전역으로 노출 ▼▼▼
+        window.camera = camera;
+        window.controls = controls;
+        window.scene = scene;
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         console.log("[3D Viewer] 3D Viewer initialized successfully.");
     };
@@ -262,6 +287,30 @@
 
         // Load BIM geometry using the dedicated function
         window.loadBimGeometry(allObjectsToLoad);
+
+        // ▼▼▼ [추가] 저장된 카메라 상태 복원 ▼▼▼
+        if (window.savedCameraState && camera && controls) {
+            console.log('[3D Viewer] Restoring camera state...');
+            camera.position.copy(window.savedCameraState.position);
+            camera.rotation.copy(window.savedCameraState.rotation);
+            camera.zoom = window.savedCameraState.zoom;
+            camera.updateProjectionMatrix();
+
+            if (controls.target) {
+                controls.target.copy(window.savedCameraState.target);
+            }
+            controls.update();
+
+            console.log('[3D Viewer] Camera state restored');
+            window.savedCameraState = null; // 사용 후 초기화
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // Restore visibility state if returning from another tab
+        restoreVisibilityState();
+
+        // Update visibility control buttons
+        updateVisibilityControlButtons();
         // ▲▲▲ [수정] 여기까지 ▲▲▲
     };  // ▼▼▼ [수정] 전역 함수이므로 세미콜론 추가 ▼▼▼
 
@@ -274,10 +323,14 @@
         // Deselect any selected object
         deselectObject();
 
-        // Remove all meshes from scene
+        // ▼▼▼ [수정] meshes, lights, helpers 모두 제거 ▼▼▼
         const objectsToRemove = [];
         scene.traverse(function(object) {
-            if (object instanceof THREE.Mesh) {
+            // Remove meshes, lights, and helpers (but keep camera)
+            if (object instanceof THREE.Mesh ||
+                object instanceof THREE.Light ||
+                object instanceof THREE.AxesHelper ||
+                object instanceof THREE.GridHelper) {
                 objectsToRemove.push(object);
             }
         });
@@ -295,16 +348,29 @@
             }
             scene.remove(object);
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Clear original materials map
         originalMaterials.clear();
 
-        // Re-add essential scene elements
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        // Re-add essential scene elements (matching initThreeDViewer settings)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1, 1, 1).normalize();
+        directionalLight.position.set(10, 20, 10);
+        directionalLight.castShadow = true;
+
+        // Configure shadow properties
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+
         scene.add(directionalLight);
 
         const axesHelper = new THREE.AxesHelper(5);
@@ -672,6 +738,32 @@
             };
         }
 
+        // Visibility control buttons
+        const isolateSelectionBtn = document.getElementById('isolate-selection-btn');
+        const hideSelectionBtn = document.getElementById('hide-selection-btn');
+        const showAllBtn = document.getElementById('show-all-btn');
+
+        if (isolateSelectionBtn) {
+            isolateSelectionBtn.onclick = function() {
+                console.log("[3D Viewer] Isolating selected object");
+                isolateSelection();
+            };
+        }
+
+        if (hideSelectionBtn) {
+            hideSelectionBtn.onclick = function() {
+                console.log("[3D Viewer] Hiding selected object");
+                hideSelection();
+            };
+        }
+
+        if (showAllBtn) {
+            showAllBtn.onclick = function() {
+                console.log("[3D Viewer] Showing all objects");
+                showAll();
+            };
+        }
+
         // Setup properties panel tab listeners
         setupPropertiesPanelTabs();
     };
@@ -857,6 +949,12 @@
 
         // Center camera on loaded geometry
         centerCameraOnGeometry();
+
+        // Restore visibility state (if returning from another tab)
+        restoreVisibilityState();
+
+        // Update visibility control buttons
+        updateVisibilityControlButtons();
     };
 
     function centerCameraOnGeometry() {
@@ -1107,13 +1205,16 @@
                     console.log('  - Split Axis:', object.userData.splitAxis.toUpperCase());
                 }
 
-                if (object.userData.splitPosition !== undefined) {
+                if (object.userData.splitPosition !== undefined && object.userData.splitPosition !== null) {
                     console.log('  - Split Position:', object.userData.splitPosition.toFixed(2));
                 }
             }
             // ▲▲▲ [수정] 여기까지 ▲▲▲
             console.log('[3D Viewer] =======================');
         }
+
+        // Update visibility control buttons
+        updateVisibilityControlButtons();
     }
 
     // Deselect current object
@@ -1149,6 +1250,9 @@
 
         // Clear cost items
         clearCostItemsPanel();
+
+        // Update visibility control buttons
+        updateVisibilityControlButtons();
     }
 
     // Helper function to recursively render nested objects/arrays
@@ -1305,6 +1409,11 @@
             // 분할 객체인 경우: split_element_id로 연결된 QuantityMember 조회
             console.log('[3D Viewer] Split object selected, searching by split_element_id:', object.userData.splitElementId);
             quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+        } else if (object.userData.isSplitPart || object.userData.isSplitElement) {
+            // 분할 객체이지만 splitElementId가 아직 설정되지 않음 (split 직후)
+            console.warn('[3D Viewer] Split object but splitElementId not set yet - showing waiting message');
+            listContainer.innerHTML = '<p class="no-selection">분할 정보 저장 중...</p>';
+            return;
         } else {
             // 원본 BIM 객체인 경우: raw_element_id로 조회
             const bimObjectId = object.userData.bimObjectId || object.userData.rawElementId;
@@ -1531,11 +1640,21 @@
             // 분할 객체인 경우: split_element_id로 연결된 QuantityMember 조회
             console.log('[3D Viewer] ✓ Split object selected (splitElementId exists)');
             console.log('[3D Viewer] Querying by split_element_id:', object.userData.splitElementId);
+
+            // ▼▼▼ [추가] loadedQuantityMembers가 비어있으면 대기 메시지 표시 ▼▼▼
+            if (!window.loadedQuantityMembers || window.loadedQuantityMembers.length === 0) {
+                console.warn('[3D Viewer] loadedQuantityMembers is empty - data is loading...');
+                tableContainer.innerHTML = '<p class="no-selection">데이터 로딩 중... (Split 후 자동 재로드 중)</p>';
+                return;
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
         } else if (object.userData.isSplitPart || object.userData.isSplitElement) {
             // 분할 객체이지만 splitElementId가 아직 설정되지 않음 (split 직후)
+            // 자동 재로드가 진행 중이므로 대기 메시지만 표시
             console.warn('[3D Viewer] ⚠ Split object but splitElementId not set yet - waiting for split_saved');
-            tableContainer.innerHTML = '<p class="no-selection">분할 정보 저장 중... 잠시 후 다시 선택해주세요</p>';
+            tableContainer.innerHTML = '<p class="no-selection">분할 정보 저장 중... (자동 재로드 대기)</p>';
             return;
         } else {
             // 원본 BIM 객체인 경우: raw_element_id로 조회
@@ -1552,11 +1671,20 @@
         console.log('[3D Viewer] Found quantity members:', quantityMembers.length);
         console.log('[3D Viewer] Quantity member details:', quantityMembers);
 
+        // ▼▼▼ [수정] Split 직후 QM이 없으면 자동 재로드 대기 ▼▼▼
         if (quantityMembers.length === 0) {
+            if (object.userData.splitElementId) {
+                // Split 객체인데 QM이 없으면 자동 재로드가 진행 중
+                console.warn('[3D Viewer] Split object but no QM found - auto-reload in progress');
+                tableContainer.innerHTML = '<p class="no-selection">데이터 로딩 중... (자동 재로드 대기)</p>';
+                return;
+            }
+
             console.warn('[3D Viewer] No quantity members found for BIM object');
             tableContainer.innerHTML = '<p class="no-selection">연관된 수량산출부재가 없습니다</p>';
             return;
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Get all quantity member IDs
         const qmIds = quantityMembers.map(qm => qm.id);
@@ -1565,9 +1693,25 @@
         // Check if cost items with prices are loaded
         if (!costItemsWithPrices || costItemsWithPrices.length === 0) {
             console.warn('[3D Viewer] Cost items with prices not loaded yet');
-            tableContainer.innerHTML = '<p class="no-selection">단가 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.</p>';
+            tableContainer.innerHTML = '<p class="no-selection">단가 정보를 불러오는 중입니다... (자동 재시도)</p>';
+
             // Try to load cost items with prices
-            window.loadCostItemsWithPrices();
+            if (typeof window.loadCostItemsWithPrices === 'function') {
+                window.loadCostItemsWithPrices();
+            }
+
+            // 재시도 (최대 8회, 500ms 간격)
+            const retryCount = displayCostItemsRetryCount.get(object) || 0;
+            if (retryCount < 8) {
+                displayCostItemsRetryCount.set(object, retryCount + 1);
+                setTimeout(() => {
+                    console.log('[3D Viewer] Retrying after loading cost items with prices...');
+                    displayCostItems(object);
+                }, 500);
+            } else {
+                displayCostItemsRetryCount.delete(object);
+                tableContainer.innerHTML = '<p class="no-selection">단가 정보를 불러올 수 없습니다. 페이지를 새로고침하세요.</p>';
+            }
             return;
         }
         console.log('[3D Viewer] Cost items with prices available:', costItemsWithPrices.length, 'items');
@@ -1971,13 +2115,26 @@
                 bboxMax = bbox.max.y;
             }
 
-            console.log('[3D Viewer] Split operation starting');
+            console.log('[3D Viewer] ============= SPLIT OPERATION STARTING =============');
+            console.log('[3D Viewer] Selected object info:');
+            console.log('  - Is split part:', selectedObject.userData.isSplitPart);
+            console.log('  - Parent split ID:', selectedObject.userData.splitElementId);
+            console.log('  - Object position:', selectedObject.position.toArray());
+            console.log('  - Object rotation:', selectedObject.rotation.toArray());
+            console.log('  - Object scale:', selectedObject.scale.toArray());
+            console.log('[3D Viewer] Split parameters:');
             console.log('  - Axis:', axisName);
             console.log('  - Slider value:', position + '%');
+            console.log('  - BBox:', {
+                min: [bbox.min.x.toFixed(4), bbox.min.y.toFixed(4), bbox.min.z.toFixed(4)],
+                max: [bbox.max.x.toFixed(4), bbox.max.y.toFixed(4), bbox.max.z.toFixed(4)]
+            });
             console.log('  - BBox range [min, max]:', [bboxMin.toFixed(4), bboxMax.toFixed(4)]);
-            console.log('  - Plane position (local):', planePosition.toFixed(4));
+            console.log('  - BBox size:', (bboxMax - bboxMin).toFixed(4));
+            console.log('  - Plane position:', planePosition.toFixed(4));
             console.log('  - Plane distance:', planeDistance.toFixed(4));
-            console.log('  - Expected ratio:', (position / 100.0 * 100).toFixed(2) + '%');
+            console.log('  - Plane normal:', planeNormal.toArray());
+            console.log('  - Expected split ratio:', (position / 100.0 * 100).toFixed(2) + '%');
 
             // Get geometry data
             const positions = selectedObject.geometry.attributes.position.array;
@@ -2536,7 +2693,7 @@
         console.log('[3D Viewer] Capping vertices:', cappingVertices.map(v => `(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`));
 
         if (cappingVertices.length >= 3) {
-            // Calculate centroid of intersection points
+            // Calculate centroid of intersection points (without offset)
             let cx = 0, cy = 0, cz = 0;
             for (let i = 0; i < cappingVertices.length; i++) {
                 cx += cappingVertices[i].x;
@@ -2547,18 +2704,12 @@
             cy /= cappingVertices.length;
             cz /= cappingVertices.length;
 
-            console.log('[3D Viewer] Capping centroid:', `(${cx.toFixed(4)}, ${cy.toFixed(4)}, ${cz.toFixed(4)})`);
+            console.log('[3D Viewer] Capping centroid (raw):', `(${cx.toFixed(4)}, ${cy.toFixed(4)}, ${cz.toFixed(4)})`);
 
-            // Add centroid as a new vertex
-            const centroidIndex = allVertices.length / 3;
-            allVertices.push(cx, cy, cz);
+            // Epsilon offset to avoid coplanarity issues with subsequent splits
+            const EPSILON_OFFSET = 0.001;  // 1mm offset for numerical stability
 
-            // Sort vertices around centroid
-            // Project onto 2D plane perpendicular to plane normal
-            const sortedVerts = cappingVertices.slice();
-
-            // Get two perpendicular vectors on the plane
-            // Choose tempVec as the axis LEAST aligned with planeNormal for numerical stability
+            // Get two perpendicular vectors on the plane for sorting
             let tempVec, u, v;
             const absX = Math.abs(planeNormal.x);
             const absY = Math.abs(planeNormal.y);
@@ -2579,7 +2730,8 @@
             console.log('  - u:', u);
             console.log('  - v:', v);
 
-            // Convert to 2D coordinates and calculate angle
+            // Sort vertices around centroid by angle
+            const sortedVerts = cappingVertices.slice();
             sortedVerts.forEach(vert => {
                 const dx = vert.x - cx;
                 const dy = vert.y - cy;
@@ -2588,8 +2740,6 @@
                 const v_coord = dx * v.x + dy * v.y + dz * v.z;
                 vert.angle = Math.atan2(v_coord, u_coord);
             });
-
-            // Sort by angle
             sortedVerts.sort((a, b) => a.angle - b.angle);
 
             console.log('[3D Viewer] Sorted capping vertices by angle:');
@@ -2597,31 +2747,122 @@
                 console.log(`  ${i}: angle=${(v.angle * 180 / Math.PI).toFixed(1)}° pos=(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`);
             });
 
-            // Create triangle fan from centroid
-            // For signed volume: need outward normals
-            // Bottom part: plane is TOP surface -> normal should point UP (along plane normal)
-            // Top part: plane is BOTTOM surface -> normal should point DOWN (opposite plane normal)
-            const bottomCappingTriangles = [];
-            const topCappingTriangles = [];
+            // ===== CREATE BOTTOM PART CAPPING =====
+            // All vertices offset in +planeNormal direction to avoid coplanarity
 
+            // Add bottom centroid with +epsilon offset
+            const bottomCentroidX = cx + planeNormal.x * EPSILON_OFFSET;
+            const bottomCentroidY = cy + planeNormal.y * EPSILON_OFFSET;
+            const bottomCentroidZ = cz + planeNormal.z * EPSILON_OFFSET;
+            const bottomCentroidIndex = allVertices.length / 3;
+            allVertices.push(bottomCentroidX, bottomCentroidY, bottomCentroidZ);
+
+            console.log('[3D Viewer] Bottom capping centroid (with +epsilon):', `(${bottomCentroidX.toFixed(4)}, ${bottomCentroidY.toFixed(4)}, ${bottomCentroidZ.toFixed(4)})`);
+
+            // Add bottom perimeter vertices with +epsilon offset
+            const bottomPerimeterIndices = [];
             for (let i = 0; i < sortedVerts.length; i++) {
-                const v1 = sortedVerts[i].index;
-                const v2 = sortedVerts[(i + 1) % sortedVerts.length].index;
+                const origX = sortedVerts[i].x;
+                const origY = sortedVerts[i].y;
+                const origZ = sortedVerts[i].z;
+                const offsetX = origX + planeNormal.x * EPSILON_OFFSET;
+                const offsetY = origY + planeNormal.y * EPSILON_OFFSET;
+                const offsetZ = origZ + planeNormal.z * EPSILON_OFFSET;
+                const idx = allVertices.length / 3;
+                allVertices.push(offsetX, offsetY, offsetZ);
+                bottomPerimeterIndices.push(idx);
+            }
 
-                // Bottom part capping: normal points UP (along plane normal)
+            // Create bottom triangle fan
+            const bottomCappingTriangles = [];
+            for (let i = 0; i < bottomPerimeterIndices.length; i++) {
+                const v1 = bottomPerimeterIndices[i];
+                const v2 = bottomPerimeterIndices[(i + 1) % bottomPerimeterIndices.length];
+                // Bottom part: normal points UP (along plane normal)
                 // Counter-clockwise when viewed from above: [centroid, v1, v2]
-                bottomFaces.push([centroidIndex, v1, v2]);
-                bottomCappingTriangles.push([centroidIndex, v1, v2]);
+                bottomFaces.push([bottomCentroidIndex, v1, v2]);
+                bottomCappingTriangles.push([bottomCentroidIndex, v1, v2]);
+            }
 
-                // Top part capping: normal points DOWN (opposite plane normal)
+            // ===== CREATE TOP PART CAPPING =====
+            // All vertices offset in -planeNormal direction to avoid coplanarity
+
+            // Add top centroid with -epsilon offset
+            const topCentroidX = cx - planeNormal.x * EPSILON_OFFSET;
+            const topCentroidY = cy - planeNormal.y * EPSILON_OFFSET;
+            const topCentroidZ = cz - planeNormal.z * EPSILON_OFFSET;
+            const topCentroidIndex = allVertices.length / 3;
+            allVertices.push(topCentroidX, topCentroidY, topCentroidZ);
+
+            console.log('[3D Viewer] Top capping centroid (with -epsilon):', `(${topCentroidX.toFixed(4)}, ${topCentroidY.toFixed(4)}, ${topCentroidZ.toFixed(4)})`);
+
+            // Add top perimeter vertices with -epsilon offset
+            const topPerimeterIndices = [];
+            for (let i = 0; i < sortedVerts.length; i++) {
+                const origX = sortedVerts[i].x;
+                const origY = sortedVerts[i].y;
+                const origZ = sortedVerts[i].z;
+                const offsetX = origX - planeNormal.x * EPSILON_OFFSET;
+                const offsetY = origY - planeNormal.y * EPSILON_OFFSET;
+                const offsetZ = origZ - planeNormal.z * EPSILON_OFFSET;
+                const idx = allVertices.length / 3;
+                allVertices.push(offsetX, offsetY, offsetZ);
+                topPerimeterIndices.push(idx);
+            }
+
+            // Create top triangle fan
+            const topCappingTriangles = [];
+            for (let i = 0; i < topPerimeterIndices.length; i++) {
+                const v1 = topPerimeterIndices[i];
+                const v2 = topPerimeterIndices[(i + 1) % topPerimeterIndices.length];
+                // Top part: normal points DOWN (opposite plane normal)
                 // Counter-clockwise when viewed from below: [centroid, v2, v1]
-                topFaces.push([centroidIndex, v2, v1]);
-                topCappingTriangles.push([centroidIndex, v2, v1]);
+                topFaces.push([topCentroidIndex, v2, v1]);
+                topCappingTriangles.push([topCentroidIndex, v2, v1]);
             }
 
             console.log('[3D Viewer] Capping: Added', sortedVerts.length, 'capping triangles to each part');
             console.log('[3D Viewer] Capping: Bottom triangles:', bottomCappingTriangles);
             console.log('[3D Viewer] Capping: Top triangles:', topCappingTriangles);
+
+            // ===== REMAP NON-CAPPING FACES TO USE EPSILON OFFSET VERTICES =====
+            // Create mapping from original intersection indices to new perimeter indices
+            const bottomIndexMap = new Map();
+            const topIndexMap = new Map();
+            for (let i = 0; i < sortedVerts.length; i++) {
+                const originalIndex = sortedVerts[i].index;
+                bottomIndexMap.set(originalIndex, bottomPerimeterIndices[i]);
+                topIndexMap.set(originalIndex, topPerimeterIndices[i]);
+            }
+
+            console.log('[3D Viewer] Remapping non-capping faces to use epsilon offset vertices...');
+            console.log('  - Original intersection indices:', Array.from(bottomIndexMap.keys()));
+            console.log('  - Bottom perimeter indices:', bottomPerimeterIndices);
+            console.log('  - Top perimeter indices:', topPerimeterIndices);
+
+            // Remap bottom faces (excluding capping triangles we just added)
+            const numBottomFacesBeforeCapping = bottomFaces.length - bottomCappingTriangles.length;
+            for (let i = 0; i < numBottomFacesBeforeCapping; i++) {
+                const face = bottomFaces[i];
+                for (let j = 0; j < 3; j++) {
+                    if (bottomIndexMap.has(face[j])) {
+                        face[j] = bottomIndexMap.get(face[j]);
+                    }
+                }
+            }
+
+            // Remap top faces (excluding capping triangles we just added)
+            const numTopFacesBeforeCapping = topFaces.length - topCappingTriangles.length;
+            for (let i = 0; i < numTopFacesBeforeCapping; i++) {
+                const face = topFaces[i];
+                for (let j = 0; j < 3; j++) {
+                    if (topIndexMap.has(face[j])) {
+                        face[j] = topIndexMap.get(face[j]);
+                    }
+                }
+            }
+
+            console.log('[3D Viewer] Remapping complete - all faces now use epsilon offset vertices');
         }
 
         return {
@@ -3080,7 +3321,38 @@
         // Get face information
         const faceIndex = intersection.faceIndex;
         const point = intersection.point;
-        const normal = intersection.face.normal.clone();
+
+        // ▼▼▼ [수정] BufferGeometry에서는 intersection.face가 null일 수 있음 ▼▼▼
+        let normal;
+        if (intersection.face && intersection.face.normal) {
+            // Geometry (deprecated)의 경우
+            normal = intersection.face.normal.clone();
+        } else if (faceIndex !== null && faceIndex !== undefined) {
+            // BufferGeometry의 경우 - 수동으로 normal 계산
+            const geometry = _mesh.geometry;
+            const position = geometry.attributes.position;
+            const index = geometry.index;
+
+            // Get triangle vertices
+            const i0 = index ? index.getX(faceIndex * 3) : faceIndex * 3;
+            const i1 = index ? index.getX(faceIndex * 3 + 1) : faceIndex * 3 + 1;
+            const i2 = index ? index.getX(faceIndex * 3 + 2) : faceIndex * 3 + 2;
+
+            const v0 = new THREE.Vector3().fromBufferAttribute(position, i0);
+            const v1 = new THREE.Vector3().fromBufferAttribute(position, i1);
+            const v2 = new THREE.Vector3().fromBufferAttribute(position, i2);
+
+            // Calculate face normal
+            const edge1 = new THREE.Vector3().subVectors(v1, v0);
+            const edge2 = new THREE.Vector3().subVectors(v2, v0);
+            normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+
+            console.log('[3D Viewer] Calculated normal from BufferGeometry:', normal);
+        } else {
+            console.error('[3D Viewer] Cannot determine face normal');
+            return;
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Transform normal to world space
         const normalMatrix = new THREE.Matrix3().getNormalMatrix(_mesh.matrixWorld);
@@ -3090,12 +3362,18 @@
         console.log('[3D Viewer] Intersection point (world):', point);
 
         // Store selected face data
+        // ▼▼▼ [수정] localNormal도 안전하게 저장 ▼▼▼
+        const localNormal = intersection.face && intersection.face.normal ?
+            intersection.face.normal.clone() :
+            normal.clone(); // BufferGeometry의 경우 world normal을 그대로 사용
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
         selectedFace = {
             mesh: _mesh,
             faceIndex: faceIndex,
             point: point.clone(),
             normal: normal.clone(),
-            localNormal: intersection.face.normal.clone()
+            localNormal: localNormal
         };
 
         // Visualize selected face
@@ -4227,6 +4505,21 @@
             console.log('  - Remainder vertices:', remainderBufferGeometry.attributes.position.count);
             console.log('  - Extracted vertices:', extractedBufferGeometry.attributes.position.count);
 
+            // ▼▼▼ [추가] Store meshes in pendingSplitMeshes Map for split_saved handler ▼▼▼
+            if (!window.pendingSplitMeshes) {
+                window.pendingSplitMeshes = new Map();
+            }
+            const remainderKey = `${remainderMesh.userData.rawElementId}:${remainderMesh.userData.splitPartType}`;
+            const extractedKey = `${extractedMesh.userData.rawElementId}:${extractedMesh.userData.splitPartType}`;
+            window.pendingSplitMeshes.set(remainderKey, remainderMesh);
+            window.pendingSplitMeshes.set(extractedKey, extractedMesh);
+            console.log('[3D Viewer] Stored pending sketch split meshes:', {
+                remainderKey: remainderKey,
+                extractedKey: extractedKey,
+                totalPending: window.pendingSplitMeshes.size
+            });
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             showToast('스케치 분할 완료', 'success');
 
             // Save split elements to database
@@ -4414,5 +4707,217 @@
         console.log('[3D Viewer] Extrusion visualized (green semi-transparent)');
         showToast('녹색 반투명 영역이 분할될 부분입니다', 'info');
     }
+
+    // ===== VISIBILITY CONTROL FUNCTIONS =====
+
+    /**
+     * Get unique ID for an object (BIM object or split element)
+     */
+    function getObjectId(object) {
+        if (!object || !object.userData) return null;
+
+        // Priority: splitElementId (for split parts) > bimObjectId (for originals)
+        return object.userData.splitElementId || object.userData.bimObjectId;
+    }
+
+    /**
+     * Isolate selected object (hide all others)
+     */
+    function isolateSelection() {
+        if (!selectedObject) {
+            showToast('객체를 먼저 선택해주세요', 'warning');
+            return;
+        }
+
+        const selectedId = getObjectId(selectedObject);
+        if (!selectedId) {
+            showToast('선택된 객체의 ID를 찾을 수 없습니다', 'error');
+            return;
+        }
+
+        console.log('[3D Viewer] Isolating object:', selectedId);
+
+        // Hide all objects except selected
+        hiddenObjectIds.clear();
+        let totalMeshCount = 0;
+        let validObjectCount = 0;
+        scene.traverse((object) => {
+            if (object.isMesh) {
+                totalMeshCount++;
+                const objectId = getObjectId(object);
+                if (objectId) {
+                    validObjectCount++;
+                    console.log('[3D Viewer] Found mesh:', {
+                        bimObjectId: object.userData.bimObjectId,
+                        splitElementId: object.userData.splitElementId,
+                        rawElementId: object.userData.rawElementId,
+                        objectId: objectId,
+                        isSelected: objectId === selectedId
+                    });
+                    if (objectId !== selectedId) {
+                        object.visible = false;
+                        hiddenObjectIds.add(objectId);
+                    }
+                }
+            }
+        });
+
+        console.log('[3D Viewer] Scene stats - Total meshes:', totalMeshCount, 'Valid objects:', validObjectCount);
+        console.log('[3D Viewer] Hidden', hiddenObjectIds.size, 'objects');
+        showToast(`선택된 객체만 표시 (${hiddenObjectIds.size}개 숨김)`, 'success');
+
+        // Persist visibility state
+        window.viewerVisibilityState = { hiddenObjectIds: Array.from(hiddenObjectIds) };
+
+        // Update button states
+        updateVisibilityControlButtons();
+    }
+
+    /**
+     * Hide selected object
+     */
+    function hideSelection() {
+        if (!selectedObject) {
+            showToast('객체를 먼저 선택해주세요', 'warning');
+            return;
+        }
+
+        const selectedId = getObjectId(selectedObject);
+        if (!selectedId) {
+            showToast('선택된 객체의 ID를 찾을 수 없습니다', 'error');
+            return;
+        }
+
+        console.log('[3D Viewer] Hiding object:', selectedId);
+
+        // Hide the selected object
+        selectedObject.visible = false;
+        hiddenObjectIds.add(selectedId);
+
+        // Deselect the object
+        deselectObject();
+
+        console.log('[3D Viewer] Object hidden. Total hidden:', hiddenObjectIds.size);
+        showToast('선택된 객체를 숨겼습니다', 'success');
+
+        // Persist visibility state
+        window.viewerVisibilityState = { hiddenObjectIds: Array.from(hiddenObjectIds) };
+
+        // Update button states (called after deselectObject, so buttons will be updated correctly)
+        updateVisibilityControlButtons();
+    }
+
+    /**
+     * Show all hidden objects
+     */
+    function showAll() {
+        console.log('[3D Viewer] ========================================');
+        console.log('[3D Viewer] showAll called');
+        console.log('[3D Viewer] Current hiddenObjectIds size:', hiddenObjectIds.size);
+        console.log('[3D Viewer] Selected object:', selectedObject ? getObjectId(selectedObject) : 'none');
+
+        let restoredCount = 0;
+        let totalMeshes = 0;
+        scene.traverse((object) => {
+            if (object.isMesh) {
+                totalMeshes++;
+                const objectId = getObjectId(object);
+                if (objectId) {
+                    const wasHidden = !object.visible;
+                    if (wasHidden) {
+                        object.visible = true;
+                        restoredCount++;
+                        console.log('[3D Viewer] Restored object:', objectId);
+                    }
+                }
+            }
+        });
+
+        hiddenObjectIds.clear();
+
+        console.log('[3D Viewer] Total meshes:', totalMeshes);
+        console.log('[3D Viewer] Restored', restoredCount, 'objects');
+        console.log('[3D Viewer] ========================================');
+
+        showToast(`모든 객체 표시 (${restoredCount}개 복원)`, 'success');
+
+        // Persist visibility state
+        window.viewerVisibilityState = { hiddenObjectIds: [] };
+
+        // Update button states
+        updateVisibilityControlButtons();
+
+        // Force render update
+        if (window.render && typeof window.render === 'function') {
+            window.render();
+        }
+    }
+
+    /**
+     * Restore visibility state (called after loading geometry or tab switch)
+     */
+    function restoreVisibilityState() {
+        if (!window.viewerVisibilityState || !window.viewerVisibilityState.hiddenObjectIds) {
+            return;
+        }
+
+        const savedHiddenIds = new Set(window.viewerVisibilityState.hiddenObjectIds);
+        if (savedHiddenIds.size === 0) {
+            return;
+        }
+
+        console.log('[3D Viewer] Restoring visibility state...');
+        console.log('[3D Viewer] Hidden object IDs:', Array.from(savedHiddenIds));
+
+        hiddenObjectIds = savedHiddenIds;
+        let hiddenCount = 0;
+
+        scene.traverse((object) => {
+            if (object.isMesh) {
+                const objectId = getObjectId(object);
+                if (objectId && hiddenObjectIds.has(objectId)) {
+                    object.visible = false;
+                    hiddenCount++;
+                }
+            }
+        });
+
+        console.log('[3D Viewer] Visibility state restored:', hiddenCount, 'objects hidden');
+    }
+
+    /**
+     * Update visibility control button states based on selection
+     */
+    function updateVisibilityControlButtons() {
+        const isolateBtn = document.getElementById('isolate-selection-btn');
+        const hideBtn = document.getElementById('hide-selection-btn');
+        const showAllBtn = document.getElementById('show-all-btn');
+
+        const hasSelection = selectedObject !== null;
+        const hasHiddenObjects = hiddenObjectIds.size > 0;
+
+        console.log('[3D Viewer] updateVisibilityControlButtons called');
+        console.log('[3D Viewer] - hasSelection:', hasSelection);
+        console.log('[3D Viewer] - hasHiddenObjects:', hasHiddenObjects);
+        console.log('[3D Viewer] - hiddenObjectIds.size:', hiddenObjectIds.size);
+
+        if (isolateBtn) {
+            isolateBtn.disabled = !hasSelection;
+            console.log('[3D Viewer] - isolateBtn.disabled:', isolateBtn.disabled);
+        }
+
+        if (hideBtn) {
+            hideBtn.disabled = !hasSelection;
+            console.log('[3D Viewer] - hideBtn.disabled:', hideBtn.disabled);
+        }
+
+        if (showAllBtn) {
+            showAllBtn.disabled = !hasHiddenObjects;
+            console.log('[3D Viewer] - showAllBtn.disabled:', showAllBtn.disabled);
+        }
+    }
+
+    // Expose visibility functions globally for external calls
+    window.restoreViewerVisibilityState = restoreVisibilityState;
 
 })();

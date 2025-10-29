@@ -580,41 +580,44 @@ window.setupWebSocket = function() {
                     // ▲▲▲ [추가] 여기까지 ▲▲▲
                 }
 
-                // ▼▼▼ [수정] 분할 완료 후 QuantityMembers와 CostItems 자동 갱신 ▼▼▼
+                // ▼▼▼ [수정] 분할 완료 후 geometry 자동 재로드 ▼▼▼
                 // 두 split이 거의 동시에 완료되므로 debounce를 사용하여 한 번만 갱신
-                // 50ms로 단축 - 사용자가 바로 객체를 선택해도 데이터가 준비되도록
                 if (window.splitDataReloadTimer) {
                     clearTimeout(window.splitDataReloadTimer);
                 }
                 window.splitDataReloadTimer = setTimeout(() => {
-                    console.log('[WebSocket] Reloading QuantityMembers and CostItems after split...');
-                    // 3D Viewer의 loadQuantityMembersForViewer 함수 호출
+                    console.log('[WebSocket] ========================================');
+                    console.log('[WebSocket] Reloading data after split completion...');
+
+                    // ▼▼▼ [수정] Geometry reload 제거, 데이터만 재로드 ▼▼▼
+                    // pendingSplitMeshes를 통해 splitElementId가 즉시 설정되므로 geometry reload 불필요
+
+                    // QM과 CI 데이터 재로드
                     if (typeof window.loadQuantityMembersForViewer === 'function') {
                         window.loadQuantityMembersForViewer();
-                    } else {
-                        console.warn('[WebSocket] loadQuantityMembersForViewer not found');
                     }
-                    // 3D Viewer의 loadCostItemsWithPrices 함수 호출
                     if (typeof window.loadCostItemsWithPrices === 'function') {
                         window.loadCostItemsWithPrices();
-                    } else {
-                        console.warn('[WebSocket] loadCostItemsWithPrices not found');
                     }
 
-                    // ▼▼▼ [추가] 선택된 객체가 있으면 산출항목 테이블 갱신 ▼▼▼
-                    if (window.selectedObject && window.scene) {
-                        console.log('[WebSocket] Refreshing displays for selected object');
-                        // displayQuantityMembers와 displayCostItems 재호출
-                        if (typeof window.displayQuantityMembersForObject === 'function') {
-                            window.displayQuantityMembersForObject(window.selectedObject);
+                    // 선택된 객체가 있으면 표시 갱신
+                    setTimeout(() => {
+                        if (window.selectedObject && window.scene) {
+                            console.log('[WebSocket] Refreshing selected object display...');
+                            // 선택된 객체의 QuantityMember와 CostItem 표시 갱신
+                            if (typeof window.displayQuantityMembersForObject === 'function') {
+                                window.displayQuantityMembersForObject(window.selectedObject);
+                            }
+                            if (typeof window.displayCostItemsForObject === 'function') {
+                                window.displayCostItemsForObject(window.selectedObject);
+                            }
+                            console.log('[WebSocket] Selected object display refreshed');
                         }
-                        if (typeof window.displayCostItemsForObject === 'function') {
-                            window.displayCostItemsForObject(window.selectedObject);
-                        }
-                    }
-                    // ▲▲▲ [추가] 여기까지 ▲▲▲
-                }, 50); // 50ms 대기 후 갱신 (두 split 모두 완료될 시간)
-                // ▲▲▲ [수정] 여기까지 ▲▲▲
+                        console.log('[WebSocket] Data reload completed');
+                        console.log('[WebSocket] ========================================');
+                    }, 200); // QM/CI 데이터 로드 완료 대기
+                    // ▲▲▲ [수정] 여기까지 ▲▲▲
+                }, 100); // 100ms 대기 후 갱신 (두 split 모두 완료될 시간)
                 break;
 
             case 'split_save_error':

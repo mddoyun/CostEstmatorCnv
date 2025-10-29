@@ -559,13 +559,17 @@ class FrontendConsumer(AsyncWebsocketConsumer):
         elif msg_type == 'save_split':
             print(f"[DEBUG] 3D 객체 분할 저장 요청 수신")
             try:
-                split_id = await self.db_save_split_element(payload)
+                result = await self.db_save_split_element(payload)
+                split_id = result['split_id']
                 print(f"[DEBUG] 분할 객체 저장 성공: {split_id}")
+                print(f"[DEBUG] 생성된 QuantityMembers: {result['created_qm_count']}, CostItems: {result['created_ci_count']}")
                 await self.send(text_data=json.dumps({
                     'type': 'split_saved',
                     'split_id': str(split_id),
                     'raw_element_id': str(payload.get('raw_element_id')),
                     'split_part_type': payload.get('split_part_type'),
+                    'created_qm_count': result['created_qm_count'],
+                    'created_ci_count': result['created_ci_count'],
                     'success': True
                 }))
             except Exception as e:
@@ -761,13 +765,28 @@ class FrontendConsumer(AsyncWebsocketConsumer):
 
             # ▼▼▼ QuantityMember와 CostItem 복제 로직 ▼▼▼
             # 1. 원본 QuantityMembers 조회 (parent_split 또는 raw_element에서)
+            # 2. 부모 대비 volume ratio 계산
             if parent_split:
                 # 부모 분할 객체에 연결된 QuantityMember 복제
                 # ▼▼▼ [수정] is_active 필터 제거: 첫 번째 split에서 비활성화되어도 두 번째 split에서 복제 가능 ▼▼▼
                 source_members = QuantityMember.objects.filter(
                     split_element=parent_split
                 )
+                # 부모 대비 volume ratio 계산
+                parent_volume = float(parent_split.geometry_volume)
+                parent_volume_ratio = float(split_element.geometry_volume) / parent_volume if parent_volume > 0 else 0.5
+
+                # ▼▼▼ [추가] 안전장치: volume ratio가 1.0을 초과하는 경우 (geometry 계산 오류) ▼▼▼
+                if parent_volume_ratio > 1.0:
+                    print(f"[WARN][DB Async][db_save_split_element] Volume ratio exceeds 1.0! Current: {parent_volume_ratio:.6f}")
+                    print(f"[WARN][DB Async][db_save_split_element] This indicates geometry calculation error in frontend")
+                    print(f"[WARN][DB Async][db_save_split_element] Clamping to 1.0 to prevent quantity increase")
+                    parent_volume_ratio = 1.0
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} QMs from parent split")
+                print(f"[DEBUG][DB Async][db_save_split_element] Parent volume: {parent_volume:.6f}, Current volume: {float(split_element.geometry_volume):.6f}")
+                print(f"[DEBUG][DB Async][db_save_split_element] Parent volume ratio (clamped): {parent_volume_ratio:.6f} ({parent_volume_ratio * 100:.2f}%)")
             else:
                 # 원본 BIM 객체에 연결된 QuantityMember 복제
                 # ▼▼▼ [수정] is_active 필터 제거: 첫 번째 split에서 비활성화되어도 두 번째 split에서 복제 가능 ▼▼▼
@@ -775,7 +794,18 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                     raw_element=raw_element,
                     split_element__isnull=True  # 분할되지 않은 원본만
                 )
+                # 원본 BIM 객체 대비 volume ratio는 split_element.volume_ratio 사용
+                parent_volume_ratio = float(split_element.volume_ratio)
+
+                # ▼▼▼ [추가] 안전장치: volume ratio가 1.0을 초과하는 경우 ▼▼▼
+                if parent_volume_ratio > 1.0:
+                    print(f"[WARN][DB Async][db_save_split_element] Volume ratio exceeds 1.0! Current: {parent_volume_ratio:.6f}")
+                    print(f"[WARN][DB Async][db_save_split_element] Clamping to 1.0 to prevent quantity increase")
+                    parent_volume_ratio = 1.0
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} QMs from raw element")
+                print(f"[DEBUG][DB Async][db_save_split_element] Original BIM volume ratio (clamped): {parent_volume_ratio:.6f} ({parent_volume_ratio * 100:.2f}%)")
 
             created_qm_count = 0
             created_ci_count = 0
@@ -813,8 +843,10 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                 )
 
                 for source_item in source_cost_items:
-                    # 체적 비율을 적용한 수량 계산
-                    new_quantity = float(source_item.quantity) * float(split_element.volume_ratio)
+                    # ▼▼▼ [수정] 부모 대비 체적 비율을 적용한 수량 계산 ▼▼▼
+                    # parent_volume_ratio: 직전 부모(parent_split 또는 raw_element) 대비 비율
+                    # 이렇게 하면 2차, 3차 분할 시에도 수량이 정확하게 유지됨
+                    new_quantity = float(source_item.quantity) * parent_volume_ratio
 
                     new_item = CostItem.objects.create(
                         project=project,
@@ -836,10 +868,15 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                     source_item.save(update_fields=['is_active'])
 
             print(f"[DEBUG][DB Async][db_save_split_element] Created {created_qm_count} QuantityMembers and {created_ci_count} CostItems")
-            print(f"[DEBUG][DB Async][db_save_split_element] Applied volume ratio {float(split_element.volume_ratio):.4f} to all quantities")
+            print(f"[DEBUG][DB Async][db_save_split_element] Applied parent volume ratio {parent_volume_ratio:.4f} ({parent_volume_ratio * 100:.2f}%) to all quantities")
+            print(f"[DEBUG][DB Async][db_save_split_element] Note: volume_ratio (original BIM) = {float(split_element.volume_ratio):.4f}, parent_volume_ratio = {parent_volume_ratio:.4f}")
             # ▲▲▲ 복제 로직 끝 ▲▲▲
 
-            return split_element.id
+            return {
+                'split_id': split_element.id,
+                'created_qm_count': created_qm_count,
+                'created_ci_count': created_ci_count
+            }
 
         except Project.DoesNotExist:
             print(f"[ERROR][DB Async][db_save_split_element] Project {payload.get('project_id')} not found")

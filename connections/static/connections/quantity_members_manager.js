@@ -844,3 +844,7 @@ async function clearSpacesFromQm() {
         showToast(error.message, 'error');
     }
 }
+
+// ▼▼▼ [추가] 3D Viewer에서 사용할 수 있도록 window에 노출 ▼▼▼
+window.loadQuantityMembersForViewer = loadQuantityMembers;
+// ▲▲▲ [추가] 여기까지 ▲▲▲

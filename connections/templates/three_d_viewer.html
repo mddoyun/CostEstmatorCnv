@@ -26,8 +26,15 @@
                         <button id="cancel-split-btn">취소</button>
                     </div>
                 </div>
-                <button id="split-object-btn" disabled>Split Object</button>
+                <button id="split-object-btn" disabled style="display: none;">Split Object</button>
                 <button id="sketch-split-btn" disabled>Sketch Split</button>
+
+                <!-- Visibility Control Buttons -->
+                <div class="visibility-controls">
+                    <button id="isolate-selection-btn" disabled title="선택된 객체만 표시">선택만 보기</button>
+                    <button id="hide-selection-btn" disabled title="선택된 객체 숨기기">선택 숨기기</button>
+                    <button id="show-all-btn" disabled title="모든 객체 표시">전체 보기</button>
+                </div>
                 <div class="sketch-controls" id="sketch-controls-panel" style="display: none;">
                     <div class="sketch-control-row">
                         <h4>1. 작업면 선택</h4>
