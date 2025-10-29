@@ -4482,6 +4482,23 @@ def delete_all_split_elements(request, project_id):
                 'deleted_count': 0
             })
 
+        # ▼▼▼ [수정] 분할 객체 삭제 전에 원본 QuantityMember/CostItem을 다시 활성화 ▼▼▼
+        # 1. 분할로 인해 비활성화된 원본 QuantityMember를 찾아서 활성화
+        restored_qm_count = QuantityMember.objects.filter(
+            project=project,
+            is_active=False,
+            split_element__isnull=True  # 원본 (분할되지 않은 것)
+        ).update(is_active=True)
+
+        # 2. 분할로 인해 비활성화된 원본 CostItem을 찾아서 활성화
+        restored_ci_count = CostItem.objects.filter(
+            project=project,
+            is_active=False,
+            split_element__isnull=True  # 원본 (분할되지 않은 것)
+        ).update(is_active=True)
+
+        print(f"[API][delete_all_split_elements] Restored {restored_qm_count} QuantityMembers and {restored_ci_count} CostItems to active")
+
         # CASCADE로 연관된 QuantityMember, CostItem도 함께 삭제됨
         deleted_count, deleted_details = SplitElement.objects.filter(project=project).delete()
 
@@ -4490,8 +4507,10 @@ def delete_all_split_elements(request, project_id):
 
         return JsonResponse({
             'status': 'success',
-            'message': f'{split_count}개의 분할 객체가 삭제되었습니다.',
+            'message': f'{split_count}개의 분할 객체가 삭제되었습니다. (원본 {restored_qm_count}개 QuantityMember, {restored_ci_count}개 CostItem 복원됨)',
             'deleted_count': split_count,
+            'restored_qm_count': restored_qm_count,
+            'restored_ci_count': restored_ci_count,
             'cascade_details': str(deleted_details)
         })
 
