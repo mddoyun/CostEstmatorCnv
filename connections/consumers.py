@@ -757,6 +757,86 @@ class FrontendConsumer(AsyncWebsocketConsumer):
             print(f"  - Volume: {split_element.geometry_volume}")
             print(f"  - Ratio: {float(split_element.volume_ratio) * 100:.2f}%")
 
+            # ▼▼▼ QuantityMember와 CostItem 복제 로직 ▼▼▼
+            # 1. 원본 QuantityMembers 조회 (parent_split 또는 raw_element에서)
+            if parent_split:
+                # 부모 분할 객체에 연결된 QuantityMember 복제
+                source_members = QuantityMember.objects.filter(
+                    split_element=parent_split,
+                    is_active=True
+                )
+                print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} active QMs from parent split")
+            else:
+                # 원본 BIM 객체에 연결된 QuantityMember 복제
+                source_members = QuantityMember.objects.filter(
+                    raw_element=raw_element,
+                    split_element__isnull=True,  # 분할되지 않은 원본만
+                    is_active=True
+                )
+                print(f"[DEBUG][DB Async][db_save_split_element] Found {source_members.count()} active QMs from raw element")
+
+            created_qm_count = 0
+            created_ci_count = 0
+
+            for source_member in source_members:
+                # 2. QuantityMember 복제
+                new_member = QuantityMember.objects.create(
+                    project=project,
+                    raw_element=raw_element,
+                    classification_tag=source_member.classification_tag,
+                    member_mark=source_member.member_mark,
+                    name=source_member.name,
+                    properties=source_member.properties.copy() if source_member.properties else {},
+                    mapping_expression=source_member.mapping_expression.copy() if source_member.mapping_expression else {},
+                    member_mark_expression=source_member.member_mark_expression,
+                    cost_code_expressions=source_member.cost_code_expressions.copy() if source_member.cost_code_expressions else [],
+                    is_active=True,
+                    split_element=split_element,
+                    source_quantity_member=source_member
+                )
+
+                # ManyToMany 관계 복사
+                new_member.cost_codes.set(source_member.cost_codes.all())
+                new_member.space_classifications.set(source_member.space_classifications.all())
+                created_qm_count += 1
+
+                # 3. 원본 QuantityMember를 비활성화
+                source_member.is_active = False
+                source_member.save(update_fields=['is_active'])
+
+                # 4. CostItem 복제 및 수량 적용
+                source_cost_items = CostItem.objects.filter(
+                    quantity_member=source_member,
+                    is_active=True
+                )
+
+                for source_item in source_cost_items:
+                    # 체적 비율을 적용한 수량 계산
+                    new_quantity = float(source_item.quantity) * float(split_element.volume_ratio)
+
+                    new_item = CostItem.objects.create(
+                        project=project,
+                        quantity_member=new_member,
+                        cost_code=source_item.cost_code,
+                        quantity=new_quantity,
+                        quantity_mapping_expression=source_item.quantity_mapping_expression.copy() if source_item.quantity_mapping_expression else {},
+                        unit_price_type=source_item.unit_price_type,
+                        description=source_item.description,
+                        is_active=True,
+                        split_element=split_element,
+                        source_cost_item=source_item,
+                        volume_ratio_applied=split_element.volume_ratio
+                    )
+                    created_ci_count += 1
+
+                    # 5. 원본 CostItem을 비활성화
+                    source_item.is_active = False
+                    source_item.save(update_fields=['is_active'])
+
+            print(f"[DEBUG][DB Async][db_save_split_element] Created {created_qm_count} QuantityMembers and {created_ci_count} CostItems")
+            print(f"[DEBUG][DB Async][db_save_split_element] Applied volume ratio {float(split_element.volume_ratio):.4f} to all quantities")
+            # ▲▲▲ 복제 로직 끝 ▲▲▲
+
             return split_element.id
 
         except Project.DoesNotExist:

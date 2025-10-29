@@ -1807,14 +1807,14 @@
             return;
         }
 
-        // ▼▼▼ [추가] 이미 분할된 객체는 재분할 불가 ▼▼▼
+        // ▼▼▼ [수정] 분할된 객체도 재분할 가능 ▼▼▼
         if (selectedObject.userData.isSplitPart || selectedObject.userData.isSplitElement) {
-            console.warn('[3D Viewer] Cannot split an already-split object');
-            showToast('이미 분할된 객체는 다시 분할할 수 없습니다. 원본 BIM 객체만 분할 가능합니다.', 'error');
-            exitSplitMode();
-            return;
+            console.log('[3D Viewer] Re-splitting an already-split object (nested split)');
+            console.log('  - Parent split ID:', selectedObject.userData.splitElementId);
+        } else {
+            console.log('[3D Viewer] Splitting original BIM object');
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] Starting precise plane-based split operation on object:', selectedObject.userData.bimObjectId);
 
@@ -2023,11 +2023,18 @@
 
             // Note: Volume calculation will be added after geometry computation
             // Placeholder userData - will be updated with volume info below
+            // ▼▼▼ [수정] parentSplitId 추가 ▼▼▼
+            const parentSplitId = selectedObject.userData.splitElementId || null;
+            console.log('[3D Viewer] Parent split ID for new meshes:', parentSplitId);
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+
             bottomMesh.userData = {
                 ...selectedObject.userData,
                 isSplitPart: true,
+                isSplitElement: true,  // 분할 객체임을 표시
                 splitPartType: 'bottom',
                 originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                parentSplitId: parentSplitId,  // ▼▼▼ [추가] 부모 분할 ID ▼▼▼
                 splitAxis: axisName,
                 splitPosition: planePosition,
                 splitPositionPercent: position,
@@ -2038,8 +2045,10 @@
             topMesh.userData = {
                 ...selectedObject.userData,
                 isSplitPart: true,
+                isSplitElement: true,  // 분할 객체임을 표시
                 splitPartType: 'top',
                 originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                parentSplitId: parentSplitId,  // ▼▼▼ [추가] 부모 분할 ID ▼▼▼
                 splitAxis: axisName,
                 splitPosition: planePosition,
                 splitPositionPercent: position,
@@ -3776,14 +3785,14 @@
             return;
         }
 
-        // ▼▼▼ [추가] 이미 분할된 객체는 재분할 불가 ▼▼▼
+        // ▼▼▼ [수정] 분할된 객체도 재분할 가능 ▼▼▼
         if (selectedObject.userData.isSplitPart || selectedObject.userData.isSplitElement) {
-            console.warn('[3D Viewer] Cannot split an already-split object');
-            showToast('이미 분할된 객체는 다시 분할할 수 없습니다. 원본 BIM 객체만 분할 가능합니다.', 'error');
-            exitSketchMode();
-            return;
+            console.log('[3D Viewer] Re-splitting an already-split object with sketch (nested split)');
+            console.log('  - Parent split ID:', selectedObject.userData.splitElementId);
+        } else {
+            console.log('[3D Viewer] Sketch splitting original BIM object');
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log('[3D Viewer] Starting sketch split operation...');
         console.log('[3D Viewer] Sketch points (3D):', sketchPoints3D);
@@ -3910,13 +3919,20 @@
             const preservedOriginalColor = selectedObject.userData.originalColor ||
                                           originalMaterial.color.clone();
 
+            // ▼▼▼ [추가] parentSplitId 설정 ▼▼▼
+            const parentSplitId = selectedObject.userData.splitElementId || null;
+            console.log('[3D Viewer] Parent split ID for sketch meshes:', parentSplitId);
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             // Store metadata (will be updated with volume info after calculation)
             remainderMesh.userData = {
                 ...selectedObject.userData,
                 isSplitPart: true,
+                isSplitElement: true,  // 분할 객체임을 표시
                 splitPartType: 'remainder',
                 splitMethod: 'sketch',
                 originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                parentSplitId: parentSplitId,  // ▼▼▼ [추가] 부모 분할 ID ▼▼▼
                 originalColor: preservedOriginalColor.clone(),
                 displayColor: remainderMaterial.color.clone()
             };
@@ -3924,9 +3940,11 @@
             extractedMesh.userData = {
                 ...selectedObject.userData,
                 isSplitPart: true,
+                isSplitElement: true,  // 분할 객체임을 표시
                 splitPartType: 'extracted',
                 splitMethod: 'sketch',
                 originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
+                parentSplitId: parentSplitId,  // ▼▼▼ [추가] 부모 분할 ID ▼▼▼
                 originalColor: preservedOriginalColor.clone(),
                 displayColor: extractedMaterial.color.clone()
             };
