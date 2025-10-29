@@ -624,13 +624,15 @@ async function runBatchAutoUpdate() {
             // 완료 또는 실패 시 호출될 리스너 함수
             const listener = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === "revit_data_complete") {
+                // ▼▼▼ [CRITICAL FIX] fetchDataFromClient는 fetch_progress_complete 전송 ▼▼▼
+                if (data.type === "fetch_progress_complete") {
                     frontendSocket.removeEventListener("message", listener); // 리스너 정리
                     console.log(
                         "[DEBUG] (1/6) 데이터 가져오기 완료 신호 수신."
                     );
                     resolve();
                 }
+                // ▲▲▲ [CRITICAL FIX] 여기까지 ▲▲▲
             };
 
             // websocket 메시지 리스너 추가

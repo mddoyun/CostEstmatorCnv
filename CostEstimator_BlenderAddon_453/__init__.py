@@ -323,12 +323,13 @@ def process_event_queue_timer():
     global timer_call_count
     timer_call_count += 1
 
-    # Print every call when debugging connectivity issues
-    queue_size = event_queue.qsize()
-    if timer_call_count % 10 == 0 or queue_size > 0:
-        print(f"[DEBUG] Timer tick #{timer_call_count}, queue size: {queue_size}")
-
+    # ▼▼▼ [CRITICAL FIX] 전체를 try로 감싸서 타이머 죽지 않도록 보호 ▼▼▼
     try:
+        # Print every call when debugging connectivity issues
+        queue_size = event_queue.qsize()
+        if timer_call_count % 10 == 0 or queue_size > 0:
+            print(f"[DEBUG] Timer tick #{timer_call_count}, queue size: {queue_size}")
+
         if queue_size > 0:
             print(f"[DEBUG] Queue has {queue_size} messages (timer call #{timer_call_count})")
 
@@ -348,8 +349,9 @@ def process_event_queue_timer():
             else:
                 print(f"[WARN] Unknown command: {command}")
     except Exception as e:
-        print(f"[ERROR] 이벤트 큐 처리 중 오류: {e}")
+        print(f"[ERROR] 타이머 오류 (계속 실행됨): {e}")
         traceback.print_exc()
+    # ▲▲▲ [CRITICAL FIX] 예외 발생해도 반드시 return 0.1 실행 ▲▲▲
     return 0.1
 
 def handle_fetch_all_elements(command_data):
