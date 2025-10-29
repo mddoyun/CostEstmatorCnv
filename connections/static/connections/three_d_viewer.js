@@ -192,8 +192,19 @@
         console.log(`[3D Viewer] Filtered out ${filteredOutCount} BIM objects that have splits`);
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 분할 객체 데이터 준비 ▼▼▼
-        const splitObjects = (window.allSplitElements || []).map(split => ({
+        // ▼▼▼ [추가] 분할 객체 데이터 준비 (parent split 제외) ▼▼▼
+        // 1. parent로 사용된 split의 ID 목록 추출 (재분할된 경우)
+        const parentSplitIds = new Set(
+            (window.allSplitElements || [])
+                .filter(split => split.parent_split_id)
+                .map(split => split.parent_split_id)
+        );
+        console.log(`[3D Viewer] Found ${parentSplitIds.size} parent splits that will be hidden`);
+
+        // 2. leaf split만 로드 (parent가 아닌 것만)
+        const splitObjects = (window.allSplitElements || [])
+            .filter(split => !parentSplitIds.has(split.id))
+            .map(split => ({
             id: split.id,
             geometry_volume: split.geometry_volume,
             geometry: {

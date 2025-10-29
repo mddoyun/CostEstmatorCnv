@@ -1781,7 +1781,8 @@ def generate_boq_report_api(request, project_id):
     if any('__properties__' in f for f in json_fields): values_to_fetch.extend(['quantity_member__properties', 'quantity_member__member_mark__properties'])
     if any('__raw_data__' in f for f in json_fields): values_to_fetch.append('quantity_member__raw_element__raw_data')
 
-    items_qs = CostItem.objects.filter(project_id=project_id)
+    # ▼▼▼ [수정] is_active=True 필터 추가 (분할된 원본 숨김) ▼▼▼
+    items_qs = CostItem.objects.filter(project_id=project_id, is_active=True)
     if raw_element_ids: items_qs = items_qs.filter(quantity_member__raw_element_id__in=raw_element_ids)
     
     q_filter = Q()

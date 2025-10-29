@@ -538,7 +538,7 @@ window.setupWebSocket = function() {
                     if (typeof loadCostItemsWithPrices === 'function') {
                         loadCostItemsWithPrices();
                     }
-                }, 500); // 500ms 대기 후 갱신 (두 split 모두 완료 후)
+                }, 1500); // 1500ms 대기 후 갱신 (두 split 모두 완료 + DB 저장 시간 고려)
                 break;
 
             case 'split_save_error':
