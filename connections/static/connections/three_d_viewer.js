@@ -780,10 +780,11 @@
                 const lineSegments = new THREE.LineSegments(boundaryGeometry, lineMaterial);
                 mesh.add(lineSegments);
 
-                // ▼▼▼ [수정] 분할 객체는 이미 world space이므로 변환 건너뛰기 ▼▼▼
+                // ▼▼▼ [수정] 분할 객체는 world space → local space로 변환 필요 ▼▼▼
                 // Apply transformation matrix if available
-                // Split objects are already in world space, so skip transformation
                 if (!bimObject.isSplitElement && geomData.matrix && geomData.matrix.length === 16) {
+                    console.log('[loadBimGeometry] Applying IFC matrix to BIM object');
+
                     // IFC transformation matrix (4x4) - column-major format
                     const ifcMatrix = new THREE.Matrix4();
                     ifcMatrix.fromArray(geomData.matrix);
@@ -802,6 +803,16 @@
                     const finalMatrix = new THREE.Matrix4();
                     finalMatrix.multiplyMatrices(zUpToYUp, ifcMatrix);
                     mesh.applyMatrix4(finalMatrix);
+
+                    console.log('[loadBimGeometry] After applyMatrix4 - mesh transform:', {
+                        position: mesh.position.toArray(),
+                        rotation: mesh.rotation.toArray(),
+                        scale: mesh.scale.toArray()
+                    });
+                } else if (bimObject.isSplitElement) {
+                    // Split objects are stored in world space with identity transform
+                    // Keep them as-is for consistent behavior
+                    console.log('[loadBimGeometry] Split element - keeping world space geometry with identity transform');
                 }
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
 
@@ -1282,6 +1293,7 @@
     }
 
     // Display quantity members for selected BIM object
+    // ▼▼▼ [수정] 전역으로 노출하여 websocket.js에서 접근 가능하도록 ▼▼▼
     function displayQuantityMembers(object) {
         const listContainer = document.getElementById('three-d-quantity-members-list');
         if (!listContainer) return;
@@ -1496,7 +1508,9 @@
 
     // Display cost items for selected BIM object
     function displayCostItems(object) {
+        console.log('[3D Viewer] ========================================');
         console.log('[3D Viewer] displayCostItems called');
+        console.log('[3D Viewer] Object userData:', object.userData);
         const tableContainer = document.getElementById('three-d-cost-items-table');
         if (!tableContainer) {
             console.error('[3D Viewer] Cost items table container not found');
@@ -1506,10 +1520,23 @@
         // ▼▼▼ [수정] 분할 객체인 경우 split_element_id로 조회 ▼▼▼
         let quantityMembers = [];
 
+        console.log('[3D Viewer] Checking object type:');
+        console.log('  - isSplitElement:', object.userData.isSplitElement);
+        console.log('  - isSplitPart:', object.userData.isSplitPart);
+        console.log('  - splitElementId:', object.userData.splitElementId);
+        console.log('  - rawElementId:', object.userData.rawElementId);
+        console.log('  - splitPartType:', object.userData.splitPartType);
+
         if (object.userData.splitElementId) {
             // 분할 객체인 경우: split_element_id로 연결된 QuantityMember 조회
-            console.log('[3D Viewer] Split object selected for cost items, split_element_id:', object.userData.splitElementId);
+            console.log('[3D Viewer] ✓ Split object selected (splitElementId exists)');
+            console.log('[3D Viewer] Querying by split_element_id:', object.userData.splitElementId);
             quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+        } else if (object.userData.isSplitPart || object.userData.isSplitElement) {
+            // 분할 객체이지만 splitElementId가 아직 설정되지 않음 (split 직후)
+            console.warn('[3D Viewer] ⚠ Split object but splitElementId not set yet - waiting for split_saved');
+            tableContainer.innerHTML = '<p class="no-selection">분할 정보 저장 중... 잠시 후 다시 선택해주세요</p>';
+            return;
         } else {
             // 원본 BIM 객체인 경우: raw_element_id로 조회
             const bimObjectId = object.userData.bimObjectId || object.userData.rawElementId;
@@ -1517,11 +1544,13 @@
                 tableContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
                 return;
             }
-            console.log('[3D Viewer] Original BIM object selected for cost items, raw_element_id:', bimObjectId);
+            console.log('[3D Viewer] ✓ Original BIM object selected');
+            console.log('[3D Viewer] Querying by raw_element_id:', bimObjectId);
             quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
         }
         // ▲▲▲ [수정] 여기까지 ▲▲▲
-        console.log('[3D Viewer] Found quantity members for cost items:', quantityMembers);
+        console.log('[3D Viewer] Found quantity members:', quantityMembers.length);
+        console.log('[3D Viewer] Quantity member details:', quantityMembers);
 
         if (quantityMembers.length === 0) {
             console.warn('[3D Viewer] No quantity members found for BIM object');
@@ -1655,7 +1684,12 @@
 
         tableContainer.innerHTML = html;
     }
+    // ▲▲▲ [수정] displayCostItems 함수 종료 ▲▲▲
 
+    // ▼▼▼ [추가] 함수들을 전역으로 노출 ▼▼▼
+    window.displayQuantityMembersForObject = displayQuantityMembers;
+    window.displayCostItemsForObject = displayCostItems;
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Format number with commas
     function formatNumber(num) {
@@ -2076,6 +2110,14 @@
             topMesh.add(topLineSegments);
 
             // Copy transformation from original
+            console.log('[Split] Original mesh transform:', {
+                position: selectedObject.position.toArray(),
+                rotation: selectedObject.rotation.toArray(),
+                scale: selectedObject.scale.toArray(),
+                isSplitElement: selectedObject.userData.isSplitElement,
+                isSplitPart: selectedObject.userData.isSplitPart
+            });
+
             bottomMesh.position.copy(selectedObject.position);
             bottomMesh.rotation.copy(selectedObject.rotation);
             bottomMesh.scale.copy(selectedObject.scale);
@@ -2083,6 +2125,17 @@
             topMesh.position.copy(selectedObject.position);
             topMesh.rotation.copy(selectedObject.rotation);
             topMesh.scale.copy(selectedObject.scale);
+
+            console.log('[Split] After copying transform - bottomMesh:', {
+                position: bottomMesh.position.toArray(),
+                rotation: bottomMesh.rotation.toArray(),
+                scale: bottomMesh.scale.toArray()
+            });
+            console.log('[Split] After copying transform - topMesh:', {
+                position: topMesh.position.toArray(),
+                rotation: topMesh.rotation.toArray(),
+                scale: topMesh.scale.toArray()
+            });
 
             // Preserve original color from first split (don't overwrite on re-split)
             // Use the original material's color (gray), not the selected material's color
@@ -2100,6 +2153,7 @@
                 ...selectedObject.userData,
                 isSplitPart: true,
                 isSplitElement: true,  // 분할 객체임을 표시
+                splitElementId: undefined,  // 새로운 split이므로 초기화 (split_saved에서 설정됨)
                 splitPartType: 'bottom',
                 originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
                 parentSplitId: parentSplitId,  // ▼▼▼ [추가] 부모 분할 ID ▼▼▼
@@ -2114,6 +2168,7 @@
                 ...selectedObject.userData,
                 isSplitPart: true,
                 isSplitElement: true,  // 분할 객체임을 표시
+                splitElementId: undefined,  // 새로운 split이므로 초기화 (split_saved에서 설정됨)
                 splitPartType: 'top',
                 originalObjectId: selectedObject.userData.bimObjectId || selectedObject.userData.originalObjectId,
                 parentSplitId: parentSplitId,  // ▼▼▼ [추가] 부모 분할 ID ▼▼▼
@@ -2193,6 +2248,21 @@
             // Add split parts to scene
             scene.add(bottomMesh);
             scene.add(topMesh);
+
+            // ▼▼▼ [추가] Split된 mesh들을 전역 Map에 저장 (split_saved에서 참조용) ▼▼▼
+            if (!window.pendingSplitMeshes) {
+                window.pendingSplitMeshes = new Map();
+            }
+            // Key: "raw_element_id:split_part_type"
+            const bottomKey = `${bottomMesh.userData.rawElementId}:${bottomMesh.userData.splitPartType}`;
+            const topKey = `${topMesh.userData.rawElementId}:${topMesh.userData.splitPartType}`;
+            window.pendingSplitMeshes.set(bottomKey, bottomMesh);
+            window.pendingSplitMeshes.set(topKey, topMesh);
+            console.log('[3D Viewer] Stored pending split meshes:', {
+                bottomKey: bottomKey,
+                topKey: topKey
+            });
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
 
             console.log('[3D Viewer] Split complete - created 2 parts with precise geometry');
             console.log('[3D Viewer] Bottom part:', bottomMesh.userData);
@@ -2488,11 +2558,18 @@
             const sortedVerts = cappingVertices.slice();
 
             // Get two perpendicular vectors on the plane
+            // Choose tempVec as the axis LEAST aligned with planeNormal for numerical stability
             let tempVec, u, v;
-            if (Math.abs(planeNormal.x) < 0.9) {
+            const absX = Math.abs(planeNormal.x);
+            const absY = Math.abs(planeNormal.y);
+            const absZ = Math.abs(planeNormal.z);
+
+            if (absX <= absY && absX <= absZ) {
                 tempVec = new THREE.Vector3(1, 0, 0);
-            } else {
+            } else if (absY <= absX && absY <= absZ) {
                 tempVec = new THREE.Vector3(0, 1, 0);
+            } else {
+                tempVec = new THREE.Vector3(0, 0, 1);
             }
             u = new THREE.Vector3().crossVectors(tempVec, planeNormal).normalize();
             v = new THREE.Vector3().crossVectors(planeNormal, u).normalize();
@@ -2613,9 +2690,39 @@
         mesh.updateMatrix();
         mesh.updateMatrixWorld(true);
 
+        console.log('[extractGeometryData] Mesh transform:', {
+            position: mesh.position.toArray(),
+            rotation: mesh.rotation.toArray(),
+            scale: mesh.scale.toArray(),
+            isSplitPart: mesh.userData.isSplitPart
+        });
+
         // Clone geometry to avoid modifying the original
         const worldGeometry = geometry.clone();
-        worldGeometry.applyMatrix4(mesh.matrixWorld);
+
+        // Calculate volume BEFORE transformation
+        const volumeBefore = calculateGeometryVolume(worldGeometry, false);
+        console.log('[extractGeometryData] Geometry volume BEFORE transformation:', volumeBefore.toFixed(6));
+
+        // For split parts, geometry is in parent's local space with mesh transform applied
+        // We need to apply the full matrixWorld to convert to world space
+        if (mesh.userData.isSplitPart) {
+            console.log('[extractGeometryData] Split part detected - applying full matrixWorld to bake transform into geometry');
+            worldGeometry.applyMatrix4(mesh.matrixWorld);
+        } else {
+            // For original BIM objects, apply full transformation matrix
+            console.log('[extractGeometryData] Original BIM object - applying full matrixWorld');
+            worldGeometry.applyMatrix4(mesh.matrixWorld);
+        }
+
+        // Calculate volume AFTER transformation
+        const volumeAfter = calculateGeometryVolume(worldGeometry, false);
+        console.log('[extractGeometryData] Geometry volume AFTER transformation:', volumeAfter.toFixed(6));
+
+        if (Math.abs(volumeAfter - volumeBefore) > 0.0001) {
+            console.warn('[extractGeometryData] WARNING: Volume changed by transformation!');
+            console.warn('  Volume change ratio:', (volumeAfter / volumeBefore).toFixed(4));
+        }
 
         const positions = worldGeometry.attributes.position.array;
         const indices = worldGeometry.index ? worldGeometry.index.array : null;
@@ -2753,6 +2860,18 @@
             return 0;
         }
 
+        // Calculate centroid to improve numerical stability for world-space geometries
+        let cx = 0, cy = 0, cz = 0;
+        const vertexCount = positions.length / 3;
+        for (let i = 0; i < vertexCount; i++) {
+            cx += positions[i * 3];
+            cy += positions[i * 3 + 1];
+            cz += positions[i * 3 + 2];
+        }
+        cx /= vertexCount;
+        cy /= vertexCount;
+        cz /= vertexCount;
+
         let signedVolume = 0.0;
         let positiveContribution = 0.0;
         let negativeContribution = 0.0;
@@ -2760,6 +2879,7 @@
         if (debug) {
             console.log('[3D Viewer] Volume calculation details:');
             console.log('  - Total faces:', indices.length / 3);
+            console.log('  - Centroid:', `(${cx.toFixed(4)}, ${cy.toFixed(4)}, ${cz.toFixed(4)})`);
         }
 
         // Iterate through each triangle (face)
@@ -2768,18 +2888,18 @@
             const i1 = indices[i + 1];
             const i2 = indices[i + 2];
 
-            // Get vertex positions
-            const v0x = positions[i0 * 3];
-            const v0y = positions[i0 * 3 + 1];
-            const v0z = positions[i0 * 3 + 2];
+            // Get vertex positions relative to centroid
+            const v0x = positions[i0 * 3] - cx;
+            const v0y = positions[i0 * 3 + 1] - cy;
+            const v0z = positions[i0 * 3 + 2] - cz;
 
-            const v1x = positions[i1 * 3];
-            const v1y = positions[i1 * 3 + 1];
-            const v1z = positions[i1 * 3 + 2];
+            const v1x = positions[i1 * 3] - cx;
+            const v1y = positions[i1 * 3 + 1] - cy;
+            const v1z = positions[i1 * 3 + 2] - cz;
 
-            const v2x = positions[i2 * 3];
-            const v2y = positions[i2 * 3 + 1];
-            const v2z = positions[i2 * 3 + 2];
+            const v2x = positions[i2 * 3] - cx;
+            const v2y = positions[i2 * 3 + 1] - cy;
+            const v2z = positions[i2 * 3 + 2] - cz;
 
             // Cross product: v1 × v2
             const crossX = v1y * v2z - v1z * v2y;

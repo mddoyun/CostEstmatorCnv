@@ -498,47 +498,123 @@ window.setupWebSocket = function() {
 
             // ▼▼▼ [추가] 3D 객체 분할 저장 응답 처리 ▼▼▼
             case 'split_saved':
+                console.log('[WebSocket] ========================================');
                 console.log('[WebSocket] Split saved successfully:', data.split_id);
                 console.log('[WebSocket] Split details:', {
                     raw_element_id: data.raw_element_id,
-                    split_part_type: data.split_part_type
+                    split_part_type: data.split_part_type,
+                    created_qm_count: data.created_qm_count,
+                    created_ci_count: data.created_ci_count
                 });
 
-                // Find the corresponding mesh in the scene and set splitElementId
-                if (window.scene && data.raw_element_id && data.split_part_type) {
-                    window.scene.traverse((object) => {
-                        if (object.isMesh &&
-                            object.userData.rawElementId === data.raw_element_id &&
-                            object.userData.splitPartType === data.split_part_type &&
-                            object.userData.isSplitPart === true &&
-                            !object.userData.splitElementId) {  // Only update if not already set
-
-                            object.userData.splitElementId = data.split_id;
-                            console.log('[WebSocket] Set splitElementId on mesh:', {
-                                raw_element_id: data.raw_element_id,
-                                split_part_type: data.split_part_type,
-                                split_id: data.split_id
-                            });
-                        }
+                // Find the corresponding mesh and set splitElementId
+                if (data.raw_element_id && data.split_part_type) {
+                    console.log('[WebSocket] Searching for mesh to update...');
+                    console.log('[WebSocket] Search criteria:', {
+                        rawElementId: data.raw_element_id,
+                        splitPartType: data.split_part_type
                     });
+
+                    let foundMesh = false;
+                    let targetMesh = null;
+
+                    // ▼▼▼ [추가] 1차: pendingSplitMeshes Map에서 우선 검색 (가장 정확) ▼▼▼
+                    const meshKey = `${data.raw_element_id}:${data.split_part_type}`;
+                    if (window.pendingSplitMeshes && window.pendingSplitMeshes.has(meshKey)) {
+                        targetMesh = window.pendingSplitMeshes.get(meshKey);
+                        console.log('[WebSocket] ✓ Found mesh in pendingSplitMeshes Map');
+                        foundMesh = true;
+                    }
+                    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+                    // ▼▼▼ [수정] 2차: Scene traverse (fallback) ▼▼▼
+                    if (!foundMesh && window.scene) {
+                        console.log('[WebSocket] Fallback: Searching in scene...');
+                        let checkedMeshes = 0;
+
+                        window.scene.traverse((object) => {
+                            if (object.isMesh && object.userData.rawElementId === data.raw_element_id) {
+                                checkedMeshes++;
+                                console.log(`[WebSocket] Checking mesh ${checkedMeshes}:`, {
+                                    rawElementId: object.userData.rawElementId,
+                                    splitPartType: object.userData.splitPartType,
+                                    isSplitPart: object.userData.isSplitPart,
+                                    splitElementId: object.userData.splitElementId,
+                                    matches_split_part: object.userData.splitPartType === data.split_part_type,
+                                    needs_update: !object.userData.splitElementId
+                                });
+
+                                if (object.userData.splitPartType === data.split_part_type &&
+                                    object.userData.isSplitPart === true &&
+                                    !object.userData.splitElementId) {
+
+                                    targetMesh = object;
+                                    foundMesh = true;
+                                    console.log('[WebSocket] ✓ Found mesh in scene traverse');
+                                }
+                            }
+                        });
+
+                        if (!foundMesh) {
+                            console.warn('[WebSocket] ⚠ No matching mesh found in scene!');
+                            console.warn('[WebSocket] Checked', checkedMeshes, 'meshes with matching raw_element_id');
+                        }
+                    }
+                    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                    // ▼▼▼ [추가] splitElementId 설정 및 Map에서 제거 ▼▼▼
+                    if (foundMesh && targetMesh) {
+                        targetMesh.userData.splitElementId = data.split_id;
+                        console.log('[WebSocket] ✓ Set splitElementId on mesh:', {
+                            raw_element_id: data.raw_element_id,
+                            split_part_type: data.split_part_type,
+                            split_id: data.split_id
+                        });
+
+                        // Map에서 제거 (더 이상 pending 상태 아님)
+                        if (window.pendingSplitMeshes && window.pendingSplitMeshes.has(meshKey)) {
+                            window.pendingSplitMeshes.delete(meshKey);
+                            console.log('[WebSocket] Removed from pendingSplitMeshes Map');
+                        }
+                    }
+                    // ▲▲▲ [추가] 여기까지 ▲▲▲
                 }
 
-                // ▼▼▼ [추가] 분할 완료 후 QuantityMembers와 CostItems 자동 갱신 ▼▼▼
+                // ▼▼▼ [수정] 분할 완료 후 QuantityMembers와 CostItems 자동 갱신 ▼▼▼
                 // 두 split이 거의 동시에 완료되므로 debounce를 사용하여 한 번만 갱신
+                // 50ms로 단축 - 사용자가 바로 객체를 선택해도 데이터가 준비되도록
                 if (window.splitDataReloadTimer) {
                     clearTimeout(window.splitDataReloadTimer);
                 }
                 window.splitDataReloadTimer = setTimeout(() => {
                     console.log('[WebSocket] Reloading QuantityMembers and CostItems after split...');
                     // 3D Viewer의 loadQuantityMembersForViewer 함수 호출
-                    if (typeof loadQuantityMembersForViewer === 'function') {
-                        loadQuantityMembersForViewer();
+                    if (typeof window.loadQuantityMembersForViewer === 'function') {
+                        window.loadQuantityMembersForViewer();
+                    } else {
+                        console.warn('[WebSocket] loadQuantityMembersForViewer not found');
                     }
                     // 3D Viewer의 loadCostItemsWithPrices 함수 호출
-                    if (typeof loadCostItemsWithPrices === 'function') {
-                        loadCostItemsWithPrices();
+                    if (typeof window.loadCostItemsWithPrices === 'function') {
+                        window.loadCostItemsWithPrices();
+                    } else {
+                        console.warn('[WebSocket] loadCostItemsWithPrices not found');
                     }
-                }, 1500); // 1500ms 대기 후 갱신 (두 split 모두 완료 + DB 저장 시간 고려)
+
+                    // ▼▼▼ [추가] 선택된 객체가 있으면 산출항목 테이블 갱신 ▼▼▼
+                    if (window.selectedObject && window.scene) {
+                        console.log('[WebSocket] Refreshing displays for selected object');
+                        // displayQuantityMembers와 displayCostItems 재호출
+                        if (typeof window.displayQuantityMembersForObject === 'function') {
+                            window.displayQuantityMembersForObject(window.selectedObject);
+                        }
+                        if (typeof window.displayCostItemsForObject === 'function') {
+                            window.displayCostItemsForObject(window.selectedObject);
+                        }
+                    }
+                    // ▲▲▲ [추가] 여기까지 ▲▲▲
+                }, 50); // 50ms 대기 후 갱신 (두 split 모두 완료될 시간)
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
                 break;
 
             case 'split_save_error':
