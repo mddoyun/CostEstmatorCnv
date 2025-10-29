@@ -138,7 +138,9 @@ namespace RevitDjangoConnector
 
                     for (int i = 0; i < triangulation.NumTriangles; i++)
                     {
-                        var triangle = triangulation.GetTriangle(i);
+                        // ▼▼▼ [수정] Revit API는 get_Triangle (소문자 g) 사용 ▼▼▼
+                        var triangle = triangulation.get_Triangle(i);
+                        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                         for (int j = 0; j < 3; j++)
                         {
