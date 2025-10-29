@@ -1386,8 +1386,10 @@ def create_cost_items_auto_view(request, project_id):
         rules = CostCodeRule.objects.filter(project=project).order_by('priority').select_related('target_cost_code')
 
         # [수정] QuerySet으로 유지하고 .iterator()를 사용하도록 변경
+        # ▼▼▼ [수정] is_active=True 필터 추가 (비활성화된 부재 제외) ▼▼▼
         members_qs = QuantityMember.objects.filter(
-            project=project
+            project=project,
+            is_active=True
         ).select_related(
             'member_mark',
             'raw_element',
@@ -1395,6 +1397,7 @@ def create_cost_items_auto_view(request, project_id):
         ).prefetch_related(
             'cost_codes'
         ).distinct()
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
 
         if not rules.exists():
             return JsonResponse({'status': 'info', 'message': '자동 생성을 위한 공사코드 룰셋이 없습니다.'})
@@ -1420,8 +1423,14 @@ def create_cost_items_auto_view(request, project_id):
                 for k, v in raw_data.get('Parameters', {}).items(): combined_properties[f'BIM원본.Parameters.{k}'] = v
             
             if member.classification_tag: combined_properties['classification_tag_name'] = member.classification_tag.name
-            if member.member_mark: combined_properties['member_mark_name'] = member.member_mark.mark
-            
+            if member.member_mark:
+                combined_properties['member_mark_name'] = member.member_mark.mark
+                # ▼▼▼ [추가] 일람부호 속성을 대괄호 형태로 추가하여 조건에서 참조 가능하게 함 ▼▼▼
+                if member.member_mark.properties and isinstance(member.member_mark.properties, dict):
+                    for k, v in member.member_mark.properties.items():
+                        combined_properties[f'[{k}]'] = v
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
             cost_codes_on_member = member.cost_codes.all()
             if not cost_codes_on_member:
                 continue
@@ -1564,7 +1573,9 @@ def apply_assignment_rules_view(request, project_id):
         project = Project.objects.get(id=project_id)
         
         # [수정] list() 제거 및 QuerySet으로 유지
-        members_qs = QuantityMember.objects.filter(project=project).select_related('raw_element', 'member_mark', 'classification_tag').prefetch_related('cost_codes', 'space_classifications')
+        # ▼▼▼ [수정] is_active=True 필터 추가 (비활성화된 부재 제외) ▼▼▼
+        members_qs = QuantityMember.objects.filter(project=project, is_active=True).select_related('raw_element', 'member_mark', 'classification_tag').prefetch_related('cost_codes', 'space_classifications')
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         
         mark_rules = list(MemberMarkAssignmentRule.objects.filter(project=project).order_by('priority'))
         cost_code_rules = list(CostCodeAssignmentRule.objects.filter(project=project).order_by('priority'))
@@ -1593,7 +1604,13 @@ def apply_assignment_rules_view(request, project_id):
                 for k, v in raw_data.get('Parameters', {}).items(): combined_properties[f'BIM원본.Parameters.{k}'] = v
             
             if member.classification_tag: combined_properties['classification_tag_name'] = member.classification_tag.name
-            if member.member_mark: combined_properties['member_mark_name'] = member.member_mark.mark
+            if member.member_mark:
+                combined_properties['member_mark_name'] = member.member_mark.mark
+                # ▼▼▼ [추가] 일람부호 속성을 대괄호 형태로 추가하여 조건에서 참조 가능하게 함 ▼▼▼
+                if member.member_mark.properties and isinstance(member.member_mark.properties, dict):
+                    for k, v in member.member_mark.properties.items():
+                        combined_properties[f'[{k}]'] = v
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
 
             # --- 일람부호 할당 로직 ---
             mark_expr = member.member_mark_expression
@@ -1611,6 +1628,13 @@ def apply_assignment_rules_view(request, project_id):
                         member.member_mark = mark_obj
                         member.save(update_fields=['member_mark'])
                         updated_mark_count += 1
+
+                        # ▼▼▼ [추가] 일람부호가 변경되었으므로 combined_properties 업데이트 ▼▼▼
+                        combined_properties['member_mark_name'] = mark_obj.mark
+                        if mark_obj.properties and isinstance(mark_obj.properties, dict):
+                            for k, v in mark_obj.properties.items():
+                                combined_properties[f'[{k}]'] = v
+                        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
             # --- 공사코드 할당 로직 ---
             cost_code_exprs_list = member.cost_code_expressions
