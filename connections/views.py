@@ -1282,7 +1282,10 @@ def cost_items_api(request, project_id, item_id=None):
                 'description': item.description,
                 'quantity_member_properties': {},
                 'member_mark_properties': {},
-                'raw_element_properties': {}
+                'raw_element_properties': {},
+                # ▼▼▼ [추가] 분할 관련 필드 추가 ▼▼▼
+                'is_active': item.is_active,
+                'split_element_id': str(item.split_element_id) if item.split_element_id else None,
             }
             
             if item.quantity_member:

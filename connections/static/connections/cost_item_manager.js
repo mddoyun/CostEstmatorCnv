@@ -35,7 +35,10 @@ async function loadCostItems() {
         if (!response.ok)
             throw new Error('산출항목 목록을 불러오는데 실패했습니다.');
 
-        loadedCostItems = await response.json();
+        // ▼▼▼ [수정] is_active=true인 CostItem만 로드 (분할된 경우 원본 숨김) ▼▼▼
+        const allItems = await response.json();
+        loadedCostItems = allItems.filter(ci => ci.is_active !== false);
+        console.log(`[Cost Item Manager] Loaded ${loadedCostItems.length} active CostItems (filtered ${allItems.length - loadedCostItems.length} inactive)`);
         renderCostItemsTable(loadedCostItems);
 
         populateCiFieldSelection(loadedCostItems);

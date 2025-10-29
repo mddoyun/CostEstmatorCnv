@@ -67,7 +67,10 @@ async function loadQuantityMembers() {
         if (!response.ok)
             throw new Error('수량산출부재 목록을 불러오는데 실패했습니다.');
 
-        loadedQuantityMembers = await response.json();
+        // ▼▼▼ [수정] is_active=true인 QuantityMember만 로드 (분할된 경우 원본 숨김) ▼▼▼
+        const allMembers = await response.json();
+        loadedQuantityMembers = allMembers.filter(qm => qm.is_active !== false);
+        console.log(`[QM Manager] Loaded ${loadedQuantityMembers.length} active QuantityMembers (filtered ${allMembers.length - loadedQuantityMembers.length} inactive)`);
         renderActiveQmView();
 
         populateQmFieldSelection(loadedQuantityMembers);

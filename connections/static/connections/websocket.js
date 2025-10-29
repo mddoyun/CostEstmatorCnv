@@ -522,6 +522,23 @@ window.setupWebSocket = function() {
                         }
                     });
                 }
+
+                // ▼▼▼ [추가] 분할 완료 후 QuantityMembers와 CostItems 자동 갱신 ▼▼▼
+                // 두 split이 거의 동시에 완료되므로 debounce를 사용하여 한 번만 갱신
+                if (window.splitDataReloadTimer) {
+                    clearTimeout(window.splitDataReloadTimer);
+                }
+                window.splitDataReloadTimer = setTimeout(() => {
+                    console.log('[WebSocket] Reloading QuantityMembers and CostItems after split...');
+                    // 3D Viewer의 loadQuantityMembersForViewer 함수 호출
+                    if (typeof loadQuantityMembersForViewer === 'function') {
+                        loadQuantityMembersForViewer();
+                    }
+                    // 3D Viewer의 loadCostItemsWithPrices 함수 호출
+                    if (typeof loadCostItemsWithPrices === 'function') {
+                        loadCostItemsWithPrices();
+                    }
+                }, 500); // 500ms 대기 후 갱신 (두 split 모두 완료 후)
                 break;
 
             case 'split_save_error':
