@@ -866,26 +866,25 @@ async function generateSdBoqReport() {
         return; // 집계 중단
     }
 
-    const params = new URLSearchParams();
-    groupBySelects.forEach((select) => params.append("group_by", select.value));
-    console.log(
-        "[DEBUG][SD BOQ] Grouping criteria:",
-        params.getAll("group_by")
-    );
+    // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
+    const groupByFields = Array.from(groupBySelects).map(select => select.value);
+    console.log("[DEBUG][SD BOQ] Grouping criteria:", groupByFields);
 
     const displayByCheckboxes = document.querySelectorAll(
         ".sd-display-field-cb:checked"
     ); // SD용 체크박스 사용
-    displayByCheckboxes.forEach((cb) => params.append("display_by", cb.value));
-    console.log("[DEBUG][SD BOQ] Display fields:", params.getAll("display_by"));
+    const displayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
+    console.log("[DEBUG][SD BOQ] Display fields:", displayByFields);
 
-    // SD 필터 고정
-    params.append("filter_ai", "true");
-    params.append("filter_dd", "false");
+    // POST body 데이터 구성
+    const requestData = {
+        group_by: groupByFields,
+        display_by: displayByFields,
+        raw_element_ids: [], // SD에서는 필터링 ID 사용 안 함
+        filter_ai: true,
+        filter_dd: false
+    };
     console.log("[DEBUG][SD BOQ] Filters: filter_ai=true, filter_dd=false");
-
-    // Revit 필터링 ID는 SD 하단 테이블에는 적용하지 않음 (선택 사항)
-    // if (boqFilteredRawElementIds.size > 0) { ... }
 
     const tableContainer = document.getElementById("sd-table-container"); // SD용 컨테이너 ID
     if (!tableContainer) {
@@ -898,13 +897,23 @@ async function generateSdBoqReport() {
         '<p style="padding: 20px;">집계 데이터를 생성 중입니다...</p>';
     showToast("개산견적(SD) 집계표 생성 중...", "info");
     console.log(
-        `[DEBUG][SD BOQ] Requesting BOQ report data from server... /connections/api/boq/report/${currentProjectId}/?${params.toString()}`
+        `[DEBUG][SD BOQ] Requesting BOQ report data from server (POST)... /connections/api/boq/report/${currentProjectId}/`
     );
+    console.log(`[DEBUG][SD BOQ] Request data:`, requestData);
 
     try {
         const response = await fetch(
-            `/connections/api/boq/report/${currentProjectId}/?${params.toString()}`
+            `/connections/api/boq/report/${currentProjectId}/`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify(requestData)
+            }
         );
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
         if (!response.ok) {
             const errorResult = await response.json();
             throw new Error(

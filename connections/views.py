@@ -1762,10 +1762,10 @@ def get_boq_grouping_fields_api(request, project_id):
 
 # connections/views.py
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def generate_boq_report_api(request, project_id):
     """(개선된 버전 + 비용 계산 추가) 사용자가 요청한 모든 종류의 그룹핑/표시 기준 및 필터에 따라 CostItem을 집계하고 비용을 계산합니다."""
-    print(f"\n[DEBUG] --- '집계표 생성(generate_boq_report_api)' API 요청 수신 (Project ID: {project_id}) ---")
+    print(f"\n[DEBUG] --- '집계표 생성(generate_boq_report_api)' API 요청 수신 (Project ID: {project_id}, Method: {request.method}) ---")
 
     # --- [수정] 포맷팅 헬퍼 함수 2개로 분리 ---
     def format_cost(d):
@@ -1782,11 +1782,29 @@ def generate_boq_report_api(request, project_id):
             except (InvalidOperation, TypeError): return '0.0000'
         return str(d.quantize(Decimal('0.0001'), rounding=decimal.ROUND_HALF_UP))
 
-    group_by_fields = request.GET.getlist('group_by')
-    display_by_fields = request.GET.getlist('display_by')
-    raw_element_ids = request.GET.getlist('raw_element_ids')
-    filter_ai = request.GET.get('filter_ai', 'true').lower() == 'true'
-    filter_dd = request.GET.get('filter_dd', 'true').lower() == 'true'
+    # ▼▼▼ [추가] GET/POST 둘 다 지원 - URL 길이 제한 문제 해결 ▼▼▼
+    if request.method == 'POST':
+        # POST 요청: JSON body에서 파라미터 추출
+        try:
+            data = json.loads(request.body)
+            group_by_fields = data.get('group_by', [])
+            display_by_fields = data.get('display_by', [])
+            raw_element_ids = data.get('raw_element_ids', [])
+            filter_ai = data.get('filter_ai', True)
+            filter_dd = data.get('filter_dd', True)
+            print(f"[DEBUG] POST body parsed - group_by: {len(group_by_fields)}, display_by: {len(display_by_fields)}")
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] JSON parsing failed: {e}")
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON in request body'}, status=400)
+    else:
+        # GET 요청: URL 파라미터에서 추출 (하위 호환성)
+        group_by_fields = request.GET.getlist('group_by')
+        display_by_fields = request.GET.getlist('display_by')
+        raw_element_ids = request.GET.getlist('raw_element_ids')
+        filter_ai = request.GET.get('filter_ai', 'true').lower() == 'true'
+        filter_dd = request.GET.get('filter_dd', 'true').lower() == 'true'
+        print(f"[DEBUG] GET params parsed - group_by: {len(group_by_fields)}, display_by: {len(display_by_fields)}")
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     if not group_by_fields:
         return JsonResponse({'status': 'error', 'message': '하나 이상의 그룹핑 기준을 선택해야 합니다.'}, status=400)

@@ -165,40 +165,55 @@ async function generateBoqReport(preserveColumnOrder = false) {
         return;
     }
 
-    const params = new URLSearchParams();
-    groupBySelects.forEach((select) => params.append("group_by", select.value));
-    console.log("[DEBUG] 그룹핑 기준:", params.getAll("group_by"));
+    // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
+    const groupByFields = Array.from(groupBySelects).map(select => select.value);
+    console.log("[DEBUG] 그룹핑 기준:", groupByFields);
 
     const displayByCheckboxes = document.querySelectorAll(
         ".boq-display-field-cb:checked"
     );
-    displayByCheckboxes.forEach((cb) => params.append("display_by", cb.value));
-    console.log("[DEBUG] 표시 필드:", params.getAll("display_by"));
+    const displayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
+    console.log("[DEBUG] 표시 필드:", displayByFields);
 
-    params.append("filter_ai", filterAiChecked);
-    params.append("filter_dd", filterDdChecked);
+    const rawElementIds = boqFilteredRawElementIds.size > 0
+        ? Array.from(boqFilteredRawElementIds)
+        : [];
 
-    if (boqFilteredRawElementIds.size > 0) {
-        boqFilteredRawElementIds.forEach((id) =>
-            params.append("raw_element_ids", id)
-        );
-        console.log(
-            `[DEBUG] Revit 필터링 ID ${boqFilteredRawElementIds.size}개 적용됨.`
-        );
+    if (rawElementIds.length > 0) {
+        console.log(`[DEBUG] Revit 필터링 ID ${rawElementIds.length}개 적용됨.`);
     }
+
+    // POST body 데이터 구성
+    const requestData = {
+        group_by: groupByFields,
+        display_by: displayByFields,
+        raw_element_ids: rawElementIds,
+        filter_ai: filterAiChecked,
+        filter_dd: filterDdChecked
+    };
 
     const tableContainer = document.getElementById("boq-table-container");
     tableContainer.innerHTML =
         '<p style="padding: 20px;">집계 데이터를 생성 중입니다...</p>';
     showToast("집계표 생성 중...", "info");
     console.log(
-        `[DEBUG] 서버에 집계표 데이터 요청 시작... /connections/api/boq/report/${currentProjectId}/?${params.toString()}`
+        `[DEBUG] 서버에 집계표 데이터 요청 시작 (POST)... /connections/api/boq/report/${currentProjectId}/`
     );
+    console.log(`[DEBUG] Request data:`, requestData);
 
     try {
         const response = await fetch(
-            `/connections/api/boq/report/${currentProjectId}/?${params.toString()}`
+            `/connections/api/boq/report/${currentProjectId}/`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify(requestData)
+            }
         );
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
         if (!response.ok) {
             const errorResult = await response.json();
             throw new Error(
