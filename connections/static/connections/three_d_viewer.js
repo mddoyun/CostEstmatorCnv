@@ -1116,6 +1116,10 @@
 
         selectedObject = object;
 
+        // ▼▼▼ [추가] 새 객체 선택 시 재시도 카운트 초기화 ▼▼▼
+        displayCostItemsRetryCount.delete(object);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // Store original material
         if (!originalMaterials.has(object)) {
             originalMaterials.set(object, object.material);
@@ -1671,12 +1675,26 @@
         console.log('[3D Viewer] Found quantity members:', quantityMembers.length);
         console.log('[3D Viewer] Quantity member details:', quantityMembers);
 
-        // ▼▼▼ [수정] Split 직후 QM이 없으면 자동 재로드 대기 ▼▼▼
+        // ▼▼▼ [수정] Split 직후 QM이 없으면 자동 재시도 ▼▼▼
         if (quantityMembers.length === 0) {
             if (object.userData.splitElementId) {
-                // Split 객체인데 QM이 없으면 자동 재로드가 진행 중
-                console.warn('[3D Viewer] Split object but no QM found - auto-reload in progress');
-                tableContainer.innerHTML = '<p class="no-selection">데이터 로딩 중... (자동 재로드 대기)</p>';
+                // Split 객체인데 QM이 없으면 서버가 계산 중 - 자동 재시도
+                console.warn('[3D Viewer] Split object but no QM found - retrying...');
+                tableContainer.innerHTML = '<p class="no-selection">산출항목 계산 중... (자동 재시도)</p>';
+
+                // 재시도 (최대 10회, 1000ms 간격 - split은 시간이 더 걸림)
+                const retryCount = displayCostItemsRetryCount.get(object) || 0;
+                if (retryCount < 10) {
+                    displayCostItemsRetryCount.set(object, retryCount + 1);
+                    console.log(`[3D Viewer] Retry ${retryCount + 1}/10 after 1000ms...`);
+                    setTimeout(() => {
+                        console.log('[3D Viewer] Retrying displayCostItems after split...');
+                        displayCostItems(object);
+                    }, 1000);
+                } else {
+                    displayCostItemsRetryCount.delete(object);
+                    tableContainer.innerHTML = '<p class="no-selection">산출항목을 불러올 수 없습니다. 페이지를 새로고침하세요.</p>';
+                }
                 return;
             }
 
