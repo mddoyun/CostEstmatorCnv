@@ -113,12 +113,16 @@ namespace RevitDjangoConnector
             }
             else if (geomObj is GeometryInstance instance)
             {
-                var instanceGeom = instance.GetInstanceGeometry();
+                // ▼▼▼ [수정] GetInstanceGeometry()는 이미 transform이 적용된 geometry를 반환 ▼▼▼
+                // GetSymbolGeometry()로 변경하여 로컬 좌표계 geometry를 가져오고,
+                // instance.Transform을 명시적으로 적용
+                var instanceGeom = instance.GetSymbolGeometry();
                 var transform = parentTransform.Multiply(instance.Transform);
                 foreach (GeometryObject instanceObj in instanceGeom)
                 {
                     ProcessGeometryObject(instanceObj, allVerts, allFaces, transform);
                 }
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
             }
             // Mesh 처리는 Solid로 충분히 커버됨 - 제거
         }

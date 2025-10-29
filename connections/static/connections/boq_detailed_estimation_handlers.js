@@ -208,7 +208,7 @@ async function generateBoqReport(preserveColumnOrder = false) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
+                    'X-CSRFToken': csrftoken
                 },
                 body: JSON.stringify(requestData)
             }
