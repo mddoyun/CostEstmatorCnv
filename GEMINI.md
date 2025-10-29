@@ -12,8 +12,8 @@
 
 프로젝트에는 두 가지 주요 통합이 포함됩니다.
 
-*   **Blender 애드온**: 이 애드온은 WebSockets를 통해 Django 서버에 연결됩니다. Blender 프로젝트에서 IFC 데이터(형상 및 속성)를 추출하여 서버로 보낼 수 있습니다. 또한 웹 애플리케이션이 Blender를 제어할 수 있도록 합니다(예: 3D 뷰에서 요소 선택).
-*   **Revit 애드인**: 이것은 Autodesk Revit용 .NET 기반 애드인입니다. Blender 애드온과 유사하게 WebSockets를 통해 서버에 연결하여 Revit과 웹 애플리케이션 간의 데이터 교환 및 제어를 가능하게 합니다.
+-   **Blender 애드온**: 이 애드온은 WebSockets를 통해 Django 서버에 연결됩니다. Blender 프로젝트에서 IFC 데이터(형상 및 속성)를 추출하여 서버로 보낼 수 있습니다. 또한 웹 애플리케이션이 Blender를 제어할 수 있도록 합니다(예: 3D 뷰에서 요소 선택).
+-   **Revit 애드인**: 이것은 Autodesk Revit용 .NET 기반 애드인입니다. Blender 애드온과 유사하게 WebSockets를 통해 서버에 연결하여 Revit과 웹 애플리케이션 간의 데이터 교환 및 제어를 가능하게 합니다.
 
 백엔드 서버는 Blender 및 Revit 애드인과 쉽게 배포할 수 있도록 PyInstaller를 사용하여 독립 실행형 실행 파일로 패키징되도록 설계되었습니다.
 
@@ -25,8 +25,8 @@
 
 **종속성:**
 
-*   Python 종속성은 `requirements.txt`에 나열되어 있습니다. `pip install -r requirements.txt`를 사용하여 설치합니다.
-*   프로젝트는 `.mddoyun` 디렉토리에 있는 가상 환경을 사용합니다.
+-   Python 종속성은 `requirements.txt`에 나열되어 있습니다. `pip install -r requirements.txt`를 사용하여 설치합니다.
+-   프로젝트는 `.mddoyun` 디렉토리에 있는 가상 환경을 사용합니다.
 
 **서버 실행:**
 
@@ -47,6 +47,7 @@ python run_server.py
 `run_server.py` 파일에는 macOS 및 Windows용 PyInstaller를 사용하여 서버 실행 파일을 빌드하는 명령이 포함되어 있습니다.
 
 macOS용:
+
 ```bash
 pyinstaller --name "CostEstimatorServer" \
 --onefile \
@@ -57,6 +58,7 @@ run_server.py
 ```
 
 Windows용:
+
 ```bash
 pyinstaller --name "CostEstimatorServer" --onefile --add-data "db.sqlite3;." --add-data "aibim_quantity_takeoff_web;aibim_quantity_takeoff_web" --add-data "connections;connections" run_server.py
 ```
@@ -75,7 +77,7 @@ Revit 애드인은 `CostEstimator_RevitAddin_2026` 디렉토리에 있는 .NET �
 
 ## 개발 규칙
 
-*   **Python:** Python 코드는 표준 Django 규칙을 따릅니다.
-*   **JavaScript:** 프론트엔드 코드는 여러 JavaScript 파일로 모듈화되어 있습니다. 최신 프레임워크를 사용하지 않으므로 일관성을 유지하기 위해 변경 사항을 신중하게 적용해야 합니다.
-*   **Blender/Revit:** 애드온/애드인 코드는 각 플랫폼의 규칙 및 모범 사례를 따라야 합니다.
-*   **WebSockets:** 클라이언트(Blender, Revit, 웹 프론트엔드)와 서버 간의 통신은 WebSockets를 통한 JSON 메시지로 이루어집니다. 메시지 형식은 일관성을 유지해야 합니다.
+-   **Python:** Python 코드는 표준 Django 규칙을 따릅니다.
+-   **JavaScript:** 프론트엔드 코드는 여러 JavaScript 파일로 모듈화되어 있습니다. 최신 프레임워크를 사용하지 않으므로 일관성을 유지하기 위해 변경 사항을 신중하게 적용해야 합니다.
+-   **Blender/Revit:** 애드온/애드인 코드는 각 플랫폼의 규칙 및 모범 사례를 따라야 합니다.
+-   **WebSockets:** 클라이언트(Blender, Revit, 웹 프론트엔드)와 서버 간의 통신은 WebSockets를 통한 JSON 메시지로 이루어집니다. 메시지 형식은 일관성을 유지해야 합니다.
