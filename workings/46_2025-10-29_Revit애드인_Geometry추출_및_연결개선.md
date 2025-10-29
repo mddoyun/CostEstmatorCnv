@@ -314,6 +314,40 @@ Revit Addin (C#)
 
 ---
 
+## 이슈 및 해결
+
+### 이슈: 벽 위치 오류 (2025-10-29)
+
+**증상**:
+- 3D 뷰어에서 벽이 다른 부재들과 멀리 떨어진 위치에 표시됨
+- 다른 객체들(기둥, 슬래브 등)은 정상적으로 모여있음
+
+**원인 분석**:
+1. Revit의 `element.get_Geometry()` 메서드는 **이미 프로젝트 전역 좌표계의 geometry를 반환**
+2. `ExtractTransformMatrix()` 메서드가 Location 기반으로 추가 transform을 생성
+3. 결과적으로 **이중 변환 발생**: geometry는 이미 올바른 위치인데 다시 이동시킴
+4. LocationCurve 요소(벽)는 시작점만 사용하여 변환 → 특히 심각한 위치 오류
+
+**해결 방법**:
+```csharp
+// Before: Location 기반 transform 생성
+if (element.Location is LocationPoint locationPoint) { ... }
+else if (element.Location is LocationCurve locationCurve) { ... }
+
+// After: 항상 Identity transform 사용
+Transform transform = Transform.Identity;
+```
+
+**기술적 배경**:
+- Revit API의 `get_Geometry()`는 프로젝트 좌표계 geometry 반환
+- `ProcessGeometryObject()`가 GeometryInstance의 transform을 이미 올바르게 처리
+- 추가 Location 기반 transform 불필요
+- Blender도 유사하게 대부분의 경우 Identity matrix 사용
+
+**커밋**: c7f6783
+
+---
+
 ## 결론
 
 **Revit 애드인을 완전히 독립적으로 개발하여 Blender와 동일한 Geometry 전송 기능을 구현했습니다.**
@@ -322,5 +356,6 @@ Revit Addin (C#)
 ✅ **Blender와 Revit 데이터가 동일한 구조**
 ✅ **서버 시작 없이도 연결 가능**
 ✅ **3D 뷰어에서 Revit 객체 표시 가능**
+✅ **모든 객체 타입의 위치 정보 정확하게 추출**
 
 이제 Revit 애드인과 웹브라우저는 완전히 독립적으로 개발 가능하며, Geometry 데이터 구조만 일치하면 호환됩니다!
