@@ -163,28 +163,12 @@ namespace RevitDjangoConnector
         {
             try
             {
-                Transform transform = null;
-
-                if (element.Location is LocationPoint locationPoint)
-                {
-                    transform = Transform.CreateTranslation(locationPoint.Point);
-                    if (locationPoint.Rotation != 0)
-                    {
-                        var rotationTransform = Transform.CreateRotationAtPoint(XYZ.BasisZ, locationPoint.Rotation, locationPoint.Point);
-                        transform = transform.Multiply(rotationTransform);
-                    }
-                }
-                else if (element.Location is LocationCurve locationCurve)
-                {
-                    var curve = locationCurve.Curve;
-                    var startPoint = curve.GetEndPoint(0);
-                    transform = Transform.CreateTranslation(startPoint);
-                }
-
-                if (transform == null)
-                {
-                    transform = Transform.Identity;
-                }
+                // ▼▼▼ [CRITICAL FIX] Revit geometry is already in global coordinates ▼▼▼
+                // element.get_Geometry() returns geometry in project coordinate system
+                // We should NOT apply additional transforms based on Location
+                // ProcessGeometryObject already handles transforms for GeometryInstances correctly
+                Transform transform = Transform.Identity;
+                // ▲▲▲ [FIX] Always use Identity - geometry is already correctly positioned ▲▲▲
 
                 // Blender 방식: 4x4 행렬을 1차원 배열로 (column-major order)
                 var matrix = new List<double>(16);
