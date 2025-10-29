@@ -2111,7 +2111,10 @@ function renderBoqTable(
                         break;
                     // 동적 표시 필드
                     default:
-                        displayValue = node.display_values[column.id] || '';
+                        // ▼▼▼ [수정] 서버에서 __ → _ 변환하므로 동일하게 변환 ▼▼▼
+                        const displayKey = column.id.replace(/__/g, '_');
+                        displayValue = node.display_values[displayKey] || '';
+                        // ▲▲▲ [수정] 여기까지 ▲▲▲
                         break;
                 }
                 const warningClass =
