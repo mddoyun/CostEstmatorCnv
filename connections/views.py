@@ -1819,9 +1819,10 @@ def generate_boq_report_api(request, project_id):
             group_by_fields = data.get('group_by', [])
             display_by_fields = data.get('display_by', [])
             raw_element_ids = data.get('raw_element_ids', [])
+            split_element_ids = data.get('split_element_ids', [])
             filter_ai = data.get('filter_ai', True)
             filter_dd = data.get('filter_dd', True)
-            print(f"[DEBUG] POST body parsed - group_by: {len(group_by_fields)}, display_by: {len(display_by_fields)}")
+            print(f"[DEBUG] POST body parsed - group_by: {len(group_by_fields)}, display_by: {len(display_by_fields)}, raw_element_ids: {len(raw_element_ids)}, split_element_ids: {len(split_element_ids)}")
         except json.JSONDecodeError as e:
             print(f"[ERROR] JSON parsing failed: {e}")
             return JsonResponse({'status': 'error', 'message': 'Invalid JSON in request body'}, status=400)
@@ -1830,9 +1831,10 @@ def generate_boq_report_api(request, project_id):
         group_by_fields = request.GET.getlist('group_by')
         display_by_fields = request.GET.getlist('display_by')
         raw_element_ids = request.GET.getlist('raw_element_ids')
+        split_element_ids = request.GET.getlist('split_element_ids')
         filter_ai = request.GET.get('filter_ai', 'true').lower() == 'true'
         filter_dd = request.GET.get('filter_dd', 'true').lower() == 'true'
-        print(f"[DEBUG] GET params parsed - group_by: {len(group_by_fields)}, display_by: {len(display_by_fields)}")
+        print(f"[DEBUG] GET params parsed - group_by: {len(group_by_fields)}, display_by: {len(display_by_fields)}, raw_element_ids: {len(raw_element_ids)}, split_element_ids: {len(split_element_ids)}")
     # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     if not group_by_fields:
@@ -1854,7 +1856,15 @@ def generate_boq_report_api(request, project_id):
 
     # ▼▼▼ [수정] is_active=True 필터 추가 (분할된 원본 숨김) ▼▼▼
     items_qs = CostItem.objects.filter(project_id=project_id, is_active=True)
-    if raw_element_ids: items_qs = items_qs.filter(quantity_member__raw_element_id__in=raw_element_ids)
+
+    # 3D 뷰어에서 선택한 객체 필터링 (원본 or 분할 객체)
+    if raw_element_ids or split_element_ids:
+        element_filter = Q()
+        if raw_element_ids:
+            element_filter |= Q(quantity_member__raw_element_id__in=raw_element_ids)
+        if split_element_ids:
+            element_filter |= Q(quantity_member__split_element_id__in=split_element_ids)
+        items_qs = items_qs.filter(element_filter)
     
     q_filter = Q()
     if filter_ai and filter_dd: q_filter = Q(cost_code__ai_sd_enabled=True) | Q(cost_code__dd_enabled=True)
