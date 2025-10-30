@@ -4968,12 +4968,14 @@
         scene.traverse((child) => {
             if (child.isMesh && child.userData) {
                 if (isSplitElement) {
-                    if (child.userData.split_element_id === elementId) {
+                    // Check for splitElementId (stored in camelCase in userData)
+                    if (child.userData.splitElementId === elementId) {
                         targetObject = child;
                         return;
                     }
                 } else {
-                    if (child.userData.raw_element_id === elementId) {
+                    // Check for rawElementId (stored in camelCase in userData)
+                    if (child.userData.rawElementId === elementId) {
                         targetObject = child;
                         return;
                     }

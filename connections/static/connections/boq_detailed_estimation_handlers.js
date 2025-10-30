@@ -1744,13 +1744,15 @@ function handleBoqGetFromViewer() {
 
     console.log("[DEBUG] 3D 뷰어에서 선택된 객체:", selectedObject.userData);
 
-    // Get raw_element_id (for original or split elements, both have raw_element_id)
-    const rawElementId = selectedObject.userData.raw_element_id;
-    const splitElementId = selectedObject.userData.split_element_id;
+    // Get rawElementId (stored in camelCase in userData)
+    // For original BIM objects: userData.rawElementId
+    // For split elements: userData.rawElementId (inherited from parent)
+    const rawElementId = selectedObject.userData.rawElementId;
+    const splitElementId = selectedObject.userData.splitElementId;
 
     if (!rawElementId) {
         showToast("선택된 객체에 연결된 BIM 데이터를 찾을 수 없습니다.", "error");
-        console.error("[DEBUG] raw_element_id가 없음:", selectedObject.userData);
+        console.error("[DEBUG] rawElementId가 없음:", selectedObject.userData);
         return;
     }
 
