@@ -1471,7 +1471,10 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
         return;
     }
 
-    loadBoqColumnSettings();
+    // ▼▼▼ [제거됨] loadBoqColumnSettings()가 currentBoqColumns를 리셋하는 문제 수정
+    // renderBoqTable()은 자체적으로 finalColumns를 만들기 때문에 loadBoqColumnSettings() 불필요
+    // currentBoqColumns는 generateBoqReport()의 updateDdBoqColumns()에서 이미 설정됨
+    // loadBoqColumnSettings();
 
     const dynamicDisplayFields = Array.from(
         document.querySelectorAll(".boq-display-field-cb:checked")
