@@ -22,6 +22,7 @@
     let dragCurrent = null;
     let selectionBox = null;  // HTML element for visual selection box
     let pointerDownTime = 0;  // To distinguish click from drag
+    let previewHighlightedObjects = [];  // Objects highlighted during box drag
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Visibility state management
@@ -1181,6 +1182,18 @@
         if (selectionBox) {
             selectionBox.style.display = 'none';
         }
+
+        // ▼▼▼ [추가] 미리보기 하이라이트 정리 ▼▼▼
+        previewHighlightedObjects.forEach(obj => {
+            if (!selectedObjects.includes(obj) && obj !== selectedObject) {
+                if (originalMaterials.has(obj)) {
+                    obj.material = originalMaterials.get(obj);
+                    obj.material.needsUpdate = true;
+                }
+            }
+        });
+        previewHighlightedObjects = [];
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     // Update selection box UI during drag
@@ -1192,18 +1205,151 @@
         const width = Math.abs(dragCurrent.x - dragStart.x);
         const height = Math.abs(dragCurrent.y - dragStart.y);
 
+        // ▼▼▼ [추가] 드래그 방향에 따라 스타일 변경 ▼▼▼
+        const isLeftToRight = dragCurrent.x >= dragStart.x;
+
+        if (isLeftToRight) {
+            // Window mode: 실선, 파란색
+            selectionBox.style.border = '2px solid #2196F3';
+            selectionBox.style.backgroundColor = 'rgba(33, 150, 243, 0.1)';
+        } else {
+            // Crossing mode: 점선, 녹색
+            selectionBox.style.border = '2px dashed #4CAF50';
+            selectionBox.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         selectionBox.style.left = left + 'px';
         selectionBox.style.top = top + 'px';
         selectionBox.style.width = width + 'px';
         selectionBox.style.height = height + 'px';
         selectionBox.style.display = 'block';
+
+        // ▼▼▼ [추가] 실시간 미리보기 하이라이트 ▼▼▼
+        updateBoxSelectionPreview(isLeftToRight);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
+
+    // ▼▼▼ [추가] 실시간 미리보기 하이라이트 ▼▼▼
+    function updateBoxSelectionPreview(isWindowMode) {
+        if (!scene || !camera || !dragStart || !dragCurrent) return;
+
+        const canvas = document.getElementById('three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        const minX = Math.min(dragStart.x, dragCurrent.x);
+        const maxX = Math.max(dragStart.x, dragCurrent.x);
+        const minY = Math.min(dragStart.y, dragCurrent.y);
+        const maxY = Math.max(dragStart.y, dragCurrent.y);
+
+        // Clear previous preview highlights
+        previewHighlightedObjects.forEach(obj => {
+            if (!selectedObjects.includes(obj) && obj !== selectedObject) {
+                if (originalMaterials.has(obj)) {
+                    obj.material = originalMaterials.get(obj);
+                    obj.material.needsUpdate = true;
+                }
+            }
+        });
+        previewHighlightedObjects = [];
+
+        // Get all visible BIM meshes
+        const bimMeshes = [];
+        scene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                object.visible) {
+                bimMeshes.push(object);
+            }
+        });
+
+        // Find objects that would be selected
+        bimMeshes.forEach(mesh => {
+            if (selectedObjects.includes(mesh) || mesh === selectedObject) return;
+
+            if (!mesh.geometry.boundingBox) {
+                mesh.geometry.computeBoundingBox();
+            }
+
+            const bbox = mesh.geometry.boundingBox;
+            if (!bbox) return;
+
+            const corners = [
+                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.min.z),
+                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.min.z),
+                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.min.z),
+                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.min.z),
+                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.max.z),
+                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.max.z),
+                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.max.z),
+                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.max.z)
+            ];
+
+            let cornersInBox = 0;
+            let allBehindCamera = true;
+
+            for (let corner of corners) {
+                const worldCorner = corner.clone().applyMatrix4(mesh.matrixWorld);
+                const screenPos = worldCorner.clone().project(camera);
+
+                if (screenPos.z < 1 && screenPos.z > -1) {
+                    allBehindCamera = false;
+
+                    const x = (screenPos.x * 0.5 + 0.5) * rect.width;
+                    const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
+
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        cornersInBox++;
+                    }
+                }
+            }
+
+            // Determine if object should be highlighted
+            let shouldHighlight = false;
+            if (!allBehindCamera) {
+                if (isWindowMode) {
+                    // Window mode: all corners must be inside
+                    shouldHighlight = (cornersInBox === 8);
+                } else {
+                    // Crossing mode: at least one corner inside
+                    shouldHighlight = (cornersInBox > 0);
+                }
+            }
+
+            if (shouldHighlight) {
+                if (!originalMaterials.has(mesh)) {
+                    originalMaterials.set(mesh, mesh.material);
+                }
+
+                // Preview highlight - cyan
+                const previewMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x4dd0e1,
+                    emissive: 0x00bcd4,
+                    emissiveIntensity: 0.3,
+                    metalness: 0.0,
+                    roughness: 1.0,
+                    flatShading: true,
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+
+                mesh.material = previewMaterial;
+                mesh.material.needsUpdate = true;
+                previewHighlightedObjects.push(mesh);
+            }
+        });
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Perform box selection
     function performBoxSelection(isAdditive) {
         if (!dragStart || !dragCurrent) return;
 
-        console.log('[3D Viewer] Performing box selection, additive:', isAdditive);
+        // ▼▼▼ [수정] 드래그 방향 감지 ▼▼▼
+        const isWindowMode = dragCurrent.x >= dragStart.x;  // 왼쪽→오른쪽 = Window mode
+        console.log('[3D Viewer] Performing box selection, mode:', isWindowMode ? 'Window' : 'Crossing', 'additive:', isAdditive);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
@@ -1224,7 +1370,7 @@
             }
         });
 
-        // ▼▼▼ [수정] 바운딩 박스 기반으로 정교한 교차 검사 ▼▼▼
+        // ▼▼▼ [수정] Window/Crossing 모드에 따른 선택 로직 ▼▼▼
         const objectsInBox = [];
         bimMeshes.forEach(mesh => {
             // Compute bounding box if not already computed
@@ -1248,7 +1394,7 @@
             ];
 
             // Transform to world space and project to screen
-            let isInBox = false;
+            let cornersInBox = 0;
             let allBehindCamera = true;
 
             for (let corner of corners) {
@@ -1268,14 +1414,24 @@
 
                     // Check if this corner is within selection box
                     if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-                        isInBox = true;
-                        break;
+                        cornersInBox++;
                     }
                 }
             }
 
-            // Include object if any corner is in box and not all corners are behind camera
-            if (isInBox && !allBehindCamera) {
+            // Determine selection based on mode
+            let shouldSelect = false;
+            if (!allBehindCamera) {
+                if (isWindowMode) {
+                    // Window mode (왼쪽→오른쪽): 모든 꼭짓점이 박스 안에 있어야 함
+                    shouldSelect = (cornersInBox === 8);
+                } else {
+                    // Crossing mode (오른쪽→왼쪽): 하나라도 걸치면 선택
+                    shouldSelect = (cornersInBox > 0);
+                }
+            }
+
+            if (shouldSelect) {
                 objectsInBox.push(mesh);
             }
         });
