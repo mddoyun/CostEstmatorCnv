@@ -90,6 +90,17 @@
         controls.minDistance = 1;
         controls.maxDistance = 500;
 
+        // ▼▼▼ [추가] 박스 선택을 위해 좌클릭 비활성화 ▼▼▼
+        // 좌클릭: 비활성화 (박스 선택 전용)
+        // 우클릭: 회전
+        // 중간 버튼: 이동
+        controls.mouseButtons = {
+            LEFT: null,                    // 좌클릭 비활성화
+            MIDDLE: THREE.MOUSE.PAN,       // 중간 버튼 = 이동
+            RIGHT: THREE.MOUSE.ROTATE      // 우클릭 = 회전
+        };
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
