@@ -2825,7 +2825,7 @@ div[id$='-grouping-controls'] {
     height: 100%;
     flex-grow: 1;
     display: block;
-    cursor: pointer;
+    cursor: default;
 }
 
 .viewer-controls {

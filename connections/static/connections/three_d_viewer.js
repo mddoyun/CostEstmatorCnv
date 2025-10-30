@@ -1719,6 +1719,49 @@
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Select an object
+    // ▼▼▼ [추가] 선택된 객체의 중심으로 회전 피벗 설정 ▼▼▼
+    function updateOrbitTarget() {
+        if (!controls) return;
+
+        // 선택된 객체들의 중심 계산
+        let targetObjects = selectedObjects.length > 0 ? selectedObjects : (selectedObject ? [selectedObject] : []);
+
+        if (targetObjects.length === 0) return;
+
+        // 모든 선택된 객체의 중심점들을 합산
+        let centerSum = new THREE.Vector3(0, 0, 0);
+        targetObjects.forEach(obj => {
+            const center = new THREE.Vector3();
+
+            // Bounding box를 계산하여 중심점 가져오기
+            if (!obj.geometry.boundingBox) {
+                obj.geometry.computeBoundingBox();
+            }
+
+            const bbox = obj.geometry.boundingBox;
+            if (bbox) {
+                center.x = (bbox.min.x + bbox.max.x) / 2;
+                center.y = (bbox.min.y + bbox.max.y) / 2;
+                center.z = (bbox.min.z + bbox.max.z) / 2;
+
+                // World 좌표로 변환
+                center.applyMatrix4(obj.matrixWorld);
+            }
+
+            centerSum.add(center);
+        });
+
+        // 평균 중심점 계산
+        centerSum.divideScalar(targetObjects.length);
+
+        // OrbitControls의 target 업데이트
+        controls.target.copy(centerSum);
+        controls.update();
+
+        console.log('[3D Viewer] Orbit target updated to:', centerSum);
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     function selectObject(object) {
         // Deselect previous object
         if (selectedObject) {
@@ -1830,6 +1873,10 @@
 
         // Update visibility control buttons
         updateVisibilityControlButtons();
+
+        // ▼▼▼ [추가] 회전 피벗을 선택된 객체 중심으로 설정 ▼▼▼
+        updateOrbitTarget();
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     // Deselect current object
@@ -2025,6 +2072,10 @@
 
         updateVisibilityControlButtons();
         showToast(`${selectedObjects.length}개 객체 선택됨`, 'info');
+
+        // ▼▼▼ [추가] 회전 피벗을 선택된 객체 중심으로 설정 ▼▼▼
+        updateOrbitTarget();
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     /**
@@ -2083,6 +2134,10 @@
 
         updateVisibilityControlButtons();
         console.log(`[3D Viewer] Toggled ${objects.length} objects, ${selectedObjects.length} total selected`);
+
+        // ▼▼▼ [추가] 회전 피벗을 선택된 객체 중심으로 설정 ▼▼▼
+        updateOrbitTarget();
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
