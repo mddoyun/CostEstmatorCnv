@@ -867,24 +867,38 @@ def create_quantity_members_auto_view(request, project_id):
             element_tags = element.classification_tags.all()
 
             for tag in element_tags:
-                # ▼▼▼ [수정] 분할되지 않은 원본 QuantityMember만 대상으로 함 ▼▼▼
-                # ▼▼▼ [추가] is_active=True 조건 추가하여 비활성화된 원본은 재활성화하지 않음 ▼▼▼
-                member, created = QuantityMember.objects.update_or_create(
+                # ▼▼▼ [수정] 분할된 객체는 건너뛰고 활성화된 것만 업데이트 ▼▼▼
+                # 먼저 해당 조합의 QuantityMember가 존재하는지 확인 (is_active 관계없이)
+                existing_member = QuantityMember.objects.filter(
                     project=project,
                     raw_element=element,
                     classification_tag=tag,
-                    split_element__isnull=True,  # 분할되지 않은 원본만
-                    is_active=True,  # 활성화된 것만 (비활성화된 원본은 건드리지 않음)
-                    defaults={
-                        'name': f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}",
-                    }
-                )
+                    split_element__isnull=True  # 분할되지 않은 원본만
+                ).first()
 
-                if created: created_count += 1
-                else: updated_count += 1
+                if existing_member:
+                    if existing_member.is_active:
+                        # 활성화된 것만 업데이트
+                        existing_member.name = f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}"
+                        member = existing_member
+                        updated_count += 1
+                    else:
+                        # 비활성화된 것은 건너뜀 (분할된 것)
+                        print(f"[DEBUG] 비활성화된 원본 부재 발견 (분할됨), 건너뜀: {existing_member.id}")
+                        continue
+                else:
+                    # 존재하지 않으면 새로 생성
+                    member = QuantityMember.objects.create(
+                        project=project,
+                        raw_element=element,
+                        classification_tag=tag,
+                        name=f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}",
+                        is_active=True
+                    )
+                    created_count += 1
 
                 script_to_use = None
-                
+
                 if member.mapping_expression and isinstance(member.mapping_expression, dict) and member.mapping_expression:
                     script_to_use = member.mapping_expression
                 else:
@@ -892,7 +906,7 @@ def create_quantity_members_auto_view(request, project_id):
                         if rule.target_tag_id == tag.id and evaluate_conditions(element.raw_data, rule.conditions):
                             script_to_use = rule.mapping_script
                             break
-                
+
                 if script_to_use:
                     properties = calculate_properties_from_rule(element.raw_data, script_to_use)
                     if member.properties != properties:
