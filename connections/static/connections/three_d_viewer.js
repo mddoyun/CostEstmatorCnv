@@ -25,6 +25,10 @@
     let previewHighlightedObjects = [];  // Objects highlighted during box drag
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+    // ▼▼▼ [추가] 선택된 객체의 중심 (회전 피벗용) ▼▼▼
+    let selectedObjectsCenter = null;  // 회전 시작 시 이 값으로 target 변경
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // Visibility state management
     let hiddenObjectIds = new Set(); // Store IDs of hidden objects
 
@@ -101,6 +105,16 @@
             MIDDLE: THREE.MOUSE.PAN,       // 중간 버튼 = 이동
             RIGHT: THREE.MOUSE.ROTATE      // 우클릭 = 회전
         };
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 회전 시작 시 선택된 객체 중심으로 피벗 변경 ▼▼▼
+        controls.addEventListener('start', function() {
+            // 회전/이동 시작 시, 선택된 객체가 있으면 그 중심을 피벗으로 설정
+            if (selectedObjectsCenter) {
+                controls.target.copy(selectedObjectsCenter);
+                console.log('[3D Viewer] Orbit pivot set to selected object center on rotation start:', selectedObjectsCenter);
+            }
+        });
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Lighting
@@ -1719,14 +1733,15 @@
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Select an object
-    // ▼▼▼ [추가] 선택된 객체의 중심으로 회전 피벗 설정 ▼▼▼
-    function updateOrbitTarget() {
-        if (!controls) return;
-
+    // ▼▼▼ [수정] 선택된 객체의 중심 계산 (저장만, target 변경 X) ▼▼▼
+    function calculateSelectedObjectsCenter() {
         // 선택된 객체들의 중심 계산
         let targetObjects = selectedObjects.length > 0 ? selectedObjects : (selectedObject ? [selectedObject] : []);
 
-        if (targetObjects.length === 0) return;
+        if (targetObjects.length === 0) {
+            selectedObjectsCenter = null;
+            return;
+        }
 
         // 모든 선택된 객체의 중심점들을 합산
         let centerSum = new THREE.Vector3(0, 0, 0);
@@ -1751,23 +1766,13 @@
             centerSum.add(center);
         });
 
-        // 평균 중심점 계산
+        // 평균 중심점 계산하여 저장만 (target 변경 안 함!)
         centerSum.divideScalar(targetObjects.length);
+        selectedObjectsCenter = centerSum;
 
-        // ▼▼▼ [수정] 화면은 그대로 유지하면서 회전 피벗만 변경 ▼▼▼
-        // 이전 target과 새 target의 차이 계산
-        const oldTarget = controls.target.clone();
-        const delta = centerSum.clone().sub(oldTarget);
-
-        // target과 camera를 동시에 같은 방향으로 이동
-        // → 상대적 위치 유지 = 화면은 그대로, 회전 중심만 변경
-        controls.target.copy(centerSum);
-        camera.position.add(delta);
-        // ▲▲▲ [수정] 여기까지 ▲▲▲
-
-        console.log('[3D Viewer] Orbit pivot updated to:', centerSum, '(camera moved by delta:', delta, ')');
+        console.log('[3D Viewer] Selected objects center calculated:', selectedObjectsCenter);
     }
-    // ▲▲▲ [추가] 여기까지 ▲▲▲
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     function selectObject(object) {
         // Deselect previous object
@@ -1881,9 +1886,9 @@
         // Update visibility control buttons
         updateVisibilityControlButtons();
 
-        // ▼▼▼ [추가] 회전 피벗을 선택된 객체 중심으로 설정 ▼▼▼
-        updateOrbitTarget();
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▼▼▼ [수정] 선택된 객체 중심 계산 (화면 이동 없음) ▼▼▼
+        calculateSelectedObjectsCenter();
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
 
     // Deselect current object
@@ -2080,9 +2085,9 @@
         updateVisibilityControlButtons();
         showToast(`${selectedObjects.length}개 객체 선택됨`, 'info');
 
-        // ▼▼▼ [추가] 회전 피벗을 선택된 객체 중심으로 설정 ▼▼▼
-        updateOrbitTarget();
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▼▼▼ [수정] 선택된 객체 중심 계산 (화면 이동 없음) ▼▼▼
+        calculateSelectedObjectsCenter();
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
 
     /**
@@ -2142,9 +2147,9 @@
         updateVisibilityControlButtons();
         console.log(`[3D Viewer] Toggled ${objects.length} objects, ${selectedObjects.length} total selected`);
 
-        // ▼▼▼ [추가] 회전 피벗을 선택된 객체 중심으로 설정 ▼▼▼
-        updateOrbitTarget();
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▼▼▼ [수정] 선택된 객체 중심 계산 (화면 이동 없음) ▼▼▼
+        calculateSelectedObjectsCenter();
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
