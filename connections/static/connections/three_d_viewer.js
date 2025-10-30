@@ -1754,12 +1754,18 @@
         // 평균 중심점 계산
         centerSum.divideScalar(targetObjects.length);
 
-        // OrbitControls의 target 업데이트 (화면은 그대로, 회전 중심만 변경)
-        controls.target.copy(centerSum);
-        // ⚠️ controls.update()를 호출하지 않음 - 화면 이동 방지
-        // target만 변경하면 다음 회전 시 해당 점을 중심으로 회전
+        // ▼▼▼ [수정] 화면은 그대로 유지하면서 회전 피벗만 변경 ▼▼▼
+        // 이전 target과 새 target의 차이 계산
+        const oldTarget = controls.target.clone();
+        const delta = centerSum.clone().sub(oldTarget);
 
-        console.log('[3D Viewer] Orbit pivot updated to:', centerSum);
+        // target과 camera를 동시에 같은 방향으로 이동
+        // → 상대적 위치 유지 = 화면은 그대로, 회전 중심만 변경
+        controls.target.copy(centerSum);
+        camera.position.add(delta);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        console.log('[3D Viewer] Orbit pivot updated to:', centerSum, '(camera moved by delta:', delta, ')');
     }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
