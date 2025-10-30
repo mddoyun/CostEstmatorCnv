@@ -1274,23 +1274,58 @@
             const bbox = mesh.geometry.boundingBox;
             if (!bbox) return;
 
-            const corners = [
-                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.min.z),
-                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.min.z),
-                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.min.z),
-                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.min.z),
-                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.max.z),
-                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.max.z),
-                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.max.z),
-                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.max.z)
-            ];
+            // ▼▼▼ [수정] 8개 꼭짓점 + 12개 모서리 중점 + 6개 면 중심점 = 26개 샘플 포인트 ▼▼▼
+            const bboxMinX = bbox.min.x, bboxMinY = bbox.min.y, bboxMinZ = bbox.min.z;
+            const bboxMaxX = bbox.max.x, bboxMaxY = bbox.max.y, bboxMaxZ = bbox.max.z;
+            const bboxMidX = (bboxMinX + bboxMaxX) / 2;
+            const bboxMidY = (bboxMinY + bboxMaxY) / 2;
+            const bboxMidZ = (bboxMinZ + bboxMaxZ) / 2;
 
-            let cornersInBox = 0;
+            // 8 corners + 12 edge midpoints + 6 face centers
+            const samplePoints = [
+                // 8 corners (꼭짓점)
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMaxZ),
+
+                // 12 edge midpoints (모서리 중점)
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMinZ), // bottom front
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMinZ), // top front
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMaxZ), // bottom back
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMaxZ), // top back
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMinZ), // left front
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMinZ), // right front
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMaxZ), // left back
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMaxZ), // right back
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMidZ), // bottom left
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMidZ), // bottom right
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMidZ), // top left
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMidZ), // top right
+
+                // 6 face centers (면 중심점)
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMinZ), // front
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMaxZ), // back
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMidZ), // left
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMidZ), // right
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMidZ), // bottom
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMidZ)  // top
+            ];
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            // ▼▼▼ [수정] 샘플 포인트 검사로 변경 ▼▼▼
+            let pointsInBox = 0;
+            let cornersInBox = 0;  // 8개 꼭짓점만 카운트
             let allBehindCamera = true;
 
-            for (let corner of corners) {
-                const worldCorner = corner.clone().applyMatrix4(mesh.matrixWorld);
-                const screenPos = worldCorner.clone().project(camera);
+            for (let i = 0; i < samplePoints.length; i++) {
+                const point = samplePoints[i];
+                const worldPoint = point.clone().applyMatrix4(mesh.matrixWorld);
+                const screenPos = worldPoint.clone().project(camera);
 
                 if (screenPos.z < 1 && screenPos.z > -1) {
                     allBehindCamera = false;
@@ -1299,7 +1334,10 @@
                     const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
 
                     if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-                        cornersInBox++;
+                        pointsInBox++;
+                        if (i < 8) {  // First 8 are corners
+                            cornersInBox++;
+                        }
                     }
                 }
             }
@@ -1308,13 +1346,14 @@
             let shouldHighlight = false;
             if (!allBehindCamera) {
                 if (isWindowMode) {
-                    // Window mode: all corners must be inside
+                    // Window mode (왼쪽→오른쪽): 모든 꼭짓점이 박스 안에 있어야 함
                     shouldHighlight = (cornersInBox === 8);
                 } else {
-                    // Crossing mode: at least one corner inside
-                    shouldHighlight = (cornersInBox > 0);
+                    // Crossing mode (오른쪽→왼쪽): 어떤 샘플 포인트라도 걸치면 선택
+                    shouldHighlight = (pointsInBox > 0);
                 }
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             if (shouldHighlight) {
                 if (!originalMaterials.has(mesh)) {
@@ -1381,28 +1420,62 @@
             const bbox = mesh.geometry.boundingBox;
             if (!bbox) return;
 
-            // Get 8 corners of bounding box in local space
-            const corners = [
-                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.min.z),
-                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.min.z),
-                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.min.z),
-                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.min.z),
-                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.max.z),
-                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.max.z),
-                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.max.z),
-                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.max.z)
-            ];
+            // ▼▼▼ [수정] 8개 꼭짓점 + 12개 모서리 중점 + 6개 면 중심점 = 26개 샘플 포인트 ▼▼▼
+            const minX = bbox.min.x, minY = bbox.min.y, minZ = bbox.min.z;
+            const maxX = bbox.max.x, maxY = bbox.max.y, maxZ = bbox.max.z;
+            const midX = (minX + maxX) / 2;
+            const midY = (minY + maxY) / 2;
+            const midZ = (minZ + maxZ) / 2;
 
-            // Transform to world space and project to screen
-            let cornersInBox = 0;
+            // 8 corners + 12 edge midpoints + 6 face centers
+            const samplePoints = [
+                // 8 corners (꼭짓점)
+                new THREE.Vector3(minX, minY, minZ),
+                new THREE.Vector3(maxX, minY, minZ),
+                new THREE.Vector3(minX, maxY, minZ),
+                new THREE.Vector3(maxX, maxY, minZ),
+                new THREE.Vector3(minX, minY, maxZ),
+                new THREE.Vector3(maxX, minY, maxZ),
+                new THREE.Vector3(minX, maxY, maxZ),
+                new THREE.Vector3(maxX, maxY, maxZ),
+
+                // 12 edge midpoints (모서리 중점)
+                new THREE.Vector3(midX, minY, minZ), // bottom front
+                new THREE.Vector3(midX, maxY, minZ), // top front
+                new THREE.Vector3(midX, minY, maxZ), // bottom back
+                new THREE.Vector3(midX, maxY, maxZ), // top back
+                new THREE.Vector3(minX, midY, minZ), // left front
+                new THREE.Vector3(maxX, midY, minZ), // right front
+                new THREE.Vector3(minX, midY, maxZ), // left back
+                new THREE.Vector3(maxX, midY, maxZ), // right back
+                new THREE.Vector3(minX, minY, midZ), // bottom left
+                new THREE.Vector3(maxX, minY, midZ), // bottom right
+                new THREE.Vector3(minX, maxY, midZ), // top left
+                new THREE.Vector3(maxX, maxY, midZ), // top right
+
+                // 6 face centers (면 중심점)
+                new THREE.Vector3(midX, midY, minZ), // front
+                new THREE.Vector3(midX, midY, maxZ), // back
+                new THREE.Vector3(minX, midY, midZ), // left
+                new THREE.Vector3(maxX, midY, midZ), // right
+                new THREE.Vector3(midX, minY, midZ), // bottom
+                new THREE.Vector3(midX, maxY, midZ)  // top
+            ];
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            // ▼▼▼ [수정] 샘플 포인트 검사로 변경 ▼▼▼
+            let pointsInBox = 0;
+            let cornersInBox = 0;  // 8개 꼭짓점만 카운트
             let allBehindCamera = true;
 
-            for (let corner of corners) {
+            for (let i = 0; i < samplePoints.length; i++) {
+                const point = samplePoints[i];
+
                 // Transform to world coordinates
-                const worldCorner = corner.clone().applyMatrix4(mesh.matrixWorld);
+                const worldPoint = point.clone().applyMatrix4(mesh.matrixWorld);
 
                 // Project to screen space
-                const screenPos = worldCorner.clone().project(camera);
+                const screenPos = worldPoint.clone().project(camera);
 
                 // Check if in front of camera
                 if (screenPos.z < 1 && screenPos.z > -1) {
@@ -1412,9 +1485,12 @@
                     const x = (screenPos.x * 0.5 + 0.5) * rect.width;
                     const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
 
-                    // Check if this corner is within selection box
+                    // Check if this point is within selection box
                     if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-                        cornersInBox++;
+                        pointsInBox++;
+                        if (i < 8) {  // First 8 are corners
+                            cornersInBox++;
+                        }
                     }
                 }
             }
@@ -1426,10 +1502,11 @@
                     // Window mode (왼쪽→오른쪽): 모든 꼭짓점이 박스 안에 있어야 함
                     shouldSelect = (cornersInBox === 8);
                 } else {
-                    // Crossing mode (오른쪽→왼쪽): 하나라도 걸치면 선택
-                    shouldSelect = (cornersInBox > 0);
+                    // Crossing mode (오른쪽→왼쪽): 어떤 샘플 포인트라도 걸치면 선택
+                    shouldSelect = (pointsInBox > 0);
                 }
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             if (shouldSelect) {
                 objectsInBox.push(mesh);
