@@ -54,7 +54,7 @@ function renderCostCodesTable(codes, editId = null) {
         <thead>
             <tr>
                 <th>코드</th>
-                <th>품명</th>
+                <th>이름</th>
                 <th>규격</th>
                 <th>단위</th>
                 <th>공정</th>
@@ -87,7 +87,7 @@ function renderCostCodesTable(codes, editId = null) {
                 }" placeholder="C-001"></td>
                 <td><input type="text" class="cost-name-input" value="${
                     code.name || ''
-                }" placeholder="품명"></td>
+                }" placeholder="이름"></td>
                 <td><input type="text" class="cost-spec-input" value="${
                     code.spec || ''
                 }" placeholder="규격"></td>
@@ -211,7 +211,7 @@ async function handleCostCodeActions(event) {
         };
 
         if (!codeData.code || !codeData.name) {
-            showToast('코드와 품명은 반드시 입력해야 합니다.', 'error');
+            showToast('코드와 이름은 반드시 입력해야 합니다.', 'error');
             return;
         }
 

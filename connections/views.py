@@ -502,7 +502,7 @@ def cost_codes_api(request, project_id, code_id=None):
             print(f"[COSTCODE/POST] project={project_id} payload={data} "f"=> ai_sd_enabled={ai_sd}, dd_enabled={dd}")
             # 필수 필드 확인
             if not data.get('code') or not data.get('name'):
-                return JsonResponse({'status': 'error', 'message': '코드와 품명은 필수 항목입니다.'}, status=400)
+                return JsonResponse({'status': 'error', 'message': '코드와 이름은 필수 항목입니다.'}, status=400)
 
             new_code = CostCode.objects.create(
                 project=project,
@@ -1698,7 +1698,7 @@ def get_boq_grouping_fields_api(request, project_id):
 
     # 1. CostItem 및 연관 모델의 고정 필드를 먼저 추가합니다.
     add_field('cost_code__code', '공사코드 - 코드')
-    add_field('cost_code__name', '공사코드 - 품명')
+    add_field('cost_code__name', '공사코드 - 이름')
     add_field('cost_code__spec', '공사코드 - 규격')
     add_field('cost_code__unit', '공사코드 - 단위')
     add_field('cost_code__category', '공사코드 - 공정')
