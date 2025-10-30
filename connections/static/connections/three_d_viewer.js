@@ -107,19 +107,6 @@
         };
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 회전 시작 시 선택된 객체 중심으로 피벗 변경 ▼▼▼
-        controls.addEventListener('start', function() {
-            // 회전/이동 시작 시, 선택된 객체가 있으면 그 중심을 피벗으로 설정
-            if (selectedObjectsCenter) {
-                // target만 변경 (camera는 절대 이동 안 함!)
-                // → 화면은 그대로, 회전 중심만 변경
-                // → 마우스 움직이면 새로운 중심으로 회전 시작
-                controls.target.copy(selectedObjectsCenter);
-
-                console.log('[3D Viewer] Orbit pivot set to selected object center (camera stays in place)');
-            }
-        });
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -189,9 +176,18 @@
 
     function animate() {
         requestAnimationFrame(animate);
+
         if (controls) {
+            // ▼▼▼ [추가] 선택된 객체가 있으면 지속적으로 피벗을 객체 중심으로 설정 ▼▼▼
+            // 이렇게 하면 회전할 때 자연스럽게 객체 중심으로 회전
+            if (selectedObjectsCenter) {
+                controls.target.copy(selectedObjectsCenter);
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             controls.update();
         }
+
         if (renderer && scene && camera) {
             renderer.render(scene, camera);
         }
