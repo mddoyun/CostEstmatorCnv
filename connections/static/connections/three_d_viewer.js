@@ -9,6 +9,7 @@
     let selectedObject = null;
     let selectedObjects = []; // ▼▼▼ [추가] 복수 선택을 위한 배열 ▼▼▼
     let originalMaterials = new Map(); // Store original materials for deselection
+    let hoveredObject = null; // ▼▼▼ [추가] 호버된 객체 ▼▼▼
 
     // For cycling through overlapping objects
     let lastClickPosition = null;
@@ -149,6 +150,7 @@
         canvas.addEventListener('pointerdown', onPointerDown, false);
         canvas.addEventListener('pointermove', onPointerMove, false);
         canvas.addEventListener('pointerup', onPointerUp, false);
+        canvas.addEventListener('pointerleave', onPointerLeave, false);  // Clear hover when leaving canvas
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Start animation loop
@@ -1036,28 +1038,126 @@
         isDragging = false;  // Will be set to true if mouse moves
     }
 
-    // Pointer move - update selection box if dragging
+    // Pointer move - update selection box if dragging, or show hover effect
     function onPointerMove(event) {
-        if (!dragStart) return;
-
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
 
-        const currentX = event.clientX - rect.left;
-        const currentY = event.clientY - rect.top;
+        if (dragStart) {
+            // Dragging mode - update selection box
+            const currentX = event.clientX - rect.left;
+            const currentY = event.clientY - rect.top;
 
-        // Check if moved enough to be considered a drag (5px threshold)
-        const dx = currentX - dragStart.x;
-        const dy = currentY - dragStart.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+            // Check if moved enough to be considered a drag (5px threshold)
+            const dx = currentX - dragStart.x;
+            const dy = currentY - dragStart.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (distance > 5) {
-            isDragging = true;
-            dragCurrent = { x: currentX, y: currentY };
+            if (distance > 5) {
+                isDragging = true;
+                dragCurrent = { x: currentX, y: currentY };
 
-            // Update selection box visual
-            updateSelectionBoxUI();
+                // Update selection box visual
+                updateSelectionBoxUI();
+            }
+        } else {
+            // ▼▼▼ [추가] 호버 모드 - 마우스 아래 객체 감지 ▼▼▼
+            if (!scene || !camera || !raycaster) return;
+
+            // Calculate mouse position in normalized device coordinates
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            // Update raycaster
+            raycaster.setFromCamera(mouse, camera);
+
+            // Get all BIM meshes
+            const bimMeshes = [];
+            scene.traverse(function(object) {
+                if (object instanceof THREE.Mesh && object.userData &&
+                    (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                    object.visible) {  // Only visible objects
+                    bimMeshes.push(object);
+                }
+            });
+
+            // Check for intersections
+            const intersects = raycaster.intersectObjects(bimMeshes, true);
+
+            // Filter to get first valid object that's in front of camera
+            let newHoveredObject = null;
+            for (let intersect of intersects) {
+                let obj = intersect.object;
+
+                // Get parent if it's a LineSegments
+                if (obj instanceof THREE.LineSegments && obj.parent) {
+                    obj = obj.parent;
+                }
+
+                // Verify it's a valid mesh
+                if (obj instanceof THREE.Mesh && obj.userData &&
+                    (obj.userData.bimObjectId || obj.userData.isSplitPart || obj.userData.isSplitElement)) {
+
+                    // Check if object is in front of camera (not behind)
+                    const worldPos = new THREE.Vector3();
+                    obj.getWorldPosition(worldPos);
+                    const screenPos = worldPos.clone().project(camera);
+
+                    if (screenPos.z < 1 && screenPos.z > -1) {  // In viewport
+                        newHoveredObject = obj;
+                        break;
+                    }
+                }
+            }
+
+            // Update hover state
+            if (newHoveredObject !== hoveredObject) {
+                // Clear old hover
+                if (hoveredObject && !selectedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
+                    if (originalMaterials.has(hoveredObject)) {
+                        hoveredObject.material = originalMaterials.get(hoveredObject);
+                        hoveredObject.material.needsUpdate = true;
+                    }
+                }
+
+                // Apply new hover
+                hoveredObject = newHoveredObject;
+                if (hoveredObject && !selectedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
+                    if (!originalMaterials.has(hoveredObject)) {
+                        originalMaterials.set(hoveredObject, hoveredObject.material);
+                    }
+
+                    // Hover highlight - light blue
+                    const hoverMaterial = new THREE.MeshStandardMaterial({
+                        color: 0x4dd0e1,           // Light cyan
+                        emissive: 0x00bcd4,        // Cyan glow
+                        emissiveIntensity: 0.3,
+                        metalness: 0.0,
+                        roughness: 1.0,
+                        flatShading: true,
+                        transparent: true,
+                        opacity: 0.6,
+                        side: THREE.DoubleSide
+                    });
+
+                    hoveredObject.material = hoverMaterial;
+                    hoveredObject.material.needsUpdate = true;
+                }
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
         }
+    }
+
+    // Pointer leave - clear hover effect when leaving canvas
+    function onPointerLeave(event) {
+        // Clear hover effect
+        if (hoveredObject && !selectedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
+            if (originalMaterials.has(hoveredObject)) {
+                hoveredObject.material = originalMaterials.get(hoveredObject);
+                hoveredObject.material.needsUpdate = true;
+            }
+        }
+        hoveredObject = null;
     }
 
     // Pointer up - complete selection
@@ -1114,33 +1214,72 @@
         const minY = Math.min(dragStart.y, dragCurrent.y);
         const maxY = Math.max(dragStart.y, dragCurrent.y);
 
-        // Get all BIM meshes
+        // ▼▼▼ [수정] 화면에 보이고 visible한 BIM 메시만 가져오기 ▼▼▼
         const bimMeshes = [];
         scene.traverse(function(object) {
             if (object instanceof THREE.Mesh && object.userData &&
-                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement)) {
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                object.visible) {  // Only visible objects
                 bimMeshes.push(object);
             }
         });
 
-        // Find objects within box
+        // ▼▼▼ [수정] 바운딩 박스 기반으로 정교한 교차 검사 ▼▼▼
         const objectsInBox = [];
         bimMeshes.forEach(mesh => {
-            // Project object center to screen space
-            const worldPos = new THREE.Vector3();
-            mesh.getWorldPosition(worldPos);
+            // Compute bounding box if not already computed
+            if (!mesh.geometry.boundingBox) {
+                mesh.geometry.computeBoundingBox();
+            }
 
-            const screenPos = worldPos.clone().project(camera);
+            const bbox = mesh.geometry.boundingBox;
+            if (!bbox) return;
 
-            // Convert to canvas coordinates
-            const x = (screenPos.x * 0.5 + 0.5) * rect.width;
-            const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
+            // Get 8 corners of bounding box in local space
+            const corners = [
+                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.min.z),
+                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.min.z),
+                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.min.z),
+                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.min.z),
+                new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.max.z),
+                new THREE.Vector3(bbox.max.x, bbox.min.y, bbox.max.z),
+                new THREE.Vector3(bbox.min.x, bbox.max.y, bbox.max.z),
+                new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.max.z)
+            ];
 
-            // Check if within box
-            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+            // Transform to world space and project to screen
+            let isInBox = false;
+            let allBehindCamera = true;
+
+            for (let corner of corners) {
+                // Transform to world coordinates
+                const worldCorner = corner.clone().applyMatrix4(mesh.matrixWorld);
+
+                // Project to screen space
+                const screenPos = worldCorner.clone().project(camera);
+
+                // Check if in front of camera
+                if (screenPos.z < 1 && screenPos.z > -1) {
+                    allBehindCamera = false;
+
+                    // Convert to canvas coordinates
+                    const x = (screenPos.x * 0.5 + 0.5) * rect.width;
+                    const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
+
+                    // Check if this corner is within selection box
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        isInBox = true;
+                        break;
+                    }
+                }
+            }
+
+            // Include object if any corner is in box and not all corners are behind camera
+            if (isInBox && !allBehindCamera) {
                 objectsInBox.push(mesh);
             }
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log(`[3D Viewer] Found ${objectsInBox.length} objects in selection box`);
 
@@ -1172,17 +1311,18 @@
         // Update raycaster
         raycaster.setFromCamera(mouse, camera);
 
-        // Get all BIM meshes (exclude helpers like axes, grid, lights)
+        // ▼▼▼ [수정] 화면에 보이는 BIM 메시만 가져오기 ▼▼▼
         const bimMeshes = [];
         scene.traverse(function(object) {
-            // ▼▼▼ [수정] DB에서 로드한 분할 객체(isSplitElement)도 포함 ▼▼▼
             // Include both original BIM objects and split parts (isSplitPart from runtime split, isSplitElement from DB)
+            // Only include visible objects
             if (object instanceof THREE.Mesh && object.userData &&
-                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement)) {
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                object.visible) {  // Only visible objects
                 bimMeshes.push(object);
             }
-            // ▲▲▲ [수정] 여기까지 ▲▲▲
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Check for intersections (recursive to include edge lines)
         const intersects = raycaster.intersectObjects(bimMeshes, true);
