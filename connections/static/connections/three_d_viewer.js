@@ -1758,7 +1758,7 @@
         html += '<tr>';
         html += '<th>공사코드</th>';
         html += '<th>공종</th>';
-        html += '<th>품명</th>';
+        html += '<th>이름</th>';
         html += '<th>규격</th>';
         html += '<th>단위</th>';
         html += '<th>수량</th>';

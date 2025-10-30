@@ -2523,7 +2523,7 @@ function renderBoqBimObjectCostSummary(selectedCostItemId) {
         <thead>
             <tr>
                 <th>공사코드</th>
-                <th>품명</th>
+                <th>이름</th>
                 <th style="text-align: right;">수량</th>
                 <th style="text-align: right;">합계금액</th>
                 <th style="text-align: right;">재료비</th>
