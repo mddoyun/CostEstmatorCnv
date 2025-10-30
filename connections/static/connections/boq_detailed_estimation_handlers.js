@@ -1626,9 +1626,9 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
             `;
 
             finalColumns.forEach((col) => {
-                // ▼▼▼ [수정] 동적 필드는 display_values에서 가져옴 ▼▼▼
+                // ▼▼▼ [수정] 동적 필드는 display_values에서 가져오되, 없으면 item에서 직접 가져옴 ▼▼▼
                 let cellContent;
-                if (col.isDynamic && item.display_values) {
+                if (col.isDynamic && item.display_values && item.display_values[col.id] !== undefined) {
                     cellContent = item.display_values[col.id];
                 } else {
                     cellContent = item[col.id];
