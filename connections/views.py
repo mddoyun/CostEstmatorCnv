@@ -489,6 +489,9 @@ def cost_codes_api(request, project_id, code_id=None):
             'description': code.description,
             'ai_sd_enabled': code.ai_sd_enabled,
             'dd_enabled': code.dd_enabled,
+            'detail_code': code.detail_code,
+            'product_name': code.product_name,
+            'note': code.note,
         } for code in codes]
         return JsonResponse(codes_data, safe=False)
 
@@ -515,6 +518,9 @@ def cost_codes_api(request, project_id, code_id=None):
                 # [ADD] 새 필드 저장
                 ai_sd_enabled=ai_sd,
                 dd_enabled=dd,
+                detail_code=data.get('detail_code', ''),
+                product_name=data.get('product_name', ''),
+                note=data.get('note', ''),
             )
             return JsonResponse({'status': 'success', 'message': '새 공사코드가 생성되었습니다.', 'code_id': str(new_code.id)})
         except Project.DoesNotExist:
@@ -536,7 +542,10 @@ def cost_codes_api(request, project_id, code_id=None):
             cost_code.unit = data.get('unit', cost_code.unit)
             cost_code.category = data.get('category', cost_code.category)
             cost_code.description = data.get('description', cost_code.description)
-                        
+            cost_code.detail_code = data.get('detail_code', cost_code.detail_code)
+            cost_code.product_name = data.get('product_name', cost_code.product_name)
+            cost_code.note = data.get('note', cost_code.note)
+
             # [ADD] 새 불린 필드 적용 (키가 오면만 반영)
             if 'ai_sd_enabled' in data:
                 cost_code.ai_sd_enabled = bool(data['ai_sd_enabled'])
@@ -1702,6 +1711,9 @@ def get_boq_grouping_fields_api(request, project_id):
     add_field('cost_code__spec', '공사코드 - 규격')
     add_field('cost_code__unit', '공사코드 - 단위')
     add_field('cost_code__category', '공사코드 - 공정')
+    add_field('cost_code__detail_code', '공사코드 - 내역코드')
+    add_field('cost_code__product_name', '공사코드 - 품명')
+    add_field('cost_code__note', '공사코드 - 비고')
     add_field('quantity_member__name', '산출부재 - 이름')
     add_field('quantity_member__classification_tag__name', '산출부재 - 수량산출분류')
     add_field('quantity_member__member_mark__mark', '일람부호 - 부호명')

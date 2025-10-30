@@ -55,10 +55,13 @@ function renderCostCodesTable(codes, editId = null) {
             <tr>
                 <th>코드</th>
                 <th>이름</th>
+                <th>설명</th>
+                <th>내역코드</th>
+                <th>공정</th>
+                <th>품명</th>
                 <th>규격</th>
                 <th>단위</th>
-                <th>공정</th>
-                <th>설명</th>
+                <th>비고</th>
                 <!-- [ADD] 새 컬럼 2개 -->
                 <th>AI개략견적</th>
                 <th>상세견적</th>
@@ -88,18 +91,27 @@ function renderCostCodesTable(codes, editId = null) {
                 <td><input type="text" class="cost-name-input" value="${
                     code.name || ''
                 }" placeholder="이름"></td>
+                <td><input type="text" class="cost-description-input" value="${
+                    code.description || ''
+                }" placeholder="설명"></td>
+                <td><input type="text" class="cost-detail-code-input" value="${
+                    code.detail_code || ''
+                }" placeholder="내역코드"></td>
+                <td><input type="text" class="cost-category-input" value="${
+                    code.category || ''
+                }" placeholder="공정"></td>
+                <td><input type="text" class="cost-product-name-input" value="${
+                    code.product_name || ''
+                }" placeholder="품명"></td>
                 <td><input type="text" class="cost-spec-input" value="${
                     code.spec || ''
                 }" placeholder="규격"></td>
                 <td><input type="text" class="cost-unit-input" value="${
                     code.unit || ''
                 }" placeholder="단위"></td>
-                <td><input type="text" class="cost-category-input" value="${
-                    code.category || ''
-                }" placeholder="공정"></td>
-                <td><input type="text" class="cost-description-input" value="${
-                    code.description || ''
-                }" placeholder="설명"></td>
+                <td><input type="text" class="cost-note-input" value="${
+                    code.note || ''
+                }" placeholder="비고"></td>
                 <!-- [ADD] 편집모드 체크박스 2개 -->
                 <td><input type="checkbox" class="cost-ai-sd-input" ${
                     code.ai_sd_enabled ? 'checked' : ''
@@ -116,10 +128,13 @@ function renderCostCodesTable(codes, editId = null) {
             row.innerHTML = `
                 <td>${code.code}</td>
                 <td>${code.name}</td>
+                <td>${code.description || ''}</td>
+                <td>${code.detail_code || ''}</td>
+                <td>${code.category || ''}</td>
+                <td>${code.product_name || ''}</td>
                 <td>${code.spec || ''}</td>
                 <td>${code.unit || ''}</td>
-                <td>${code.category || ''}</td>
-                <td>${code.description || ''}</td>
+                <td>${code.note || ''}</td>
                 <!-- [ADD] 보기모드 표시 2개 -->
                 <td>${code.ai_sd_enabled ? '✅' : '—'}</td>
                 <td>${code.dd_enabled ? '✅' : '—'}</td>
@@ -204,6 +219,9 @@ async function handleCostCodeActions(event) {
             category: actionRow.querySelector('.cost-category-input').value,
             description: actionRow.querySelector('.cost-description-input')
                 .value,
+            detail_code: actionRow.querySelector('.cost-detail-code-input').value,
+            product_name: actionRow.querySelector('.cost-product-name-input').value,
+            note: actionRow.querySelector('.cost-note-input').value,
             // ✅ 체크박스 2개 포함
             ai_sd_enabled:
                 !!actionRow.querySelector('.cost-ai-sd-input')?.checked,

@@ -53,6 +53,11 @@ class CostCode(models.Model):
     unit = models.CharField(max_length=50, blank=True, null=True)
     category = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    # ▼▼▼ [추가] 새로운 필드 3개 ▼▼▼
+    detail_code = models.CharField(max_length=100, blank=True, null=True, verbose_name="내역코드")
+    product_name = models.CharField(max_length=255, blank=True, null=True, verbose_name="품명")
+    note = models.TextField(blank=True, null=True, verbose_name="비고")
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
     created_at = models.DateTimeField(auto_now_add=True)
     # ▼▼▼ [수정] ai_sd_enabled 필드 verbose_name 추가 ▼▼▼
     ai_sd_enabled = models.BooleanField(default=False, verbose_name="개산견적(SD) 사용")       # AI개략견적활용여부
