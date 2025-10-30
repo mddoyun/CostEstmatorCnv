@@ -4938,4 +4938,76 @@
     // Expose visibility functions globally for external calls
     window.restoreViewerVisibilityState = restoreVisibilityState;
 
+    // ▼▼▼ [추가] 3D 뷰어 선택 객체 정보 가져오기 함수 ▼▼▼
+    /**
+     * Get currently selected object in 3D viewer
+     * @returns {Object|null} Selected object with userData containing raw_element_id, split_element_id, etc.
+     */
+    window.getViewerSelectedObject = function() {
+        return selectedObject;
+    };
+
+    /**
+     * Select object in 3D viewer by raw_element_id or split_element_id
+     * @param {string} elementId - raw_element_id or split_element_id to select
+     * @param {boolean} isSplitElement - true if elementId is a split_element_id
+     */
+    window.selectObjectInViewer = function(elementId, isSplitElement = false) {
+        if (!scene) {
+            console.warn('[3D Viewer] Scene not initialized');
+            return;
+        }
+
+        // Deselect current object first
+        if (selectedObject) {
+            deselectObject();
+        }
+
+        // Find the object in the scene
+        let targetObject = null;
+        scene.traverse((child) => {
+            if (child.isMesh && child.userData) {
+                if (isSplitElement) {
+                    if (child.userData.split_element_id === elementId) {
+                        targetObject = child;
+                        return;
+                    }
+                } else {
+                    if (child.userData.raw_element_id === elementId) {
+                        targetObject = child;
+                        return;
+                    }
+                }
+            }
+        });
+
+        if (targetObject) {
+            selectObject(targetObject);
+
+            // Focus camera on selected object
+            if (controls && targetObject.geometry) {
+                targetObject.geometry.computeBoundingBox();
+                const box = targetObject.geometry.boundingBox.clone();
+                box.applyMatrix4(targetObject.matrixWorld);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = camera.fov * (Math.PI / 180);
+                let cameraZ = Math.abs(maxDim / Math.sin(fov / 2));
+                cameraZ *= 1.5; // Zoom out a bit
+
+                camera.position.set(center.x, center.y, center.z + cameraZ);
+                controls.target.copy(center);
+                controls.update();
+            }
+
+            console.log('[3D Viewer] Object selected:', elementId);
+            return true;
+        } else {
+            console.warn('[3D Viewer] Object not found:', elementId);
+            return false;
+        }
+    };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
 })();

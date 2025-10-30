@@ -33,6 +33,14 @@ function setupDetailedEstimationListeners() {
     document
         .getElementById("add-boq-group-level-btn")
         ?.addEventListener("click", addBoqGroupingLevel);
+    // ▼▼▼ [추가] 3D 뷰어 연동 버튼 리스너 ▼▼▼
+    document
+        .getElementById("boq-get-from-viewer-btn")
+        ?.addEventListener("click", handleBoqGetFromViewer);
+    document
+        .getElementById("boq-select-in-viewer-btn")
+        ?.addEventListener("click", handleBoqSelectInViewer);
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
     // 필터 체크박스
     document
         .getElementById("boq-filter-ai")
@@ -1711,3 +1719,140 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
         });
     }
 }
+
+// ▼▼▼ [추가] 3D 뷰어 연동 함수들 ▼▼▼
+/**
+ * 3D 뷰어에서 선택된 객체를 가져와서 BOQ 필터링
+ */
+function handleBoqGetFromViewer() {
+    console.log("[DEBUG] '3D 뷰어 선택 가져오기' 버튼 클릭됨");
+
+    // Check if 3D viewer functions are available
+    if (typeof window.getViewerSelectedObject !== 'function') {
+        showToast("3D 뷰어가 초기화되지 않았습니다. 먼저 3D 뷰어 탭으로 이동하여 지오메트리를 로드하세요.", "error");
+        console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
+        return;
+    }
+
+    const selectedObject = window.getViewerSelectedObject();
+
+    if (!selectedObject || !selectedObject.userData) {
+        showToast("3D 뷰어에서 선택된 객체가 없습니다.", "warning");
+        console.warn("[DEBUG] 3D 뷰어에 선택된 객체가 없음.");
+        return;
+    }
+
+    console.log("[DEBUG] 3D 뷰어에서 선택된 객체:", selectedObject.userData);
+
+    // Get raw_element_id (for original or split elements, both have raw_element_id)
+    const rawElementId = selectedObject.userData.raw_element_id;
+    const splitElementId = selectedObject.userData.split_element_id;
+
+    if (!rawElementId) {
+        showToast("선택된 객체에 연결된 BIM 데이터를 찾을 수 없습니다.", "error");
+        console.error("[DEBUG] raw_element_id가 없음:", selectedObject.userData);
+        return;
+    }
+
+    // Set filter to this raw element
+    boqFilteredRawElementIds.clear();
+    boqFilteredRawElementIds.add(rawElementId);
+
+    console.log(`[DEBUG] BOQ 필터 적용: raw_element_id=${rawElementId}, split_element_id=${splitElementId || 'none'}`);
+
+    // Show clear filter button
+    document.getElementById("boq-clear-selection-filter-btn").style.display = "inline-block";
+
+    // Regenerate BOQ report with filter
+    generateBoqReport();
+
+    const message = splitElementId
+        ? `분할 객체를 기준으로 필터링되었습니다 (Split ID: ${splitElementId.substring(0, 8)}...)`
+        : `선택된 객체를 기준으로 필터링되었습니다`;
+    showToast(message, "success");
+}
+
+/**
+ * BOQ에서 선택된 항목을 3D 뷰어에서 선택
+ */
+function handleBoqSelectInViewer() {
+    console.log("[DEBUG] '3D 뷰어에서 선택 확인' 버튼 클릭됨");
+
+    // Check if 3D viewer functions are available
+    if (typeof window.selectObjectInViewer !== 'function') {
+        showToast("3D 뷰어가 초기화되지 않았습니다. 먼저 3D 뷰어 탭으로 이동하여 지오메트리를 로드하세요.", "error");
+        console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
+        return;
+    }
+
+    // Get selected row from BOQ table
+    const selectedRow = document.querySelector(".boq-table tr.selected-boq-row");
+    if (!selectedRow) {
+        showToast("먼저 집계표에서 확인할 행을 선택하세요.", "error");
+        console.warn("[DEBUG] 집계표에서 선택된 행이 없음.");
+        return;
+    }
+
+    const itemIds = JSON.parse(selectedRow.dataset.itemIds || "[]");
+    if (itemIds.length === 0) {
+        showToast("선택된 행에 연관된 산출항목이 없습니다.", "info");
+        console.warn("[DEBUG] 선택된 행에 item_ids가 없음.");
+        return;
+    }
+
+    console.log(`[DEBUG] 선택된 행의 CostItem ID 목록:`, itemIds);
+
+    // Try to find first cost item with linked element
+    let foundElement = false;
+    for (const itemId of itemIds) {
+        const costItem = loadedDdCostItems.find((ci) => ci.id === itemId);
+        if (!costItem) continue;
+
+        const member = costItem.quantity_member_id
+            ? loadedQuantityMembers.find((qm) => qm.id === costItem.quantity_member_id)
+            : null;
+
+        if (!member) continue;
+
+        const rawElementId = member.raw_element_id;
+        const splitElementId = member.split_element_id;
+
+        if (!rawElementId) continue;
+
+        console.log(`[DEBUG] CostItem ${itemId} -> Member ${member.id} -> RawElement ${rawElementId}, Split ${splitElementId || 'none'}`);
+
+        // Try to select in 3D viewer
+        // Prioritize split element if exists
+        let selected = false;
+        if (splitElementId) {
+            console.log(`[DEBUG] 분할 객체 선택 시도: ${splitElementId}`);
+            selected = window.selectObjectInViewer(splitElementId, true);
+        }
+
+        if (!selected && rawElementId) {
+            console.log(`[DEBUG] 원본 객체 선택 시도: ${rawElementId}`);
+            selected = window.selectObjectInViewer(rawElementId, false);
+        }
+
+        if (selected) {
+            foundElement = true;
+            const message = splitElementId
+                ? `3D 뷰어에서 분할 객체를 선택했습니다`
+                : `3D 뷰어에서 객체를 선택했습니다`;
+            showToast(message, "success");
+
+            // Switch to 3D viewer tab
+            const viewerTab = document.querySelector('[data-primary-tab="three-d-viewer"]');
+            if (viewerTab) {
+                viewerTab.click();
+            }
+            break;
+        }
+    }
+
+    if (!foundElement) {
+        showToast("선택된 항목들은 3D 뷰어에 로드된 객체와 연결되어 있지 않습니다.", "warning");
+        console.warn("[DEBUG] 3D 뷰어에서 연결된 객체를 찾지 못함.");
+    }
+}
+// ▲▲▲ [추가] 여기까지 ▲▲▲
