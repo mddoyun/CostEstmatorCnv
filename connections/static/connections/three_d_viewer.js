@@ -178,14 +178,25 @@
         requestAnimationFrame(animate);
 
         if (controls) {
-            // ▼▼▼ [추가] 선택된 객체가 있으면 지속적으로 피벗을 객체 중심으로 설정 ▼▼▼
-            // 이렇게 하면 회전할 때 자연스럽게 객체 중심으로 회전
+            // ▼▼▼ [수정] 카메라 위치 고정하면서 피벗만 변경 ▼▼▼
+            let savedCameraPosition = null;
+
             if (selectedObjectsCenter) {
+                // 1. 현재 카메라 위치 저장
+                savedCameraPosition = camera.position.clone();
+
+                // 2. target을 객체 중심으로 변경
                 controls.target.copy(selectedObjectsCenter);
             }
-            // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+            // 3. controls.update() 호출 (내부적으로 카메라 조정 시도)
             controls.update();
+
+            if (savedCameraPosition) {
+                // 4. 카메라 위치를 강제로 원래 위치로 복원!
+                camera.position.copy(savedCameraPosition);
+            }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         }
 
         if (renderer && scene && camera) {
