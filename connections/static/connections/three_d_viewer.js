@@ -27,6 +27,7 @@
 
     // ▼▼▼ [추가] 선택된 객체의 중심 (회전 피벗용) ▼▼▼
     let selectedObjectsCenter = null;  // 회전 시작 시 이 값으로 target 변경
+    let isUserInteracting = false;      // 사용자가 회전/이동 중인지 여부
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Visibility state management
@@ -107,6 +108,14 @@
         };
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+        // ▼▼▼ [추가] 사용자 인터랙션 감지 ▼▼▼
+        controls.addEventListener('start', function() {
+            isUserInteracting = true;
+        });
+        controls.addEventListener('end', function() {
+            isUserInteracting = false;
+        });
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -178,25 +187,14 @@
         requestAnimationFrame(animate);
 
         if (controls) {
-            // ▼▼▼ [수정] 카메라 위치 고정하면서 피벗만 변경 ▼▼▼
-            let savedCameraPosition = null;
-
-            if (selectedObjectsCenter) {
-                // 1. 현재 카메라 위치 저장
-                savedCameraPosition = camera.position.clone();
-
-                // 2. target을 객체 중심으로 변경
+            // ▼▼▼ [수정] 사용자가 회전/이동 중일 때만 피벗 변경 ▼▼▼
+            if (isUserInteracting && selectedObjectsCenter) {
+                // 사용자가 회전/이동 중일 때만 target을 객체 중심으로 변경
                 controls.target.copy(selectedObjectsCenter);
             }
-
-            // 3. controls.update() 호출 (내부적으로 카메라 조정 시도)
-            controls.update();
-
-            if (savedCameraPosition) {
-                // 4. 카메라 위치를 강제로 원래 위치로 복원!
-                camera.position.copy(savedCameraPosition);
-            }
             // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            controls.update();
         }
 
         if (renderer && scene && camera) {
