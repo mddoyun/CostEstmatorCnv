@@ -1850,12 +1850,42 @@ def generate_boq_report_api(request, project_id):
             return prop_dict.get(key) if isinstance(prop_dict, dict) else None
         if '__raw_data__' in path:
             raw_data_dict = item.get('quantity_member__raw_element__raw_data')
-            if not isinstance(raw_data_dict, dict): return None
+            if raw_data_dict is None or not isinstance(raw_data_dict, dict):
+                return None
+
             key_path = path.split('__raw_data__')[1].strip('_').split('__')
-            current = raw_data_dict
-            for part in key_path:
-                current = current.get(part) if isinstance(current, dict) else None
+
+            # ▼▼▼ [수정] Parameters 등 flat한 dict 처리 ▼▼▼
+            # 첫 번째 키 (예: 'Parameters', 'Aggregates', 'Nests' 등)
+            if len(key_path) == 0:
+                return None
+
+            first_key = key_path[0]
+            current = raw_data_dict.get(first_key)
+
+            # 단일 키 경로 (예: 'Name', 'IfcClass', 'ElementId', 'Aggregates', 'Nests')
+            if len(key_path) == 1:
+                return current
+
+            # Parameters나 TypeParameters는 flat한 dict 구조
+            if first_key in ('Parameters', 'TypeParameters') and isinstance(current, dict):
+                # 나머지 경로를 '__'로 연결해서 키로 사용
+                # 예: ['Parameters', 'EPset_Parametric', 'Engine'] → 'EPset_Parametric__Engine'
+                flat_key = '__'.join(key_path[1:])
+                return current.get(flat_key)
+
+            # 일반 중첩 dict 구조 (기존 로직)
+            if isinstance(current, dict):
+                for part in key_path[1:]:
+                    current = current.get(part) if isinstance(current, dict) else None
+                    if current is None:
+                        break
+            else:
+                # current가 dict가 아니면 더 이상 탐색 불가
+                return None
+
             return current
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
         return item.get(path)
 
     items = []

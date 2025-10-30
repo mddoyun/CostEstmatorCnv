@@ -1449,7 +1449,7 @@ function renderBoqDisplayFieldControls(fields) {
     fields.forEach((field) => {
         html += `
             <label style="display: block; margin-bottom: 5px;">
-                <input type="checkbox" class="boq-display-field-cb" value="${field.value}" checked>
+                <input type="checkbox" class="boq-display-field-cb" value="${field.value}">
                 ${field.label}
             </label>
         `;
@@ -1626,7 +1626,14 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
             `;
 
             finalColumns.forEach((col) => {
-                let cellContent = item[col.id];
+                // ▼▼▼ [수정] 동적 필드는 display_values에서 가져옴 ▼▼▼
+                let cellContent;
+                if (col.isDynamic && item.display_values) {
+                    cellContent = item.display_values[col.id];
+                } else {
+                    cellContent = item[col.id];
+                }
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
                 let cellStyle = `text-align: ${col.align || "left"};`;
 
                 if (col.id === "name") {
@@ -1649,7 +1656,7 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                     col.id !== "count"
                 ) {
                     cellContent = cellContent.toLocaleString("ko-KR");
-                } else if (cellContent === undefined || cellContent === null) {
+                } else if (cellContent === undefined || cellContent === null || cellContent === "") {
                     cellContent = "-";
                 }
 

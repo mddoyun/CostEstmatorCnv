@@ -2036,6 +2036,7 @@ function renderBoqTable(
         '<option value="various" disabled>-- 다양함 --</option>';
 
     // --- 4. 재귀적으로 그룹 행 렌더링 ---
+    let nodeCount = 0;
     function renderGroupNode(node) {
         const indent = node.level * 25;
         let rowTds = '';
@@ -2045,6 +2046,14 @@ function renderBoqTable(
         if (node.level === 0) {
             console.log(`[DEBUG][renderBoqTable] Available UnitPriceTypes:`, unitPriceTypes);
         }
+
+        // ▼▼▼ [DEBUG] 첫 번째 노드의 display_values 확인 ▼▼▼
+        if (nodeCount === 0) {
+            console.log(`[DEBUG][renderBoqTable] First node display_values:`, node.display_values);
+            console.log(`[DEBUG][renderBoqTable] display_values keys:`, Object.keys(node.display_values));
+        }
+        nodeCount++;
+        // ▲▲▲ [DEBUG] 여기까지 ▲▲▲
 
         columnsToRender.forEach((column) => {
             let cellValue = '';
@@ -2114,6 +2123,12 @@ function renderBoqTable(
                         // ▼▼▼ [수정] 서버에서 __ → _ 변환하므로 동일하게 변환 ▼▼▼
                         const displayKey = column.id.replace(/__/g, '_');
                         displayValue = node.display_values[displayKey] || '';
+
+                        // ▼▼▼ [DEBUG] 값을 못 찾는 경우 로그 출력 ▼▼▼
+                        if (nodeCount === 1 && !displayValue && column.isDynamic) {
+                            console.log(`[DEBUG][renderBoqTable] Looking for '${displayKey}' in display_values: ${node.display_values[displayKey] === undefined ? 'UNDEFINED' : 'EMPTY STRING'}`);
+                        }
+                        // ▲▲▲ [DEBUG] 여기까지 ▲▲▲
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
                         break;
                 }
