@@ -14,7 +14,7 @@ let currentBoqDetailItemId = null; // Currently selected item ID in the BOQ deta
 function setupDetailedEstimationListeners() {
     document
         .getElementById("generate-boq-btn")
-        ?.addEventListener("click", generateBoqReport);
+        ?.addEventListener("click", () => generateBoqReport());
     document
         .getElementById("boq-reset-columns-btn")
         ?.addEventListener("click", () => resetBoqColumnsAndRegenerate(false)); // 확인창 표시
@@ -36,10 +36,10 @@ function setupDetailedEstimationListeners() {
     // 필터 체크박스
     document
         .getElementById("boq-filter-ai")
-        ?.addEventListener("change", generateBoqReport);
+        ?.addEventListener("change", () => generateBoqReport());
     document
         .getElementById("boq-filter-dd")
-        ?.addEventListener("change", generateBoqReport);
+        ?.addEventListener("change", () => generateBoqReport());
     // DD 탭 UI 초기화 (토글 버튼, 탭 등)
     initializeBoqUI(); // 패널 토글, 상세 탭 리스너 설정
     console.log("[DEBUG] Detailed Estimation (DD) listeners setup complete.");
@@ -237,8 +237,12 @@ async function generateBoqReport(preserveColumnOrder = false) {
             `[DEBUG] ${loadedUnitPriceTypesForBoq.length}개의 단가 기준 목록 수신.`
         );
 
+        console.log(`[DEBUG] preserveColumnOrder = ${preserveColumnOrder}`);
         if (!preserveColumnOrder) {
+            console.log('[DEBUG] Calling updateDdBoqColumns()...');
             updateDdBoqColumns();
+        } else {
+            console.log('[DEBUG] SKIPPING updateDdBoqColumns() because preserveColumnOrder is true');
         }
 
         renderBoqTable(
