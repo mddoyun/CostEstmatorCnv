@@ -111,8 +111,16 @@
         controls.addEventListener('start', function() {
             // 회전/이동 시작 시, 선택된 객체가 있으면 그 중심을 피벗으로 설정
             if (selectedObjectsCenter) {
+                // 이전 target과의 차이 계산
+                const oldTarget = controls.target.clone();
+                const delta = selectedObjectsCenter.clone().sub(oldTarget);
+
+                // target과 camera를 동시에 같은 방향으로 이동
+                // → 상대적 위치 유지 = 화면은 그대로, 회전 중심만 변경
                 controls.target.copy(selectedObjectsCenter);
-                console.log('[3D Viewer] Orbit pivot set to selected object center on rotation start:', selectedObjectsCenter);
+                camera.position.add(delta);
+
+                console.log('[3D Viewer] Orbit pivot smoothly shifted to selected object center (no camera jump)');
             }
         });
         // ▲▲▲ [추가] 여기까지 ▲▲▲
