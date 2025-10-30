@@ -2711,33 +2711,9 @@ function renderPropertyTable(container, properties, title) {
  * @param {Object} summaryData - 전체 합계 데이터
  */
 
-// ▼▼▼ [추가] 이 함수를 파일 맨 아래에 추가해주세요. ▼▼▼
-/**
- * BOQ 탭에서 집계 결과에 함께 표시할 필드를 선택하는 체크박스 UI를 생성합니다.
- * @param {Array} fields - 서버에서 받은 표시 가능한 필드 목록
- */
-function renderBoqDisplayFieldControls(fields) {
-    const container = document.getElementById('boq-display-fields-container');
-    if (!fields || fields.length === 0) {
-        container.innerHTML =
-            '<small>표시할 필드를 불러올 수 없습니다.</small>';
-        return;
-    }
-
-    // '수량'과 '항목 수'는 기본 표시 항목이므로 체크박스 목록에서는 제외합니다. -> 이 필터링을 제거합니다.
-    const creatableFields = fields; // 모든 필드를 포함하도록 변경
-
-    container.innerHTML = creatableFields
-        .map(
-            (field) => `
-        <label>
-            <input type="checkbox" class="boq-display-field-cb" value="${field.value}">
-            ${field.label}
-        </label>
-    `
-        )
-        .join('');
-}
+// ▼▼▼ [제거됨] renderBoqDisplayFieldControls 함수는 boq_detailed_estimation_handlers.js에 있습니다 ▼▼▼
+// 이 함수가 중복 정의되어 있어서 체크박스가 언체크 상태로 렌더링되는 문제를 일으켰습니다.
+// boq_detailed_estimation_handlers.js의 함수를 사용하도록 이 중복 함수를 제거합니다.
 
 
 // ▼▼▼ [교체] 기존 renderBimPropertiesTable 함수 전체를 아래 코드로 교체 ▼▼▼
