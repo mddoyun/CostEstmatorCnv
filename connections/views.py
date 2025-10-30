@@ -868,14 +868,15 @@ def create_quantity_members_auto_view(request, project_id):
 
             for tag in element_tags:
                 # ▼▼▼ [수정] 분할되지 않은 원본 QuantityMember만 대상으로 함 ▼▼▼
+                # ▼▼▼ [추가] is_active=True 조건 추가하여 비활성화된 원본은 재활성화하지 않음 ▼▼▼
                 member, created = QuantityMember.objects.update_or_create(
                     project=project,
                     raw_element=element,
                     classification_tag=tag,
                     split_element__isnull=True,  # 분할되지 않은 원본만
+                    is_active=True,  # 활성화된 것만 (비활성화된 원본은 건드리지 않음)
                     defaults={
                         'name': f"{element.raw_data.get('Name', 'Unnamed')}_{tag.name}",
-                        'is_active': True  # ← is_active 필드 추가
                     }
                 )
 
@@ -901,10 +902,12 @@ def create_quantity_members_auto_view(request, project_id):
                 valid_member_ids.add(member.id)
 
         # ▼▼▼ [수정] 분할된 객체의 QuantityMember는 삭제 대상에서 제외 ▼▼▼
+        # ▼▼▼ [추가] is_active=True 조건 추가하여 비활성화된 원본은 삭제하지 않음 ▼▼▼
         deletable_members = QuantityMember.objects.filter(
             project=project,
             raw_element__isnull=False,
-            split_element__isnull=True  # 분할되지 않은 원본만 삭제 대상
+            split_element__isnull=True,  # 분할되지 않은 원본만 삭제 대상
+            is_active=True  # 활성화된 것만 삭제 (비활성화된 원본은 보존)
         ).exclude(id__in=valid_member_ids)
         
         deletable_count = deletable_members.count()
