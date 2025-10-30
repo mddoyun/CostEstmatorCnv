@@ -1810,16 +1810,18 @@ function handleBoqSelectInViewer() {
         console.log("[DEBUG] 3D 뷰어 초기화 호출");
     }
 
-    // Wait a bit for scene initialization, then try to select object
+    // Wait a bit for scene initialization, then try to select objects
     setTimeout(() => {
-        if (typeof window.selectObjectInViewer !== 'function') {
+        if (typeof window.selectMultipleObjectsInViewer !== 'function') {
             showToast("3D 뷰어 함수를 사용할 수 없습니다.", "error");
             console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
             return;
         }
 
-        // Try to find first cost item with linked element
-        let foundElement = false;
+        // ▼▼▼ [수정] 모든 연관된 객체를 찾아서 복수 선택 ▼▼▼
+        // Collect all unique element IDs from all cost items
+        const elementDataMap = new Map(); // Use Map to deduplicate by ID
+
         for (const itemId of itemIds) {
             const costItem = loadedDdCostItems.find((ci) => ci.id === itemId);
             if (!costItem) continue;
@@ -1837,34 +1839,40 @@ function handleBoqSelectInViewer() {
 
             console.log(`[DEBUG] CostItem ${itemId} -> Member ${member.id} -> RawElement ${rawElementId}, Split ${splitElementId || 'none'}`);
 
-            // Try to select in 3D viewer
             // Prioritize split element if exists
-            let selected = false;
-            if (splitElementId) {
-                console.log(`[DEBUG] 분할 객체 선택 시도: ${splitElementId}`);
-                selected = window.selectObjectInViewer(splitElementId, true);
-            }
-
-            if (!selected && rawElementId) {
-                console.log(`[DEBUG] 원본 객체 선택 시도: ${rawElementId}`);
-                selected = window.selectObjectInViewer(rawElementId, false);
-            }
-
-            if (selected) {
-                foundElement = true;
-                const message = splitElementId
-                    ? `3D 뷰어에서 분할 객체를 선택했습니다`
-                    : `3D 뷰어에서 객체를 선택했습니다`;
-                showToast(message, "success");
-                break;
+            if (splitElementId && !elementDataMap.has(splitElementId)) {
+                elementDataMap.set(splitElementId, { id: splitElementId, isSplitElement: true });
+                console.log(`[DEBUG] 분할 객체 추가: ${splitElementId}`);
+            } else if (!elementDataMap.has(rawElementId)) {
+                elementDataMap.set(rawElementId, { id: rawElementId, isSplitElement: false });
+                console.log(`[DEBUG] 원본 객체 추가: ${rawElementId}`);
             }
         }
 
-        if (!foundElement) {
+        const elementData = Array.from(elementDataMap.values());
+        console.log(`[DEBUG] 총 ${elementData.length}개의 고유 객체를 선택 시도`);
+
+        if (elementData.length === 0) {
+            showToast("선택된 항목과 연결된 BIM 객체를 찾을 수 없습니다.", "warning");
+            console.warn("[DEBUG] 연결된 객체가 없음.");
+            return;
+        }
+
+        // Select all objects at once
+        const selectedCount = window.selectMultipleObjectsInViewer(elementData);
+
+        if (selectedCount > 0) {
+            const hasSplitElements = elementData.some(e => e.isSplitElement);
+            const message = selectedCount > 1
+                ? `3D 뷰어에서 ${selectedCount}개의 객체를 선택했습니다${hasSplitElements ? ' (분할 객체 포함)' : ''}`
+                : `3D 뷰어에서 객체를 선택했습니다${hasSplitElements ? ' (분할 객체)' : ''}`;
+            showToast(message, "success");
+            console.log(`[DEBUG] ${selectedCount}개 객체 선택 완료`);
+        } else {
             showToast("3D 뷰어에 지오메트리가 로드되지 않았거나 연결된 객체를 찾을 수 없습니다. Load Geometry 버튼을 먼저 클릭하세요.", "warning");
             console.warn("[DEBUG] 3D 뷰어에서 연결된 객체를 찾지 못함.");
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }, 300); // 300ms delay to allow scene initialization
-    // ▲▲▲ [수정] 여기까지 ▲▲▲
 }
 // ▲▲▲ [추가] 여기까지 ▲▲▲

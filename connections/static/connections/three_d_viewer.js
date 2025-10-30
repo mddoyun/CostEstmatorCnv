@@ -7,6 +7,7 @@
     let geometryLoaded = false;
     let raycaster, mouse;
     let selectedObject = null;
+    let selectedObjects = []; // ▼▼▼ [추가] 복수 선택을 위한 배열 ▼▼▼
     let originalMaterials = new Map(); // Store original materials for deselection
 
     // For cycling through overlapping objects
@@ -1258,6 +1259,108 @@
         // Update visibility control buttons
         updateVisibilityControlButtons();
     }
+
+    // ▼▼▼ [추가] 복수 선택 함수들 ▼▼▼
+    /**
+     * Select multiple objects at once
+     * @param {Array} objects - Array of THREE.Mesh objects to select
+     */
+    function selectMultipleObjects(objects) {
+        // Deselect all previous selections
+        deselectAllObjects();
+
+        if (!objects || objects.length === 0) {
+            console.log("[3D Viewer] No objects to select");
+            return;
+        }
+
+        console.log(`[3D Viewer] Selecting ${objects.length} objects`);
+
+        // Select each object
+        selectedObjects = [];
+        objects.forEach(object => {
+            // Store original material
+            if (!originalMaterials.has(object)) {
+                originalMaterials.set(object, object.material);
+            }
+
+            // Create new highlight material - orange semi-transparent
+            const highlightMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff8800,           // Orange
+                emissive: 0xff6600,        // Orange glow
+                emissiveIntensity: 0.5,
+                metalness: 0.0,
+                roughness: 1.0,
+                flatShading: true,
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide
+            });
+
+            object.material = highlightMaterial;
+            object.material.needsUpdate = true;
+
+            selectedObjects.push(object);
+        });
+
+        // Set first object as the primary selectedObject for backwards compatibility
+        if (selectedObjects.length > 0) {
+            selectedObject = selectedObjects[0];
+
+            // Display properties for first object
+            displayObjectProperties(selectedObject);
+            displayQuantityMembers(selectedObject);
+            displayCostItems(selectedObject);
+        }
+
+        // Update visibility control buttons
+        updateVisibilityControlButtons();
+
+        console.log("[3D Viewer] Multiple selection complete");
+    }
+
+    /**
+     * Deselect all selected objects
+     */
+    function deselectAllObjects() {
+        if (selectedObjects.length === 0 && !selectedObject) return;
+
+        // Deselect all objects in array
+        selectedObjects.forEach(object => {
+            if (originalMaterials.has(object)) {
+                object.material = originalMaterials.get(object);
+                object.material.needsUpdate = true;
+            }
+        });
+
+        // Also deselect single selectedObject if exists
+        if (selectedObject && !selectedObjects.includes(selectedObject)) {
+            if (originalMaterials.has(selectedObject)) {
+                selectedObject.material = originalMaterials.get(selectedObject);
+                selectedObject.material.needsUpdate = true;
+            }
+        }
+
+        console.log(`[3D Viewer] Deselected ${selectedObjects.length} objects`);
+        selectedObjects = [];
+        selectedObject = null;
+
+        // Disable split buttons
+        const splitBtn = document.getElementById('split-object-btn');
+        if (splitBtn) splitBtn.disabled = true;
+
+        const sketchSplitBtn = document.getElementById('sketch-split-btn');
+        if (sketchSplitBtn) sketchSplitBtn.disabled = true;
+
+        // Clear panels
+        clearPropertiesPanel();
+        clearQuantityMembersPanel();
+        clearCostItemsPanel();
+
+        // Update visibility control buttons
+        updateVisibilityControlButtons();
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Helper function to recursively render nested objects/arrays
     function renderNestedValue(value, depth = 0) {
@@ -4911,7 +5014,9 @@
         const hideBtn = document.getElementById('hide-selection-btn');
         const showAllBtn = document.getElementById('show-all-btn');
 
-        const hasSelection = selectedObject !== null;
+        // ▼▼▼ [수정] 복수 선택 지원 ▼▼▼
+        const hasSelection = selectedObject !== null || selectedObjects.length > 0;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         const hasHiddenObjects = hiddenObjectIds.size > 0;
 
         console.log('[3D Viewer] updateVisibilityControlButtons called');
@@ -5008,6 +5113,84 @@
         } else {
             console.warn('[3D Viewer] Object not found:', elementId);
             return false;
+        }
+    };
+
+    /**
+     * Select multiple objects in 3D viewer by their IDs
+     * @param {Array} elementData - Array of {id: string, isSplitElement: boolean} objects
+     * @returns {number} Number of objects successfully selected
+     */
+    window.selectMultipleObjectsInViewer = function(elementData) {
+        if (!scene) {
+            console.warn('[3D Viewer] Scene not initialized');
+            return 0;
+        }
+
+        if (!elementData || elementData.length === 0) {
+            console.warn('[3D Viewer] No element data provided');
+            return 0;
+        }
+
+        console.log(`[3D Viewer] Selecting multiple objects: ${elementData.length} elements`);
+
+        // Find all matching objects
+        const objectsToSelect = [];
+        const foundIds = new Set();
+
+        elementData.forEach(data => {
+            const elementId = data.id;
+            const isSplitElement = data.isSplitElement || false;
+
+            scene.traverse((child) => {
+                if (child.isMesh && child.userData && !foundIds.has(elementId)) {
+                    if (isSplitElement) {
+                        if (child.userData.splitElementId === elementId) {
+                            objectsToSelect.push(child);
+                            foundIds.add(elementId);
+                        }
+                    } else {
+                        if (child.userData.rawElementId === elementId) {
+                            objectsToSelect.push(child);
+                            foundIds.add(elementId);
+                        }
+                    }
+                }
+            });
+        });
+
+        if (objectsToSelect.length > 0) {
+            selectMultipleObjects(objectsToSelect);
+
+            // Focus camera on the center of all selected objects
+            if (controls && objectsToSelect.length > 0) {
+                const boundingBox = new THREE.Box3();
+                objectsToSelect.forEach(obj => {
+                    if (obj.geometry) {
+                        obj.geometry.computeBoundingBox();
+                        const box = obj.geometry.boundingBox.clone();
+                        box.applyMatrix4(obj.matrixWorld);
+                        boundingBox.union(box);
+                    }
+                });
+
+                const center = boundingBox.getCenter(new THREE.Vector3());
+                const size = boundingBox.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = camera.fov * (Math.PI / 180);
+                let cameraZ = Math.abs(maxDim / Math.sin(fov / 2));
+                cameraZ *= 1.5; // Zoom out a bit
+
+                camera.position.set(center.x, center.y, center.z + cameraZ);
+                controls.target.copy(center);
+                controls.update();
+            }
+
+            console.log(`[3D Viewer] Successfully selected ${objectsToSelect.length} objects`);
+            return objectsToSelect.length;
+        } else {
+            console.warn('[3D Viewer] No objects found matching provided IDs');
+            return 0;
         }
     };
     // ▲▲▲ [추가] 여기까지 ▲▲▲
