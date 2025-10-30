@@ -1237,10 +1237,11 @@
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
 
-        const minX = Math.min(dragStart.x, dragCurrent.x);
-        const maxX = Math.max(dragStart.x, dragCurrent.x);
-        const minY = Math.min(dragStart.y, dragCurrent.y);
-        const maxY = Math.max(dragStart.y, dragCurrent.y);
+        // Selection box bounds (선택 박스 좌표)
+        const selMinX = Math.min(dragStart.x, dragCurrent.x);
+        const selMaxX = Math.max(dragStart.x, dragCurrent.x);
+        const selMinY = Math.min(dragStart.y, dragCurrent.y);
+        const selMaxY = Math.max(dragStart.y, dragCurrent.y);
 
         // Clear previous preview highlights
         previewHighlightedObjects.forEach(obj => {
@@ -1274,14 +1275,21 @@
             const bbox = mesh.geometry.boundingBox;
             if (!bbox) return;
 
-            // ▼▼▼ [수정] 8개 꼭짓점 + 12개 모서리 중점 + 6개 면 중심점 = 26개 샘플 포인트 ▼▼▼
+            // ▼▼▼ [수정] 더 촘촘한 샘플링: 각 모서리에 3개 포인트 추가 ▼▼▼
             const bboxMinX = bbox.min.x, bboxMinY = bbox.min.y, bboxMinZ = bbox.min.z;
             const bboxMaxX = bbox.max.x, bboxMaxY = bbox.max.y, bboxMaxZ = bbox.max.z;
             const bboxMidX = (bboxMinX + bboxMaxX) / 2;
             const bboxMidY = (bboxMinY + bboxMaxY) / 2;
             const bboxMidZ = (bboxMinZ + bboxMaxZ) / 2;
 
-            // 8 corners + 12 edge midpoints + 6 face centers
+            // 각 축의 1/4, 3/4 지점 추가 (더 촘촘한 샘플링)
+            const bboxQ1X = bboxMinX + (bboxMaxX - bboxMinX) * 0.25;
+            const bboxQ3X = bboxMinX + (bboxMaxX - bboxMinX) * 0.75;
+            const bboxQ1Y = bboxMinY + (bboxMaxY - bboxMinY) * 0.25;
+            const bboxQ3Y = bboxMinY + (bboxMaxY - bboxMinY) * 0.75;
+            const bboxQ1Z = bboxMinZ + (bboxMaxZ - bboxMinZ) * 0.25;
+            const bboxQ3Z = bboxMinZ + (bboxMaxZ - bboxMinZ) * 0.75;
+
             const samplePoints = [
                 // 8 corners (꼭짓점)
                 new THREE.Vector3(bboxMinX, bboxMinY, bboxMinZ),
@@ -1294,28 +1302,42 @@
                 new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMaxZ),
 
                 // 12 edge midpoints (모서리 중점)
-                new THREE.Vector3(bboxMidX, bboxMinY, bboxMinZ), // bottom front
-                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMinZ), // top front
-                new THREE.Vector3(bboxMidX, bboxMinY, bboxMaxZ), // bottom back
-                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMaxZ), // top back
-                new THREE.Vector3(bboxMinX, bboxMidY, bboxMinZ), // left front
-                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMinZ), // right front
-                new THREE.Vector3(bboxMinX, bboxMidY, bboxMaxZ), // left back
-                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMaxZ), // right back
-                new THREE.Vector3(bboxMinX, bboxMinY, bboxMidZ), // bottom left
-                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMidZ), // bottom right
-                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMidZ), // top left
-                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMidZ), // top right
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMidZ),
 
                 // 6 face centers (면 중심점)
-                new THREE.Vector3(bboxMidX, bboxMidY, bboxMinZ), // front
-                new THREE.Vector3(bboxMidX, bboxMidY, bboxMaxZ), // back
-                new THREE.Vector3(bboxMinX, bboxMidY, bboxMidZ), // left
-                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMidZ), // right
-                new THREE.Vector3(bboxMidX, bboxMinY, bboxMidZ), // bottom
-                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMidZ)  // top
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMidZ),
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMidZ),
+
+                // 24 quarter points on edges (모서리 1/4, 3/4 지점 - 더 촘촘)
+                new THREE.Vector3(bboxQ1X, bboxMinY, bboxMinZ), new THREE.Vector3(bboxQ3X, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxQ1X, bboxMaxY, bboxMinZ), new THREE.Vector3(bboxQ3X, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxQ1X, bboxMinY, bboxMaxZ), new THREE.Vector3(bboxQ3X, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxQ1X, bboxMaxY, bboxMaxZ), new THREE.Vector3(bboxQ3X, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxQ1Y, bboxMinZ), new THREE.Vector3(bboxMinX, bboxQ3Y, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxQ1Y, bboxMinZ), new THREE.Vector3(bboxMaxX, bboxQ3Y, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxQ1Y, bboxMaxZ), new THREE.Vector3(bboxMinX, bboxQ3Y, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxQ1Y, bboxMaxZ), new THREE.Vector3(bboxMaxX, bboxQ3Y, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxQ1Z), new THREE.Vector3(bboxMinX, bboxMinY, bboxQ3Z),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxQ1Z), new THREE.Vector3(bboxMaxX, bboxMinY, bboxQ3Z),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxQ1Z), new THREE.Vector3(bboxMinX, bboxMaxY, bboxQ3Z),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxQ1Z), new THREE.Vector3(bboxMaxX, bboxMaxY, bboxQ3Z)
             ];
-            // ▲▲▲ [수정] 여기까지 ▲▲▲
+            // ▲▲▲ [수정] 여기까지 (총 50개 샘플 포인트) ▲▲▲
 
             // ▼▼▼ [수정] 샘플 포인트 검사로 변경 ▼▼▼
             let pointsInBox = 0;
@@ -1333,7 +1355,7 @@
                     const x = (screenPos.x * 0.5 + 0.5) * rect.width;
                     const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
 
-                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                    if (x >= selMinX && x <= selMaxX && y >= selMinY && y <= selMaxY) {
                         pointsInBox++;
                         if (i < 8) {  // First 8 are corners
                             cornersInBox++;
@@ -1393,11 +1415,11 @@
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
 
-        // Get box bounds
-        const minX = Math.min(dragStart.x, dragCurrent.x);
-        const maxX = Math.max(dragStart.x, dragCurrent.x);
-        const minY = Math.min(dragStart.y, dragCurrent.y);
-        const maxY = Math.max(dragStart.y, dragCurrent.y);
+        // Get selection box bounds (선택 박스 좌표)
+        const selMinX = Math.min(dragStart.x, dragCurrent.x);
+        const selMaxX = Math.max(dragStart.x, dragCurrent.x);
+        const selMinY = Math.min(dragStart.y, dragCurrent.y);
+        const selMaxY = Math.max(dragStart.y, dragCurrent.y);
 
         // ▼▼▼ [수정] 화면에 보이고 visible한 BIM 메시만 가져오기 ▼▼▼
         const bimMeshes = [];
@@ -1420,48 +1442,69 @@
             const bbox = mesh.geometry.boundingBox;
             if (!bbox) return;
 
-            // ▼▼▼ [수정] 8개 꼭짓점 + 12개 모서리 중점 + 6개 면 중심점 = 26개 샘플 포인트 ▼▼▼
-            const minX = bbox.min.x, minY = bbox.min.y, minZ = bbox.min.z;
-            const maxX = bbox.max.x, maxY = bbox.max.y, maxZ = bbox.max.z;
-            const midX = (minX + maxX) / 2;
-            const midY = (minY + maxY) / 2;
-            const midZ = (minZ + maxZ) / 2;
+            // ▼▼▼ [수정] 더 촘촘한 샘플링: 각 모서리에 3개 포인트 추가 ▼▼▼
+            const bboxMinX = bbox.min.x, bboxMinY = bbox.min.y, bboxMinZ = bbox.min.z;
+            const bboxMaxX = bbox.max.x, bboxMaxY = bbox.max.y, bboxMaxZ = bbox.max.z;
+            const bboxMidX = (bboxMinX + bboxMaxX) / 2;
+            const bboxMidY = (bboxMinY + bboxMaxY) / 2;
+            const bboxMidZ = (bboxMinZ + bboxMaxZ) / 2;
 
-            // 8 corners + 12 edge midpoints + 6 face centers
+            // 각 축의 1/4, 3/4 지점 추가 (더 촘촘한 샘플링)
+            const bboxQ1X = bboxMinX + (bboxMaxX - bboxMinX) * 0.25;
+            const bboxQ3X = bboxMinX + (bboxMaxX - bboxMinX) * 0.75;
+            const bboxQ1Y = bboxMinY + (bboxMaxY - bboxMinY) * 0.25;
+            const bboxQ3Y = bboxMinY + (bboxMaxY - bboxMinY) * 0.75;
+            const bboxQ1Z = bboxMinZ + (bboxMaxZ - bboxMinZ) * 0.25;
+            const bboxQ3Z = bboxMinZ + (bboxMaxZ - bboxMinZ) * 0.75;
+
             const samplePoints = [
                 // 8 corners (꼭짓점)
-                new THREE.Vector3(minX, minY, minZ),
-                new THREE.Vector3(maxX, minY, minZ),
-                new THREE.Vector3(minX, maxY, minZ),
-                new THREE.Vector3(maxX, maxY, minZ),
-                new THREE.Vector3(minX, minY, maxZ),
-                new THREE.Vector3(maxX, minY, maxZ),
-                new THREE.Vector3(minX, maxY, maxZ),
-                new THREE.Vector3(maxX, maxY, maxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMaxZ),
 
                 // 12 edge midpoints (모서리 중점)
-                new THREE.Vector3(midX, minY, minZ), // bottom front
-                new THREE.Vector3(midX, maxY, minZ), // top front
-                new THREE.Vector3(midX, minY, maxZ), // bottom back
-                new THREE.Vector3(midX, maxY, maxZ), // top back
-                new THREE.Vector3(minX, midY, minZ), // left front
-                new THREE.Vector3(maxX, midY, minZ), // right front
-                new THREE.Vector3(minX, midY, maxZ), // left back
-                new THREE.Vector3(maxX, midY, maxZ), // right back
-                new THREE.Vector3(minX, minY, midZ), // bottom left
-                new THREE.Vector3(maxX, minY, midZ), // bottom right
-                new THREE.Vector3(minX, maxY, midZ), // top left
-                new THREE.Vector3(maxX, maxY, midZ), // top right
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMidZ),
 
                 // 6 face centers (면 중심점)
-                new THREE.Vector3(midX, midY, minZ), // front
-                new THREE.Vector3(midX, midY, maxZ), // back
-                new THREE.Vector3(minX, midY, midZ), // left
-                new THREE.Vector3(maxX, midY, midZ), // right
-                new THREE.Vector3(midX, minY, midZ), // bottom
-                new THREE.Vector3(midX, maxY, midZ)  // top
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMidZ),
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMidZ),
+
+                // 24 quarter points on edges (모서리 1/4, 3/4 지점 - 더 촘촘)
+                new THREE.Vector3(bboxQ1X, bboxMinY, bboxMinZ), new THREE.Vector3(bboxQ3X, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxQ1X, bboxMaxY, bboxMinZ), new THREE.Vector3(bboxQ3X, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxQ1X, bboxMinY, bboxMaxZ), new THREE.Vector3(bboxQ3X, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxQ1X, bboxMaxY, bboxMaxZ), new THREE.Vector3(bboxQ3X, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxQ1Y, bboxMinZ), new THREE.Vector3(bboxMinX, bboxQ3Y, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxQ1Y, bboxMinZ), new THREE.Vector3(bboxMaxX, bboxQ3Y, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxQ1Y, bboxMaxZ), new THREE.Vector3(bboxMinX, bboxQ3Y, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxQ1Y, bboxMaxZ), new THREE.Vector3(bboxMaxX, bboxQ3Y, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxQ1Z), new THREE.Vector3(bboxMinX, bboxMinY, bboxQ3Z),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxQ1Z), new THREE.Vector3(bboxMaxX, bboxMinY, bboxQ3Z),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxQ1Z), new THREE.Vector3(bboxMinX, bboxMaxY, bboxQ3Z),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxQ1Z), new THREE.Vector3(bboxMaxX, bboxMaxY, bboxQ3Z)
             ];
-            // ▲▲▲ [수정] 여기까지 ▲▲▲
+            // ▲▲▲ [수정] 여기까지 (총 50개 샘플 포인트) ▲▲▲
 
             // ▼▼▼ [수정] 샘플 포인트 검사로 변경 ▼▼▼
             let pointsInBox = 0;
@@ -1486,7 +1529,7 @@
                     const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
 
                     // Check if this point is within selection box
-                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                    if (x >= selMinX && x <= selMaxX && y >= selMinY && y <= selMaxY) {
                         pointsInBox++;
                         if (i < 8) {  // First 8 are corners
                             cornersInBox++;
