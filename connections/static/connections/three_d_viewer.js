@@ -15,6 +15,14 @@
     let lastIntersects = [];
     let currentIntersectIndex = 0;
 
+    // ▼▼▼ [추가] 박스 선택을 위한 변수들 ▼▼▼
+    let isDragging = false;
+    let dragStart = null;
+    let dragCurrent = null;
+    let selectionBox = null;  // HTML element for visual selection box
+    let pointerDownTime = 0;  // To distinguish click from drag
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // Visibility state management
     let hiddenObjectIds = new Set(); // Store IDs of hidden objects
 
@@ -114,8 +122,23 @@
         raycaster = new THREE.Raycaster();
         mouse = new THREE.Vector2();
 
-        // Add click event listener for object selection
-        canvas.addEventListener('click', onCanvasClick, false);
+        // ▼▼▼ [수정] 박스 선택을 위한 이벤트 리스너 변경 ▼▼▼
+        // Create selection box UI element
+        selectionBox = document.createElement('div');
+        selectionBox.style.position = 'absolute';
+        selectionBox.style.border = '2px dashed #4CAF50';
+        selectionBox.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+        selectionBox.style.pointerEvents = 'none';
+        selectionBox.style.display = 'none';
+        selectionBox.style.zIndex = '1000';
+        container.style.position = 'relative';  // Ensure container is positioned
+        container.appendChild(selectionBox);
+
+        // Add pointer event listeners for box selection
+        canvas.addEventListener('pointerdown', onPointerDown, false);
+        canvas.addEventListener('pointermove', onPointerMove, false);
+        canvas.addEventListener('pointerup', onPointerUp, false);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Start animation loop
         animate();
@@ -979,10 +1002,155 @@
         console.log("[3D Viewer] Camera centered on geometry.");
     }
 
-    // Handle canvas click for object selection
-    function onCanvasClick(event) {
+    // ▼▼▼ [추가] 박스 선택을 위한 새로운 이벤트 핸들러 ▼▼▼
+
+    // Pointer down - start drag or prepare for click
+    function onPointerDown(event) {
         if (!scene || !camera || !raycaster) return;
 
+        // Ignore if controls are being used (right-click, middle-click)
+        if (event.button !== 0) return;  // Only handle left-click
+
+        const canvas = document.getElementById('three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        dragStart = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+            clientX: event.clientX,
+            clientY: event.clientY
+        };
+
+        pointerDownTime = Date.now();
+        isDragging = false;  // Will be set to true if mouse moves
+    }
+
+    // Pointer move - update selection box if dragging
+    function onPointerMove(event) {
+        if (!dragStart) return;
+
+        const canvas = document.getElementById('three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        const currentX = event.clientX - rect.left;
+        const currentY = event.clientY - rect.top;
+
+        // Check if moved enough to be considered a drag (5px threshold)
+        const dx = currentX - dragStart.x;
+        const dy = currentY - dragStart.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance > 5) {
+            isDragging = true;
+            dragCurrent = { x: currentX, y: currentY };
+
+            // Update selection box visual
+            updateSelectionBoxUI();
+        }
+    }
+
+    // Pointer up - complete selection
+    function onPointerUp(event) {
+        if (!dragStart) return;
+
+        const clickDuration = Date.now() - pointerDownTime;
+
+        if (isDragging && clickDuration > 100) {
+            // Box selection mode
+            performBoxSelection(event.ctrlKey || event.metaKey);
+        } else {
+            // Click selection mode
+            performClickSelection(event);
+        }
+
+        // Clean up
+        isDragging = false;
+        dragStart = null;
+        dragCurrent = null;
+        if (selectionBox) {
+            selectionBox.style.display = 'none';
+        }
+    }
+
+    // Update selection box UI during drag
+    function updateSelectionBoxUI() {
+        if (!selectionBox || !dragStart || !dragCurrent) return;
+
+        const left = Math.min(dragStart.x, dragCurrent.x);
+        const top = Math.min(dragStart.y, dragCurrent.y);
+        const width = Math.abs(dragCurrent.x - dragStart.x);
+        const height = Math.abs(dragCurrent.y - dragStart.y);
+
+        selectionBox.style.left = left + 'px';
+        selectionBox.style.top = top + 'px';
+        selectionBox.style.width = width + 'px';
+        selectionBox.style.height = height + 'px';
+        selectionBox.style.display = 'block';
+    }
+
+    // Perform box selection
+    function performBoxSelection(isAdditive) {
+        if (!dragStart || !dragCurrent) return;
+
+        console.log('[3D Viewer] Performing box selection, additive:', isAdditive);
+
+        const canvas = document.getElementById('three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        // Get box bounds
+        const minX = Math.min(dragStart.x, dragCurrent.x);
+        const maxX = Math.max(dragStart.x, dragCurrent.x);
+        const minY = Math.min(dragStart.y, dragCurrent.y);
+        const maxY = Math.max(dragStart.y, dragCurrent.y);
+
+        // Get all BIM meshes
+        const bimMeshes = [];
+        scene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement)) {
+                bimMeshes.push(object);
+            }
+        });
+
+        // Find objects within box
+        const objectsInBox = [];
+        bimMeshes.forEach(mesh => {
+            // Project object center to screen space
+            const worldPos = new THREE.Vector3();
+            mesh.getWorldPosition(worldPos);
+
+            const screenPos = worldPos.clone().project(camera);
+
+            // Convert to canvas coordinates
+            const x = (screenPos.x * 0.5 + 0.5) * rect.width;
+            const y = ((-screenPos.y) * 0.5 + 0.5) * rect.height;
+
+            // Check if within box
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                objectsInBox.push(mesh);
+            }
+        });
+
+        console.log(`[3D Viewer] Found ${objectsInBox.length} objects in selection box`);
+
+        if (objectsInBox.length > 0) {
+            if (isAdditive) {
+                // Add to existing selection
+                toggleMultipleObjects(objectsInBox);
+            } else {
+                // Replace selection
+                selectMultipleObjects(objectsInBox);
+            }
+            showToast(`${objectsInBox.length}개 객체 선택됨`, 'success');
+        } else {
+            if (!isAdditive) {
+                deselectAllObjects();
+            }
+        }
+    }
+
+    // Perform click selection (existing logic)
+    function performClickSelection(event) {
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
 
@@ -1092,7 +1260,16 @@
                 if (faceSelectionMode) {
                     handleFaceSelection(selectedIntersect, clickedObject);
                 } else {
-                    selectObject(clickedObject);
+                    // ▼▼▼ [추가] Ctrl+클릭으로 복수 선택 지원 ▼▼▼
+                    const isCtrlKey = event.ctrlKey || event.metaKey;
+                    if (isCtrlKey) {
+                        // Toggle this object in multi-selection
+                        toggleSingleObject(clickedObject);
+                    } else {
+                        // Normal click - single selection
+                        selectObject(clickedObject);
+                    }
+                    // ▲▲▲ [추가] 여기까지 ▲▲▲
                 }
             } else {
                 console.warn('[3D Viewer] Clicked object is not a valid BIM mesh:', clickedObject);
@@ -1100,13 +1277,19 @@
             }
             // ▲▲▲ [수정] 여기까지 ▲▲▲
         } else {
-            // Clicked on empty space - deselect and reset cycle
+            // Clicked on empty space
             lastClickPosition = null;
             lastIntersects = [];
             currentIntersectIndex = 0;
-            deselectObject();
+            // ▼▼▼ [수정] Ctrl+클릭이 아닌 경우에만 선택 해제 ▼▼▼
+            const isCtrlKey = event.ctrlKey || event.metaKey;
+            if (!isCtrlKey) {
+                deselectAllObjects();
+            }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         }
     }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Select an object
     function selectObject(object) {
@@ -1360,6 +1543,120 @@
         // Update visibility control buttons
         updateVisibilityControlButtons();
     }
+
+    /**
+     * Toggle single object in multi-selection (Ctrl+click)
+     * @param {THREE.Mesh} object - Object to toggle
+     */
+    function toggleSingleObject(object) {
+        const index = selectedObjects.indexOf(object);
+
+        if (index >= 0) {
+            // Object is already selected - deselect it
+            if (originalMaterials.has(object)) {
+                object.material = originalMaterials.get(object);
+                object.material.needsUpdate = true;
+            }
+            selectedObjects.splice(index, 1);
+            console.log(`[3D Viewer] Removed object from selection, ${selectedObjects.length} remaining`);
+        } else {
+            // Object is not selected - add it
+            if (!originalMaterials.has(object)) {
+                originalMaterials.set(object, object.material);
+            }
+
+            const highlightMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff8800,
+                emissive: 0xff6600,
+                emissiveIntensity: 0.5,
+                metalness: 0.0,
+                roughness: 1.0,
+                flatShading: true,
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide
+            });
+
+            object.material = highlightMaterial;
+            object.material.needsUpdate = true;
+            selectedObjects.push(object);
+            console.log(`[3D Viewer] Added object to selection, ${selectedObjects.length} total`);
+        }
+
+        // Update selectedObject reference
+        if (selectedObjects.length > 0) {
+            selectedObject = selectedObjects[0];
+            displayObjectProperties(selectedObject);
+            displayQuantityMembers(selectedObject);
+            displayCostItems(selectedObject);
+        } else {
+            selectedObject = null;
+            clearPropertiesPanel();
+            clearQuantityMembersPanel();
+            clearCostItemsPanel();
+        }
+
+        updateVisibilityControlButtons();
+        showToast(`${selectedObjects.length}개 객체 선택됨`, 'info');
+    }
+
+    /**
+     * Toggle multiple objects in selection (for box selection with Ctrl)
+     * @param {Array} objects - Array of objects to toggle
+     */
+    function toggleMultipleObjects(objects) {
+        if (!objects || objects.length === 0) return;
+
+        objects.forEach(object => {
+            const index = selectedObjects.indexOf(object);
+
+            if (index >= 0) {
+                // Already selected - deselect
+                if (originalMaterials.has(object)) {
+                    object.material = originalMaterials.get(object);
+                    object.material.needsUpdate = true;
+                }
+                selectedObjects.splice(index, 1);
+            } else {
+                // Not selected - add
+                if (!originalMaterials.has(object)) {
+                    originalMaterials.set(object, object.material);
+                }
+
+                const highlightMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xff8800,
+                    emissive: 0xff6600,
+                    emissiveIntensity: 0.5,
+                    metalness: 0.0,
+                    roughness: 1.0,
+                    flatShading: true,
+                    transparent: true,
+                    opacity: 0.7,
+                    side: THREE.DoubleSide
+                });
+
+                object.material = highlightMaterial;
+                object.material.needsUpdate = true;
+                selectedObjects.push(object);
+            }
+        });
+
+        // Update selectedObject reference
+        if (selectedObjects.length > 0) {
+            selectedObject = selectedObjects[0];
+            displayObjectProperties(selectedObject);
+            displayQuantityMembers(selectedObject);
+            displayCostItems(selectedObject);
+        } else {
+            selectedObject = null;
+            clearPropertiesPanel();
+            clearQuantityMembersPanel();
+            clearCostItemsPanel();
+        }
+
+        updateVisibilityControlButtons();
+        console.log(`[3D Viewer] Toggled ${objects.length} objects, ${selectedObjects.length} total selected`);
+    }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Helper function to recursively render nested objects/arrays
@@ -1442,6 +1739,16 @@
         const rawData = fullBimObject.raw_data;
 
         let html = '';
+
+        // ▼▼▼ [추가] 복수 선택 시 정보 표시 ▼▼▼
+        if (selectedObjects.length > 1) {
+            html += '<div class="property-section" style="background-color: #f0f8ff; border-left: 4px solid #4CAF50;">';
+            html += '<h4>복수 선택</h4>';
+            html += `<div class="property-row"><span class="property-label">선택된 객체 수:</span><span class="property-value">${selectedObjects.length}</span></div>`;
+            html += '<p style="margin-top: 10px; color: #666; font-size: 0.9em;">아래는 첫 번째 객체의 속성입니다.</p>';
+            html += '</div>';
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Basic Information
         html += '<div class="property-section">';
@@ -5050,6 +5357,14 @@
      */
     window.getViewerSelectedObject = function() {
         return selectedObject;
+    };
+
+    /**
+     * Get all currently selected objects in 3D viewer
+     * @returns {Array} Array of selected objects with userData
+     */
+    window.getViewerSelectedObjects = function() {
+        return selectedObjects.length > 0 ? selectedObjects : (selectedObject ? [selectedObject] : []);
     };
 
     /**

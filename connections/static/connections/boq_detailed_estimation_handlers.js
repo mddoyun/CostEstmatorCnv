@@ -1742,46 +1742,49 @@ function handleBoqGetFromViewer() {
         return;
     }
 
-    const selectedObject = window.getViewerSelectedObject();
+    // ▼▼▼ [수정] 복수 선택 지원 ▼▼▼
+    const selectedObjects = window.getViewerSelectedObjects();
 
-    if (!selectedObject || !selectedObject.userData) {
+    if (!selectedObjects || selectedObjects.length === 0) {
         showToast("3D 뷰어에서 선택된 객체가 없습니다.", "warning");
         console.warn("[DEBUG] 3D 뷰어에 선택된 객체가 없음.");
         return;
     }
 
-    console.log("[DEBUG] 3D 뷰어에서 선택된 객체:", selectedObject.userData);
+    console.log(`[DEBUG] 3D 뷰어에서 선택된 객체: ${selectedObjects.length}개`);
 
-    // Get rawElementId (stored in camelCase in userData)
-    // For original BIM objects: userData.rawElementId
-    // For split elements: userData.rawElementId (inherited from parent)
-    const rawElementId = selectedObject.userData.rawElementId;
-    const splitElementId = selectedObject.userData.splitElementId;
-
-    if (!rawElementId) {
-        showToast("선택된 객체에 연결된 BIM 데이터를 찾을 수 없습니다.", "error");
-        console.error("[DEBUG] rawElementId가 없음:", selectedObject.userData);
-        return;
-    }
-
-    // ▼▼▼ [수정] raw_element_id와 split_element_id를 함께 관리 ▼▼▼
-    // Set filter - use split element ID if available, otherwise use raw element ID
+    // Clear existing filters
     boqFilteredRawElementIds.clear();
+    window.boqFilterSplitElementIds = window.boqFilterSplitElementIds || new Set();
+    window.boqFilterSplitElementIds.clear();
 
-    if (splitElementId) {
-        // For split elements, we need to filter by split_element_id
-        // Store in a special format that the backend can understand
-        window.boqFilterSplitElementIds = window.boqFilterSplitElementIds || new Set();
-        window.boqFilterSplitElementIds.clear();
-        window.boqFilterSplitElementIds.add(splitElementId);
-        console.log(`[DEBUG] BOQ 필터 적용 (분할 객체): split_element_id=${splitElementId}`);
-    } else {
-        // For original elements, filter by raw_element_id
-        boqFilteredRawElementIds.add(rawElementId);
-        window.boqFilterSplitElementIds = window.boqFilterSplitElementIds || new Set();
-        window.boqFilterSplitElementIds.clear();
-        console.log(`[DEBUG] BOQ 필터 적용 (원본 객체): raw_element_id=${rawElementId}`);
-    }
+    let rawCount = 0;
+    let splitCount = 0;
+
+    // Process all selected objects
+    selectedObjects.forEach(obj => {
+        const rawElementId = obj.userData.rawElementId;
+        const splitElementId = obj.userData.splitElementId;
+
+        if (!rawElementId) {
+            console.warn("[DEBUG] rawElementId가 없는 객체:", obj.userData);
+            return;
+        }
+
+        if (splitElementId) {
+            // Split element
+            window.boqFilterSplitElementIds.add(splitElementId);
+            splitCount++;
+            console.log(`[DEBUG] 분할 객체 추가: split_element_id=${splitElementId}`);
+        } else {
+            // Original element
+            boqFilteredRawElementIds.add(rawElementId);
+            rawCount++;
+            console.log(`[DEBUG] 원본 객체 추가: raw_element_id=${rawElementId}`);
+        }
+    });
+
+    console.log(`[DEBUG] BOQ 필터 적용 완료: 원본=${rawCount}, 분할=${splitCount}, 총=${rawCount + splitCount}`);
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // Show clear filter button
@@ -1790,9 +1793,9 @@ function handleBoqGetFromViewer() {
     // Regenerate BOQ report with filter
     generateBoqReport();
 
-    const message = splitElementId
-        ? `분할 객체를 기준으로 필터링되었습니다`
-        : `선택된 객체를 기준으로 필터링되었습니다`;
+    const message = selectedObjects.length === 1
+        ? "선택된 객체를 기준으로 필터링되었습니다"
+        : `${selectedObjects.length}개 객체를 기준으로 필터링되었습니다`;
     showToast(message, "success");
 }
 
