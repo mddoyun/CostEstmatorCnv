@@ -1778,13 +1778,6 @@ function handleBoqGetFromViewer() {
 function handleBoqSelectInViewer() {
     console.log("[DEBUG] '3D 뷰어에서 선택 확인' 버튼 클릭됨");
 
-    // Check if 3D viewer functions are available
-    if (typeof window.selectObjectInViewer !== 'function') {
-        showToast("3D 뷰어가 초기화되지 않았습니다. 먼저 3D 뷰어 탭으로 이동하여 지오메트리를 로드하세요.", "error");
-        console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
-        return;
-    }
-
     // Get selected row from BOQ table
     const selectedRow = document.querySelector(".boq-table tr.selected-boq-row");
     if (!selectedRow) {
@@ -1802,57 +1795,74 @@ function handleBoqSelectInViewer() {
 
     console.log(`[DEBUG] 선택된 행의 CostItem ID 목록:`, itemIds);
 
-    // Try to find first cost item with linked element
-    let foundElement = false;
-    for (const itemId of itemIds) {
-        const costItem = loadedDdCostItems.find((ci) => ci.id === itemId);
-        if (!costItem) continue;
+    // ▼▼▼ [수정] 먼저 3D 뷰어 탭으로 전환하고 초기화 ▼▼▼
+    const viewerTab = document.querySelector('[data-primary-tab="three-d-viewer"]');
+    if (viewerTab) {
+        viewerTab.click();
+        console.log("[DEBUG] 3D 뷰어 탭으로 전환");
+    }
 
-        const member = costItem.quantity_member_id
-            ? loadedQuantityMembers.find((qm) => qm.id === costItem.quantity_member_id)
-            : null;
+    // Ensure 3D viewer is initialized
+    if (typeof window.initThreeDViewer === 'function') {
+        window.initThreeDViewer();
+        console.log("[DEBUG] 3D 뷰어 초기화 호출");
+    }
 
-        if (!member) continue;
-
-        const rawElementId = member.raw_element_id;
-        const splitElementId = member.split_element_id;
-
-        if (!rawElementId) continue;
-
-        console.log(`[DEBUG] CostItem ${itemId} -> Member ${member.id} -> RawElement ${rawElementId}, Split ${splitElementId || 'none'}`);
-
-        // Try to select in 3D viewer
-        // Prioritize split element if exists
-        let selected = false;
-        if (splitElementId) {
-            console.log(`[DEBUG] 분할 객체 선택 시도: ${splitElementId}`);
-            selected = window.selectObjectInViewer(splitElementId, true);
+    // Wait a bit for scene initialization, then try to select object
+    setTimeout(() => {
+        if (typeof window.selectObjectInViewer !== 'function') {
+            showToast("3D 뷰어 함수를 사용할 수 없습니다.", "error");
+            console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
+            return;
         }
 
-        if (!selected && rawElementId) {
-            console.log(`[DEBUG] 원본 객체 선택 시도: ${rawElementId}`);
-            selected = window.selectObjectInViewer(rawElementId, false);
-        }
+        // Try to find first cost item with linked element
+        let foundElement = false;
+        for (const itemId of itemIds) {
+            const costItem = loadedDdCostItems.find((ci) => ci.id === itemId);
+            if (!costItem) continue;
 
-        if (selected) {
-            foundElement = true;
-            const message = splitElementId
-                ? `3D 뷰어에서 분할 객체를 선택했습니다`
-                : `3D 뷰어에서 객체를 선택했습니다`;
-            showToast(message, "success");
+            const member = costItem.quantity_member_id
+                ? loadedQuantityMembers.find((qm) => qm.id === costItem.quantity_member_id)
+                : null;
 
-            // Switch to 3D viewer tab
-            const viewerTab = document.querySelector('[data-primary-tab="three-d-viewer"]');
-            if (viewerTab) {
-                viewerTab.click();
+            if (!member) continue;
+
+            const rawElementId = member.raw_element_id;
+            const splitElementId = member.split_element_id;
+
+            if (!rawElementId) continue;
+
+            console.log(`[DEBUG] CostItem ${itemId} -> Member ${member.id} -> RawElement ${rawElementId}, Split ${splitElementId || 'none'}`);
+
+            // Try to select in 3D viewer
+            // Prioritize split element if exists
+            let selected = false;
+            if (splitElementId) {
+                console.log(`[DEBUG] 분할 객체 선택 시도: ${splitElementId}`);
+                selected = window.selectObjectInViewer(splitElementId, true);
             }
-            break;
-        }
-    }
 
-    if (!foundElement) {
-        showToast("선택된 항목들은 3D 뷰어에 로드된 객체와 연결되어 있지 않습니다.", "warning");
-        console.warn("[DEBUG] 3D 뷰어에서 연결된 객체를 찾지 못함.");
-    }
+            if (!selected && rawElementId) {
+                console.log(`[DEBUG] 원본 객체 선택 시도: ${rawElementId}`);
+                selected = window.selectObjectInViewer(rawElementId, false);
+            }
+
+            if (selected) {
+                foundElement = true;
+                const message = splitElementId
+                    ? `3D 뷰어에서 분할 객체를 선택했습니다`
+                    : `3D 뷰어에서 객체를 선택했습니다`;
+                showToast(message, "success");
+                break;
+            }
+        }
+
+        if (!foundElement) {
+            showToast("3D 뷰어에 지오메트리가 로드되지 않았거나 연결된 객체를 찾을 수 없습니다. Load Geometry 버튼을 먼저 클릭하세요.", "warning");
+            console.warn("[DEBUG] 3D 뷰어에서 연결된 객체를 찾지 못함.");
+        }
+    }, 300); // 300ms delay to allow scene initialization
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 }
 // ▲▲▲ [추가] 여기까지 ▲▲▲
