@@ -26,8 +26,15 @@
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // ▼▼▼ [추가] 선택된 객체의 중심 (회전 피벗용) ▼▼▼
-    let selectedObjectsCenter = null;  // 회전 시작 시 이 값으로 target 변경
-    let isUserInteracting = false;      // 사용자가 회전/이동 중인지 여부
+    let selectedObjectsCenter = null;  // 선택된 객체의 중심점
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [추가] Shift + 우클릭 회전 및 플라이 모드 변수 ▼▼▼
+    let isShiftRightRotating = false;    // Shift + 우클릭 회전 중
+    let isRightClickHeld = false;        // 우클릭 홀드 (플라이 모드)
+    let lastRotateX = 0;
+    let lastRotateY = 0;
+    let keys = { w: false, a: false, s: false, d: false, q: false, e: false };  // WASDQE 키 상태
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Visibility state management
@@ -89,33 +96,26 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // Controls
+        // Controls - OrbitControls with custom keybindings
         controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.25;
         controls.screenSpacePanning = false;
         controls.minDistance = 1;
         controls.maxDistance = 500;
+        controls.enableZoom = true;  // 기본 줌 활성화
 
-        // ▼▼▼ [추가] 박스 선택을 위해 좌클릭 비활성화 ▼▼▼
-        // 좌클릭: 비활성화 (박스 선택 전용)
-        // 우클릭: 회전
-        // 중간 버튼: 이동
+        // ▼▼▼ 마우스 버튼 설정 ▼▼▼
+        // 좌클릭: 비활성화 (박스 선택)
+        // 중간버튼: 이동 (Pan)
+        // Shift + 우클릭: Orbit Around Selection (선택된 객체 중심 회전)
+        // 우클릭: WASD 플라이 모드
         controls.mouseButtons = {
             LEFT: null,                    // 좌클릭 비활성화
             MIDDLE: THREE.MOUSE.PAN,       // 중간 버튼 = 이동
-            RIGHT: THREE.MOUSE.ROTATE      // 우클릭 = 회전
+            RIGHT: null                    // 우클릭은 커스텀 처리
         };
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
-
-        // ▼▼▼ [추가] 사용자 인터랙션 감지 ▼▼▼
-        controls.addEventListener('start', function() {
-            isUserInteracting = true;
-        });
-        controls.addEventListener('end', function() {
-            isUserInteracting = false;
-        });
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ 여기까지 ▲▲▲
 
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -166,6 +166,18 @@
         canvas.addEventListener('pointermove', onPointerMove, false);
         canvas.addEventListener('pointerup', onPointerUp, false);
         canvas.addEventListener('pointerleave', onPointerLeave, false);  // Clear hover when leaving canvas
+
+        // ▼▼▼ [추가] WASD 키보드 이벤트 (플라이 모드용) ▼▼▼
+        window.addEventListener('keydown', onKeyDown, false);
+        window.addEventListener('keyup', onKeyUp, false);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 우클릭 컨텍스트 메뉴 방지 ▼▼▼
+        canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        }, false);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Start animation loop
@@ -183,17 +195,42 @@
         console.log("[3D Viewer] 3D Viewer initialized successfully.");
     };
 
+    // Clock for fly mode
+    const clock = new THREE.Clock();
+
     function animate() {
         requestAnimationFrame(animate);
 
-        if (controls) {
-            // ▼▼▼ [수정] 사용자가 회전/이동 중일 때만 피벗 변경 ▼▼▼
-            if (isUserInteracting && selectedObjectsCenter) {
-                // 사용자가 회전/이동 중일 때만 target을 객체 중심으로 변경
-                controls.target.copy(selectedObjectsCenter);
-            }
-            // ▲▲▲ [수정] 여기까지 ▲▲▲
+        const delta = clock.getDelta();
 
+        // ▼▼▼ WASDQE 플라이 모드 (우클릭 홀드 시) ▼▼▼
+        if (isRightClickHeld) {
+            const moveSpeed = 10 * delta;  // 이동 속도
+            const forward = new THREE.Vector3();
+            const right = new THREE.Vector3();
+            const up = new THREE.Vector3(0, 1, 0);  // World up
+
+            camera.getWorldDirection(forward);
+            right.crossVectors(forward, camera.up).normalize();
+            forward.normalize();
+
+            // Twinmotion/Unity/Unreal 스타일 이동
+            if (keys.w) camera.position.addScaledVector(forward, moveSpeed);   // 전진
+            if (keys.s) camera.position.addScaledVector(forward, -moveSpeed);  // 후진
+            if (keys.a) camera.position.addScaledVector(right, -moveSpeed);    // 왼쪽
+            if (keys.d) camera.position.addScaledVector(right, moveSpeed);     // 오른쪽
+            if (keys.e) camera.position.addScaledVector(up, moveSpeed);        // 상승
+            if (keys.q) camera.position.addScaledVector(up, -moveSpeed);       // 하강
+
+            // ⭐ controls.target을 매 프레임마다 업데이트 (종료 시 점프 방지)
+            const lookAhead = new THREE.Vector3(0, 0, -1);
+            lookAhead.applyQuaternion(camera.quaternion);
+            controls.target.copy(camera.position).add(lookAhead.multiplyScalar(10));
+        }
+        // ▲▲▲ 여기까지 ▲▲▲
+
+        // controls.enabled가 true일 때만 업데이트 (커스텀 모드 중에는 업데이트 안 함)
+        if (controls && controls.enabled) {
             controls.update();
         }
 
@@ -1000,6 +1037,20 @@
 
                 scene.add(mesh);
 
+                // ▼▼▼ [추가] 디버깅: 추가된 메시 정보 로그 ▼▼▼
+                const meshBoundingBox = new THREE.Box3().setFromObject(mesh);
+                console.log(`[3D Viewer] Mesh ${index} added:`, {
+                    position: mesh.position.toArray(),
+                    vertexCount: geometry.attributes.position.count,
+                    faceCount: geometry.index ? geometry.index.count / 3 : 0,
+                    boundingBox: {
+                        min: meshBoundingBox.min.toArray(),
+                        max: meshBoundingBox.max.toArray()
+                    },
+                    visible: mesh.visible
+                });
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             } catch (error) {
                 console.error(`[3D Viewer] Error loading geometry for object ${index}:`, error);
             }
@@ -1007,6 +1058,7 @@
 
         geometryLoaded = true;
         console.log(`[3D Viewer] BIM geometry loaded. ${geometryData.length} objects processed.`);
+        console.log(`[3D Viewer] Total objects in scene:`, scene.children.length);
 
         // Center camera on loaded geometry
         centerCameraOnGeometry();
@@ -1019,24 +1071,72 @@
     };
 
     function centerCameraOnGeometry() {
-        if (!scene || !camera || !controls) return;
+        if (!scene || !camera || !controls) {
+            console.warn("[3D Viewer] centerCameraOnGeometry: Missing scene, camera, or controls");
+            return;
+        }
 
-        const box = new THREE.Box3().setFromObject(scene);
+        // Calculate bounding box of all geometry (excluding helpers/lights)
+        const box = new THREE.Box3();
+        let meshCount = 0;
+
+        scene.traverse(function(object) {
+            if (object.isMesh) {
+                box.expandByObject(object);
+                meshCount++;
+            }
+        });
+
+        console.log(`[3D Viewer] centerCameraOnGeometry: Found ${meshCount} meshes`);
+        console.log("[3D Viewer] Bounding box min:", box.min);
+        console.log("[3D Viewer] Bounding box max:", box.max);
+
+        // Check if box is valid (not empty/infinite)
+        if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) {
+            console.warn("[3D Viewer] Invalid or empty bounding box, using default camera position");
+            camera.position.set(20, 20, 20);
+            camera.lookAt(0, 0, 0);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            return;
+        }
+
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
 
+        console.log("[3D Viewer] Bounding box center:", center);
+        console.log("[3D Viewer] Bounding box size:", size);
+
         const maxDim = Math.max(size.x, size.y, size.z);
+
+        if (maxDim === 0 || !isFinite(maxDim)) {
+            console.warn("[3D Viewer] Zero or invalid geometry size, using default camera position");
+            camera.position.set(20, 20, 20);
+            camera.lookAt(0, 0, 0);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            return;
+        }
+
         const fov = camera.fov * (Math.PI / 180);
         let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
         cameraZ *= 1.5; // Add some padding
 
-        camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
+        const cameraPos = new THREE.Vector3(
+            center.x + cameraZ * 0.7,
+            center.y + cameraZ * 0.7,
+            center.z + cameraZ * 0.7
+        );
+
+        camera.position.copy(cameraPos);
         camera.lookAt(center);
 
         controls.target.copy(center);
         controls.update();
 
-        console.log("[3D Viewer] Camera centered on geometry.");
+        console.log("[3D Viewer] Camera positioned at:", camera.position);
+        console.log("[3D Viewer] Camera looking at:", center);
+        console.log("[3D Viewer] Camera distance from center:", camera.position.distanceTo(center));
     }
 
     // ▼▼▼ [추가] 박스 선택을 위한 새로운 이벤트 핸들러 ▼▼▼
@@ -1045,11 +1145,46 @@
     function onPointerDown(event) {
         if (!scene || !camera || !raycaster) return;
 
-        // Ignore if controls are being used (right-click, middle-click)
-        if (event.button !== 0) return;  // Only handle left-click
-
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
+
+        // ▼▼▼ [추가] Shift + 우클릭: Orbit Around Selection (먼저 체크!) ▼▼▼
+        if (event.button === 2 && event.shiftKey) {  // Right-click + Shift
+            event.preventDefault();  // 브라우저 기본 동작 방지
+            event.stopImmediatePropagation();  // 다른 이벤트 리스너 실행 방지
+            console.log('[3D Viewer] Shift + Right-click: rotation started');
+
+            // ⭐ Blender/Revit 스타일: controls.target을 먼저 변경
+            // 하지만 카메라는 움직이지 않도록 함
+            if (selectedObjectsCenter) {
+                // controls.target만 업데이트, 카메라 위치는 유지
+                controls.target.copy(selectedObjectsCenter);
+                console.log('[3D Viewer] Set controls.target to selected object center:', selectedObjectsCenter);
+            }
+
+            controls.enabled = false;  // OrbitControls 비활성화 (수동 회전)
+            isShiftRightRotating = true;
+            lastRotateX = event.clientX;
+            lastRotateY = event.clientY;
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 우클릭 단독: 플라이 모드 시작 ▼▼▼
+        if (event.button === 2) {  // Right-click (without Shift)
+            event.preventDefault();  // 브라우저 기본 동작 방지
+            event.stopImmediatePropagation();  // 다른 이벤트 리스너 실행 방지
+            console.log('[3D Viewer] Right-click: fly mode started');
+            controls.enabled = false;  // OrbitControls 먼저 비활성화
+            isRightClickHeld = true;
+            lastRotateX = event.clientX;  // 초기 마우스 위치 저장 (중요!)
+            lastRotateY = event.clientY;
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // 좌클릭: 박스 선택
+        if (event.button !== 0) return;
 
         dragStart = {
             x: event.clientX - rect.left,
@@ -1066,6 +1201,83 @@
     function onPointerMove(event) {
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
+
+        // ▼▼▼ [추가] Shift + 우클릭 회전 처리 (Orbit Around Selection) ▼▼▼
+        if (isShiftRightRotating) {
+            event.preventDefault();  // 브라우저 기본 동작 방지
+            event.stopImmediatePropagation();  // 다른 이벤트 리스너 실행 방지
+
+            const deltaX = event.clientX - lastRotateX;
+            const deltaY = event.clientY - lastRotateY;
+            lastRotateX = event.clientX;
+            lastRotateY = event.clientY;
+
+            // 회전 중심: controls.target (이미 설정됨)
+            const rotationCenter = controls.target.clone();
+
+            // Quaternion 기반 회전 (부드럽고 안정적)
+            const rotateSpeed = 0.005;
+            const horizontalAngle = -deltaX * rotateSpeed;
+            const verticalAngle = -deltaY * rotateSpeed;
+
+            // 카메라 위치를 회전 중심 기준 offset으로 변환
+            let offset = camera.position.clone().sub(rotationCenter);
+            const distance = offset.length();  // 거리 저장
+
+            // Y축 기준 좌우 회전 (World space)
+            const qy = new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(0, 1, 0),
+                horizontalAngle
+            );
+            offset.applyQuaternion(qy);
+
+            // Right 벡터 기준 상하 회전
+            const up = new THREE.Vector3(0, 1, 0);
+            const right = new THREE.Vector3();
+            right.crossVectors(up, offset).normalize();
+            const qx = new THREE.Quaternion().setFromAxisAngle(right, verticalAngle);
+            offset.applyQuaternion(qx);
+
+            // 거리 유지 (정규화 후 거리 곱하기)
+            offset.normalize().multiplyScalar(distance);
+
+            // 새 카메라 위치
+            camera.position.copy(rotationCenter).add(offset);
+            camera.lookAt(rotationCenter);
+
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 우클릭 드래그: 1인칭 카메라 회전 (Twinmotion/Unity/Unreal 스타일) ▼▼▼
+        if (isRightClickHeld) {
+            event.preventDefault();  // 브라우저 기본 동작 방지
+            event.stopImmediatePropagation();  // 다른 이벤트 리스너 실행 방지
+
+            const deltaX = event.clientX - lastRotateX;
+            const deltaY = event.clientY - lastRotateY;
+            lastRotateX = event.clientX;
+            lastRotateY = event.clientY;
+
+            // 1인칭 뷰 회전
+            const rotateSpeed = 0.002;
+
+            // Y축 기준 좌우 회전 (수평)
+            const eulerY = new THREE.Euler(0, -deltaX * rotateSpeed, 0, 'YXZ');
+            camera.quaternion.premultiply(new THREE.Quaternion().setFromEuler(eulerY));
+
+            // X축 기준 상하 회전 (수직) - 카메라 로컬 축 기준
+            const eulerX = new THREE.Euler(-deltaY * rotateSpeed, 0, 0, 'YXZ');
+            camera.quaternion.multiply(new THREE.Quaternion().setFromEuler(eulerX));
+
+            // controls.target을 카메라 앞쪽으로 업데이트
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(camera.quaternion);
+            controls.target.copy(camera.position).add(forward.multiplyScalar(10));
+
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         if (dragStart) {
             // Dragging mode - update selection box
@@ -1184,8 +1396,63 @@
         hoveredObject = null;
     }
 
+    // ▼▼▼ [추가] WASD 키보드 핸들러 (플라이 모드) ▼▼▼
+    function onKeyDown(event) {
+        if (!isRightClickHeld) return;  // 우클릭 홀드 상태에서만 활성화
+
+        const key = event.key.toLowerCase();
+        if (key === 'w') keys.w = true;
+        if (key === 'a') keys.a = true;
+        if (key === 's') keys.s = true;
+        if (key === 'd') keys.d = true;
+        if (key === 'q') keys.q = true;
+        if (key === 'e') keys.e = true;
+    }
+
+    function onKeyUp(event) {
+        const key = event.key.toLowerCase();
+        if (key === 'w') keys.w = false;
+        if (key === 'a') keys.a = false;
+        if (key === 's') keys.s = false;
+        if (key === 'd') keys.d = false;
+        if (key === 'q') keys.q = false;
+        if (key === 'e') keys.e = false;
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // Pointer up - complete selection
     function onPointerUp(event) {
+        // ▼▼▼ [추가] Shift + 우클릭 회전 종료 ▼▼▼
+        if (isShiftRightRotating) {
+            event.preventDefault();  // 브라우저 기본 동작 방지
+            event.stopImmediatePropagation();  // 다른 이벤트 리스너 실행 방지
+            console.log('[3D Viewer] Shift + Right-click: rotation ended');
+            isShiftRightRotating = false;
+            controls.enabled = true;  // OrbitControls 재활성화
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 우클릭 플라이 모드 종료 ▼▼▼
+        if (isRightClickHeld) {
+            event.preventDefault();  // 브라우저 기본 동작 방지
+            event.stopImmediatePropagation();  // 다른 이벤트 리스너 실행 방지
+            console.log('[3D Viewer] Right-click: fly mode ended');
+
+            // ⭐ 중요: controls.target을 현재 카메라가 바라보는 방향으로 업데이트
+            // 이렇게 하면 OrbitControls 재활성화 시 카메라 점프가 없음
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(camera.quaternion);
+            controls.target.copy(camera.position).add(forward.multiplyScalar(10));
+
+            isRightClickHeld = false;
+            controls.enabled = true;  // OrbitControls 재활성화
+
+            console.log('[3D Viewer] Updated controls.target to:', controls.target);
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         if (!dragStart) return;
 
         const clickDuration = Date.now() - pointerDownTime;
@@ -1742,13 +2009,14 @@
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // Select an object
-    // ▼▼▼ [수정] 선택된 객체의 중심 계산 (저장만, target 변경 X) ▼▼▼
+    // ▼▼▼ [수정] Blender-style Orbit Around Selection with camera-controls ▼▼▼
     function calculateSelectedObjectsCenter() {
         // 선택된 객체들의 중심 계산
         let targetObjects = selectedObjects.length > 0 ? selectedObjects : (selectedObject ? [selectedObject] : []);
 
         if (targetObjects.length === 0) {
             selectedObjectsCenter = null;
+            console.log('[3D Viewer] ❌ Rotation pivot cleared');
             return;
         }
 
@@ -1775,11 +2043,19 @@
             centerSum.add(center);
         });
 
-        // 평균 중심점 계산하여 저장만 (target 변경 안 함!)
+        // 평균 중심점 계산
         centerSum.divideScalar(targetObjects.length);
-        selectedObjectsCenter = centerSum;
+        selectedObjectsCenter = centerSum.clone();
 
-        console.log('[3D Viewer] Selected objects center calculated:', selectedObjectsCenter);
+        // ✨ camera-controls의 setOrbitPoint() 사용 - 화면 안 움직임!
+        if (controls && controls.setOrbitPoint) {
+            controls.setOrbitPoint(
+                selectedObjectsCenter.x,
+                selectedObjectsCenter.y,
+                selectedObjectsCenter.z
+            );
+            console.log('[3D Viewer] ✅ Orbit point set (Blender style):', selectedObjectsCenter);
+        }
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
@@ -5655,20 +5931,35 @@
      * Isolate selected object (hide all others)
      */
     function isolateSelection() {
-        if (!selectedObject) {
+        // ▼▼▼ [수정] 복수 선택 지원 ▼▼▼
+        if (selectedObjects.length === 0 && !selectedObject) {
             showToast('객체를 먼저 선택해주세요', 'warning');
             return;
         }
 
-        const selectedId = getObjectId(selectedObject);
-        if (!selectedId) {
+        // 선택된 모든 객체의 ID 수집
+        const selectedIds = new Set();
+
+        // selectedObjects 배열에서 ID 수집
+        selectedObjects.forEach(obj => {
+            const id = getObjectId(obj);
+            if (id) selectedIds.add(id);
+        });
+
+        // selectedObject가 있으면 추가 (단일 선택 호환성)
+        if (selectedObject) {
+            const id = getObjectId(selectedObject);
+            if (id) selectedIds.add(id);
+        }
+
+        if (selectedIds.size === 0) {
             showToast('선택된 객체의 ID를 찾을 수 없습니다', 'error');
             return;
         }
 
-        console.log('[3D Viewer] Isolating object:', selectedId);
+        console.log('[3D Viewer] Isolating objects:', Array.from(selectedIds));
 
-        // Hide all objects except selected
+        // Hide all objects except selected ones
         hiddenObjectIds.clear();
         let totalMeshCount = 0;
         let validObjectCount = 0;
@@ -5678,14 +5969,7 @@
                 const objectId = getObjectId(object);
                 if (objectId) {
                     validObjectCount++;
-                    console.log('[3D Viewer] Found mesh:', {
-                        bimObjectId: object.userData.bimObjectId,
-                        splitElementId: object.userData.splitElementId,
-                        rawElementId: object.userData.rawElementId,
-                        objectId: objectId,
-                        isSelected: objectId === selectedId
-                    });
-                    if (objectId !== selectedId) {
+                    if (!selectedIds.has(objectId)) {
                         object.visible = false;
                         hiddenObjectIds.add(objectId);
                     }
@@ -5695,7 +5979,8 @@
 
         console.log('[3D Viewer] Scene stats - Total meshes:', totalMeshCount, 'Valid objects:', validObjectCount);
         console.log('[3D Viewer] Hidden', hiddenObjectIds.size, 'objects');
-        showToast(`선택된 객체만 표시 (${hiddenObjectIds.size}개 숨김)`, 'success');
+        showToast(`선택된 ${selectedIds.size}개 객체만 표시 (${hiddenObjectIds.size}개 숨김)`, 'success');
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Persist visibility state
         window.viewerVisibilityState = { hiddenObjectIds: Array.from(hiddenObjectIds) };
@@ -5708,28 +5993,55 @@
      * Hide selected object
      */
     function hideSelection() {
-        if (!selectedObject) {
+        // ▼▼▼ [수정] 복수 선택 지원 ▼▼▼
+        if (selectedObjects.length === 0 && !selectedObject) {
             showToast('객체를 먼저 선택해주세요', 'warning');
             return;
         }
 
-        const selectedId = getObjectId(selectedObject);
-        if (!selectedId) {
+        // 선택된 모든 객체의 ID 수집 및 숨기기
+        const selectedIds = new Set();
+        let hiddenCount = 0;
+
+        // selectedObjects 배열에서 숨기기
+        selectedObjects.forEach(obj => {
+            const id = getObjectId(obj);
+            if (id) {
+                obj.visible = false;
+                hiddenObjectIds.add(id);
+                selectedIds.add(id);
+                hiddenCount++;
+            }
+        });
+
+        // selectedObject가 있으면 숨기기 (단일 선택 호환성)
+        if (selectedObject) {
+            const id = getObjectId(selectedObject);
+            if (id) {
+                selectedObject.visible = false;
+                hiddenObjectIds.add(id);
+                selectedIds.add(id);
+                hiddenCount++;
+            }
+        }
+
+        if (hiddenCount === 0) {
             showToast('선택된 객체의 ID를 찾을 수 없습니다', 'error');
             return;
         }
 
-        console.log('[3D Viewer] Hiding object:', selectedId);
+        console.log('[3D Viewer] Hiding objects:', Array.from(selectedIds));
 
-        // Hide the selected object
-        selectedObject.visible = false;
-        hiddenObjectIds.add(selectedId);
+        // Deselect all objects
+        if (selectedObjects.length > 0) {
+            deselectAllObjects();
+        } else {
+            deselectObject();
+        }
 
-        // Deselect the object
-        deselectObject();
-
-        console.log('[3D Viewer] Object hidden. Total hidden:', hiddenObjectIds.size);
-        showToast('선택된 객체를 숨겼습니다', 'success');
+        console.log('[3D Viewer] Objects hidden. Total hidden:', hiddenObjectIds.size);
+        showToast(`선택된 ${hiddenCount}개 객체를 숨겼습니다`, 'success');
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Persist visibility state
         window.viewerVisibilityState = { hiddenObjectIds: Array.from(hiddenObjectIds) };
