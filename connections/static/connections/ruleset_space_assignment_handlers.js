@@ -48,18 +48,17 @@ async function handleSpaceAssignmentRuleActions(event) {
             showToast('삭제 실패', 'error');
         }
     } else if (target.classList.contains('save-rule-btn')) {
-        let member_filter_conditions;
-        try {
-            const conditionsStr = ruleRow
-                .querySelector('.rule-member-filter-input')
-                .value.trim();
-            member_filter_conditions = conditionsStr
-                ? JSON.parse(conditionsStr)
-                : [];
-        } catch (e) {
-            showToast('부재 필터 조건이 유효한 JSON 형식이 아닙니다.', 'error');
-            return;
-        }
+        // 조건 빌더에서 조건 수집
+        const conditionRows = ruleRow.querySelectorAll('.condition-row');
+        const member_filter_conditions = [];
+        conditionRows.forEach(row => {
+            const property = row.querySelector('.condition-property').value;
+            const operator = row.querySelector('.condition-operator').value;
+            const value = row.querySelector('.condition-value').value;
+            if (property && operator && value) {
+                member_filter_conditions.push({ property, operator, value });
+            }
+        });
 
         const ruleData = {
             id: ruleId !== 'new' ? ruleId : null,

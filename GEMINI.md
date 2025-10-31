@@ -4,80 +4,208 @@
 
 ## 프로젝트 개요
 
-이 프로젝트는 AEC(건축, 엔지니어링 및 건설) 산업을 위해 설계된 포괄적인 비용 추정기 애플리케이션입니다. 중앙 웹 애플리케이션과 Blender 및 Autodesk Revit과의 통합으로 구성됩니다.
+AEC(건축, 엔지니어링 및 건설) 산업을 위한 포괄적인 비용 추정 애플리케이션입니다. Django 웹 애플리케이션을 중심으로 Blender 및 Autodesk Revit과 통합됩니다.
 
-프로젝트의 핵심은 **Django 웹 애플리케이션**입니다. 이 애플리케이션은 REST API를 제공하고 WebSockets(Django Channels를 통해)을 사용하여 클라이언트 애플리케이션과 실시간으로 통신합니다. 백엔드는 데이터 저장(SQLite 사용), 비즈니스 로직을 처리하고 프론트엔드를 제공합니다. 이 프로젝트에는 TensorFlow 및 Keras와 같은 머신러닝 라이브러리도 포함되어 있어 AI 기반 추정과 관련된 기능을 나타냅니다.
+### 주요 구성 요소
 
-**프론트엔드**는 바닐라 JavaScript로 작성된 복잡한 단일 페이지 애플리케이션(SPA)입니다. 프로젝트 데이터를 관리하고, 수량 산출을 위한 규칙 세트를 정의하고, 비용 코드를 관리하고, 비용 추정을 수행하기 위한 풍부한 사용자 인터페이스를 제공합니다.
+1. **Django 웹 애플리케이션** (백엔드)
+   - Django 5.2+ with Channels (WebSocket via Daphne)
+   - SQLite 데이터베이스 (UUID 기본키)
+   - REST API 및 WebSocket 실시간 통신
+   - TensorFlow/Keras ML 모델 지원
 
-프로젝트에는 두 가지 주요 통합이 포함됩니다.
+2. **프론트엔드** (Vanilla JavaScript SPA)
+   - 32개 모듈형 JavaScript 파일
+   - 프레임워크 없음 (바닐라 JS)
+   - Three.js 기반 3D 뷰어 (CSG 지오메트리 분할)
+   - 프로젝트 관리, 수량 산출, 비용 추정 UI
 
--   **Blender 애드온**: 이 애드온은 WebSockets를 통해 Django 서버에 연결됩니다. Blender 프로젝트에서 IFC 데이터(형상 및 속성)를 추출하여 서버로 보낼 수 있습니다. 또한 웹 애플리케이션이 Blender를 제어할 수 있도록 합니다(예: 3D 뷰에서 요소 선택).
--   **Revit 애드인**: 이것은 Autodesk Revit용 .NET 기반 애드인입니다. Blender 애드온과 유사하게 WebSockets를 통해 서버에 연결하여 Revit과 웹 애플리케이션 간의 데이터 교환 및 제어를 가능하게 합니다.
+3. **Blender 애드온** (Python)
+   - WebSocket으로 Django 서버 연결
+   - IFC 데이터 추출 (ifcopenshell)
+   - 지오메트리 데이터 전송
+   - Blender ↔ 웹 애플리케이션 양방향 제어
 
-백엔드 서버는 Blender 및 Revit 애드인과 쉽게 배포할 수 있도록 PyInstaller를 사용하여 독립 실행형 실행 파일로 패키징되도록 설계되었습니다.
+4. **Revit 애드인** (.NET 8.0 C#)
+   - WebSocket으로 Django 서버 연결
+   - Revit API 통합
+   - BIM 데이터 및 지오메트리 추출
+   - Revit ↔ 웹 애플리케이션 실시간 연동
 
 ## 빌드 및 실행
 
 ### 백엔드 서버
 
-백엔드는 Django 애플리케이션입니다.
-
-**종속성:**
-
--   Python 종속성은 `requirements.txt`에 나열되어 있습니다. `pip install -r requirements.txt`를 사용하여 설치합니다.
--   프로젝트는 `.mddoyun` 디렉토리에 있는 가상 환경을 사용합니다.
-
-**서버 실행:**
-
-표준 Django `manage.py` 스크립트를 사용하여 개발 서버를 실행할 수 있습니다.
-
+**종속성 설치:**
 ```bash
-python manage.py runserver
+pip install -r requirements.txt
 ```
 
-또는 PyInstaller 빌드의 진입점이기도 한 `run_server.py` 스크립트를 사용할 수 있습니다.
+가상 환경 위치: `.mddoyun/` 디렉토리
 
+**서버 실행:**
 ```bash
+# Django 개발 서버
+python manage.py runserver
+
+# PyInstaller 엔트리 포인트
 python run_server.py
 ```
 
 **실행 파일 빌드:**
 
-`run_server.py` 파일에는 macOS 및 Windows용 PyInstaller를 사용하여 서버 실행 파일을 빌드하는 명령이 포함되어 있습니다.
-
-macOS용:
-
+macOS:
 ```bash
 pyinstaller --name "CostEstimatorServer" \
---onefile \
---add-data "db.sqlite3:." \
---add-data "aibim_quantity_takeoff_web:aibim_quantity_takeoff_web" \
---add-data "connections:connections" \
-run_server.py
+  --onefile \
+  --add-data "db.sqlite3:." \
+  --add-data "aibim_quantity_takeoff_web:aibim_quantity_takeoff_web" \
+  --add-data "connections:connections" \
+  run_server.py
 ```
 
-Windows용:
-
+Windows:
 ```bash
 pyinstaller --name "CostEstimatorServer" --onefile --add-data "db.sqlite3;." --add-data "aibim_quantity_takeoff_web;aibim_quantity_takeoff_web" --add-data "connections;connections" run_server.py
 ```
 
 ### 프론트엔드
 
-프론트엔드는 바닐라 JavaScript로 빌드됩니다. 프론트엔드에 대한 별도의 빌드 프로세스는 없습니다. 정적 파일(`app.js`와 같은)은 Django 애플리케이션에서 직접 제공됩니다.
+별도의 빌드 프로세스 없음. Django에서 정적 파일 직접 제공.
 
 ### Blender 애드온
 
-Blender 애드온은 `CostEstimator_BlenderAddon_453` 디렉토리에 있습니다. 이를 사용하려면 이 디렉토리를 Blender 애드온으로 설치해야 합니다. 애드온에는 미리 빌드된 서버 실행 파일이 포함되어 있습니다.
+`CostEstimator_BlenderAddon_453/` 디렉토리를 Blender에 애드온으로 설치.
 
 ### Revit 애드인
 
-Revit 애드인은 `CostEstimator_RevitAddin_2026` 디렉토리에 있는 .NET 프로젝트입니다. Visual Studio 또는 .NET CLI를 사용하여 빌드할 수 있습니다. 프로젝트는 성공적인 빌드 시 필요한 파일을 Revit 애드인 디렉토리에 복사하도록 구성되어 있습니다.
+`CostEstimator_RevitAddin_2026/` .NET 프로젝트를 Visual Studio 또는 .NET CLI로 빌드.
+
+## 아키텍처
+
+### 데이터베이스 모델 (UUID 기본키)
+
+- **Project**: 프로젝트 최상위 컨테이너
+- **RawElement**: BIM 원본 객체 (IFC/Revit 데이터, JSON)
+  - 분할 객체 지원 (부모-자식 관계, `is_active` 플래그)
+- **QuantityClassificationTag**: 수량 분류 태그
+- **CostCode**: 공사코드 (detail_code, note 필드 포함)
+- **QuantityMember**: 수량산출부재
+- **MemberMark**: 일람부호
+- **CostItem**: 산출항목
+- **UnitPrice/UnitPriceType**: 단가 정보
+- **Space**: 공간 계층 구조
+- **Activity**: 공정 정보
+- **AIModel**: ML 모델 (.h5 파일, 바이너리 저장)
+
+### WebSocket 통신
+
+**엔드포인트** (`connections/routing.py`):
+- `ws/revit-connector/` - Revit 애드인
+- `ws/blender-connector/` - Blender 애드온
+- `ws/frontend/` - 웹 프론트엔드
+
+**프로토콜**: JSON 메시지 (type + payload)
+**특징**: AsyncWebsocketConsumer, @database_sync_to_async, 청킹, 진행률 추적
+
+### 프론트엔드 (32개 모듈)
+
+**핵심**: app.js, app_core.js, websocket.js, ui.js, navigation.js
+
+**기능 모듈**: project_management, data_management, tag_management, cost_code_management, quantity_members_manager, cost_item_manager, boq_detailed_estimation, schematic_estimation, unit_price_management, ai_model_management, space_management, activity_management, calendar_management, gantt_chart
+
+**룰셋 핸들러** (조건 빌더 UI 지원):
+- classification, property_mapping, cost_code
+- member_mark_assignment, cost_code_assignment
+- space_classification, space_assignment, activity_assignment
+
+**3D 뷰어**: three_d_viewer.js, ThreeBSP.js
+- 다중 선택 (Window/Crossing)
+- Orbit/Fly 모드 카메라
+- 스케치 모드 + CSG 분할
+
+### 룰셋 시스템
+
+BIM 데이터 자동 처리 규칙:
+
+1. **분류 룰셋**: BIM 객체에 분류 태그 할당
+2. **속성 맵핑**: BIM 속성 추출/변환
+3. **일람부호 할당**: 식별 마크 할당
+4. **공사코드 룰셋**: 공사코드 + 수량 계산
+5. **공간/공정**: 공간 및 공정 구조 생성/할당
+
+**UI 개선 (2025-11-01)**:
+- **조건 빌더**: JSON 대신 드롭다운 (속성/연산자/값)
+- **맵핑 빌더**: 키-값 쌍 입력
+- **헬퍼 패널**: BIM 원본 데이터 탭에 속성 참조 패널
 
 ## 개발 규칙
 
--   **Python:** Python 코드는 표준 Django 규칙을 따릅니다.
--   **JavaScript:** 프론트엔드 코드는 여러 JavaScript 파일로 모듈화되어 있습니다. 최신 프레임워크를 사용하지 않으므로 일관성을 유지하기 위해 변경 사항을 신중하게 적용해야 합니다.
--   **Blender/Revit:** 애드온/애드인 코드는 각 플랫폼의 규칙 및 모범 사례를 따라야 합니다.
--   **WebSockets:** 클라이언트(Blender, Revit, 웹 프론트엔드)와 서버 간의 통신은 WebSockets를 통한 JSON 메시지로 이루어집니다. 메시지 형식은 일관성을 유지해야 합니다.
+### Python
+- Django 컨벤션 준수
+- UUID 기본키
+- DecimalField (금액 계산)
+- @database_sync_to_async (비동기 DB)
+
+### JavaScript
+- Vanilla JS (빌드 프로세스 없음)
+- 전역 변수 상태 관리 (currentProjectId, allRevitData)
+- 이벤트 위임 패턴
+- 32개 파일로 기능별 모듈화
+- 파일명 규칙: `<feature>_handlers.js` 또는 `<feature>_manager.js`
+
+### WebSocket
+- JSON 형식 (type + payload)
+- 청킹 (500-1000 요소/청크)
+- 진행률 추적 메시지
+
+### 데이터베이스
+- UUID 기본키
+- Many-to-many 관계 (태그, 분류)
+- JSON 필드 (BIM 데이터, 룰셋 설정)
+- 소프트 삭제 (is_active 플래그)
+
+### UI 패턴
+- 조건 빌더: 드롭다운 기반 조건 입력
+- 맵핑 빌더: 키-값 쌍 매핑
+- 헬퍼 패널: 컨텍스트 속성 참조
+- 고정 열 너비 + 수평 스크롤
+
+## 최근 주요 업데이트 (2025-10-30 ~ 2025-11-01)
+
+1. **CostCode 모델 확장**: detail_code, note 필드 추가
+2. **BOQ UI 개선**: 컬럼 커스터마이징, 단가 연동
+3. **3D 뷰어 강화**: 다중 선택, Window/Crossing 모드, Fly 모드
+4. **분할 객체**: 부피 기반 수량 분배, 재귀 분할
+5. **룰셋 UI 개편**: 조건/맵핑 빌더로 사용자 친화적 개선
+6. **헬퍼 패널**: BIM 원본 데이터 속성 참조
+7. **테이블 레이아웃**: 가로 스크롤, 고정 열 너비
+
+## 문제 해결
+
+### 룰셋이 작동하지 않을 때
+1. 조건 확인 (속성명, 연산자, 값)
+2. 우선순위 확인 (규칙 충돌)
+3. BIM 원본 데이터 탭에서 대상 객체 속성 확인
+
+### 속성을 찾을 수 없을 때
+1. BIM 원본 데이터 탭에서 객체 선택
+2. 우측 헬퍼 패널에서 속성명 확인
+3. 정확한 속성명 사용 (대소문자 구분)
+
+## 문서
+
+- [CLAUDE.md](./CLAUDE.md): 영문 상세 문서
+- [CLAUDE_KOR.md](./CLAUDE_KOR.md): 한글 간략 가이드
+- [/docs/rulesets/](./docs/rulesets/): 룰셋 상세 문서
+- [/workings/](./workings/): 작업 이력 로그
+
+## 중요 참고 사항
+
+- 프론트엔드 상태는 전역 관리 (프레임워크 없음)
+- 대용량 데이터는 WebSocket 청킹
+- 룰셋은 내부적으로 JSON, 표시는 사용자 친화적
+- 3D 뷰어는 WebGL 필요 (Three.js r128+)
+- 분할 객체는 부피 비율로 수량 자동 분배
+- PyInstaller 빌드 시 Django 정적 파일/템플릿 포함 필수
+- CSRF 토큰은 `csrf_token.js` 유틸리티로 관리

@@ -305,6 +305,10 @@ function handleTableClick(event, contextPrefix) {
         // ▼▼▼ [수정] 함수 호출 시 contextPrefix 인자 전달 ▼▼▼
         renderBimPropertiesTable(contextPrefix);
         renderAssignedTagsTable(contextPrefix);
+        // 룰셋 작성 도우미 패널 업데이트
+        if (contextPrefix === 'data-management') {
+            renderRawDataHelperPanel();
+        }
     }
 }
 
@@ -396,4 +400,138 @@ function handleLeftPanelTabClick(event) {
     // 클릭된 버튼과 그에 맞는 콘텐츠를 활성화
     clickedButton.classList.add('active');
     tabContainer.querySelector(`#${targetTabId}`).classList.add('active');
+}
+
+/**
+ * BIM 원본 데이터 탭에서 선택한 객체의 속성을 룰셋 작성 도우미 패널에 표시합니다.
+ */
+function renderRawDataHelperPanel() {
+    const helperContainer = document.getElementById('raw-data-helper-properties-container');
+
+    if (!helperContainer) return;
+
+    const state = viewerStates['data-management'];
+    if (!state || state.selectedElementIds.size === 0) {
+        helperContainer.innerHTML = '<p style="color: #999;">테이블에서 행을 선택하면 해당 객체의 속성이 여기에 표시됩니다.</p>';
+        return;
+    }
+
+    // 첫 번째 선택된 객체만 표시
+    const firstSelectedId = Array.from(state.selectedElementIds)[0];
+    console.log('[DEBUG] Looking for element with ID:', firstSelectedId);
+    console.log('[DEBUG] allRevitData sample:', window.allRevitData?.[0]);
+
+    // db_id, dbId, DB_ID 등 다양한 필드명 시도
+    const selectedElement = window.allRevitData?.find(el =>
+        el.db_id === firstSelectedId ||
+        el.dbId === firstSelectedId ||
+        el.DB_ID === firstSelectedId ||
+        el.id === firstSelectedId ||
+        String(el.db_id) === String(firstSelectedId) ||
+        String(el.dbId) === String(firstSelectedId)
+    );
+
+    if (!selectedElement) {
+        console.error('[ERROR] Could not find element with ID:', firstSelectedId);
+        console.log('[DEBUG] Available element IDs:', window.allRevitData?.map(el => el.db_id || el.dbId).slice(0, 5));
+        helperContainer.innerHTML = `<p style="color: #999;">선택한 객체의 데이터를 찾을 수 없습니다. (ID: ${firstSelectedId})</p>`;
+        return;
+    }
+
+    console.log('[DEBUG] Found element:', selectedElement);
+
+    // HTML 생성
+    let html = '<div style="margin-bottom: 10px; padding: 8px; background: #e3f2fd; border-radius: 4px; font-size: 12px; color: #1976d2;">선택한 객체의 모든 속성을 룰셋에 사용 가능한 형태로 표시합니다</div>';
+
+    // raw_data 필드에서 실제 BIM 속성 가져오기
+    let bimData = selectedElement;
+    if (selectedElement.raw_data) {
+        try {
+            bimData = typeof selectedElement.raw_data === 'string'
+                ? JSON.parse(selectedElement.raw_data)
+                : selectedElement.raw_data;
+        } catch (e) {
+            console.error('[ERROR] Failed to parse raw_data:', e);
+        }
+    }
+
+    // 시스템 속성 표시
+    const systemProps = {
+        'Category': bimData.Category,
+        'Family': bimData.Family,
+        'Type': bimData.Type,
+        'Level': bimData.Level
+    };
+
+    html += '<div style="margin-bottom: 15px;">';
+    html += '<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid #2196f3; padding-bottom: 4px;">시스템 속성</div>';
+
+    let hasSystemProps = false;
+    html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+    for (const [key, value] of Object.entries(systemProps)) {
+        if (value !== undefined && value !== null && value !== '') {
+            hasSystemProps = true;
+            html += `
+                <tr style="border-bottom: 1px solid #e0e0e0;">
+                    <td style="padding: 8px 10px; font-weight: 600; color: #1976d2; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">{${key}}</td>
+                    <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${value}</td>
+                </tr>
+            `;
+        }
+    }
+    html += '</table>';
+    if (!hasSystemProps) {
+        html += '<p style="color: #999; font-size: 12px; margin: 5px 0;">시스템 속성이 없습니다</p>';
+    }
+    html += '</div>';
+
+    // Parameters 표시
+    if (bimData.Parameters && Object.keys(bimData.Parameters).length > 0) {
+        html += '<div style="margin-bottom: 15px;">';
+        html += '<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid #4caf50; padding-bottom: 4px;">Parameters</div>';
+
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+        const sortedParams = Object.entries(bimData.Parameters).sort((a, b) => a[0].localeCompare(b[0]));
+        sortedParams.forEach(([key, value]) => {
+            const displayValue = value !== null && value !== undefined ? String(value) : '-';
+            html += `
+                <tr style="border-bottom: 1px solid #e0e0e0;">
+                    <td style="padding: 8px 10px; font-weight: 600; color: #388e3c; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">{Parameters.${key}}</td>
+                    <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${displayValue}</td>
+                </tr>
+            `;
+        });
+        html += '</table>';
+        html += '</div>';
+    }
+
+    // TypeParameters 표시
+    if (bimData.TypeParameters && Object.keys(bimData.TypeParameters).length > 0) {
+        html += '<div style="margin-bottom: 15px;">';
+        html += '<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid #ff9800; padding-bottom: 4px;">TypeParameters</div>';
+
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+        const sortedTypeParams = Object.entries(bimData.TypeParameters).sort((a, b) => a[0].localeCompare(b[0]));
+        sortedTypeParams.forEach(([key, value]) => {
+            const displayValue = value !== null && value !== undefined ? String(value) : '-';
+            html += `
+                <tr style="border-bottom: 1px solid #e0e0e0;">
+                    <td style="padding: 8px 10px; font-weight: 600; color: #f57c00; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">{TypeParameters.${key}}</td>
+                    <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${displayValue}</td>
+                </tr>
+            `;
+        });
+        html += '</table>';
+        html += '</div>';
+    }
+
+    // 아무 속성도 없을 경우
+    if (!hasSystemProps &&
+        (!bimData.Parameters || Object.keys(bimData.Parameters).length === 0) &&
+        (!bimData.TypeParameters || Object.keys(bimData.TypeParameters).length === 0)) {
+        html += '<p style="color: #999; text-align: center; padding: 20px;">이 객체에는 표시할 속성이 없습니다.</p>';
+        console.log('[DEBUG] No properties found in element:', bimData);
+    }
+
+    helperContainer.innerHTML = html;
 }

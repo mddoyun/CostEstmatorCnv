@@ -19,6 +19,11 @@ function setupCostItemsListeners() {
         ciTableContainer.addEventListener('click', handleCostItemActions); // 수정, 삭제, 저장, 취소, 행 선택, 그룹 토글 위임
         ciTableContainer.addEventListener('keyup', handleCiColumnFilter); // 필터
     }
+    // 코스트아이템 탭의 details-panel 탭 전환 리스너
+    const ciDetailsPanelTabs = document.querySelector('#cost-item-management .details-panel-tabs');
+    if (ciDetailsPanelTabs) {
+        ciDetailsPanelTabs.addEventListener('click', handleCiDetailTabClick);
+    }
     console.log('[DEBUG] Cost Items listeners setup complete.');
 }
 
@@ -175,6 +180,18 @@ async function handleCostItemActions(event) {
 
     if (!target.closest('button') && itemId) {
         handleCiRowSelection(event, actionRow);
+
+        // 룰셋 작성 도우미 패널 업데이트 (선택된 항목이 1개일 때만)
+        if (selectedCiIds.size === 1) {
+            const selectedId = Array.from(selectedCiIds)[0];
+            const selectedItem = loadedCostItems.find(ci => ci.id === selectedId);
+            if (selectedItem) {
+                updateCiRulesetHelperPanel(selectedItem);
+            }
+        } else {
+            updateCiRulesetHelperPanel(null);
+        }
+
         renderCostItemsTable(loadedCostItems, isEditRow?.dataset.id);
         renderCiLinkedMemberPropertiesTable();
         return;
@@ -367,3 +384,117 @@ function openCostCodeSelectionModal() {
         modal.style.display = 'flex';
     });
 }
+
+/**
+ * 룰셋 작성 도우미 패널 업데이트 (코스트아이템)
+ */
+function updateCiRulesetHelperPanel(costItem) {
+    const panel = document.getElementById('ci-ruleset-properties-content');
+    if (!panel) return;
+
+    if (!costItem) {
+        panel.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">산출항목을 선택해주세요</p>';
+        return;
+    }
+
+    let html = '<div style="font-size: 13px;">';
+
+    // CostItem 기본 속성
+    html += '<div style="margin-bottom: 20px;">';
+    html += '<h5 style="margin: 0 0 10px 0; color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">💰 CostItem 속성</h5>';
+    html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+    if (costItem.quantity !== undefined) html += `<tr><td style="font-weight: bold;">quantity</td><td>${costItem.quantity}</td></tr>`;
+    if (costItem.description) html += `<tr><td style="font-weight: bold;">description</td><td>${costItem.description}</td></tr>`;
+    html += '</tbody></table>';
+    html += '</div>';
+
+    // QuantityMember 속성
+    if (costItem.quantity_member_properties && Object.keys(costItem.quantity_member_properties).length > 0) {
+        html += '<div style="margin-bottom: 20px;">';
+        html += '<h5 style="margin: 0 0 10px 0; color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 QuantityMember (QM.)</h5>';
+        html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+        Object.entries(costItem.quantity_member_properties).forEach(([key, value]) => {
+            if (value !== null && value !== undefined && key !== 'properties') {
+                html += `<tr><td style="font-weight: bold;">QM.${key}</td><td>${value}</td></tr>`;
+            }
+        });
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // MemberMark 속성
+    if (costItem.member_mark_properties && Object.keys(costItem.member_mark_properties).length > 0) {
+        html += '<div style="margin-bottom: 20px;">';
+        html += '<h5 style="margin: 0 0 10px 0; color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 MemberMark (MM.)</h5>';
+        html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+        Object.entries(costItem.member_mark_properties).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+                html += `<tr><td style="font-weight: bold;">MM.${key}</td><td>${value}</td></tr>`;
+            }
+        });
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // RawElement 속성 (주요 속성만)
+    if (costItem.raw_element_properties && Object.keys(costItem.raw_element_properties).length > 0) {
+        html += '<div style="margin-bottom: 20px;">';
+        html += '<h5 style="margin: 0 0 10px 0; color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ RawElement (RE.)</h5>';
+        html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+
+        // 중요 속성 우선 표시
+        const importantProps = ['Category', 'Family', 'Type', 'Level'];
+        importantProps.forEach(prop => {
+            if (costItem.raw_element_properties[prop]) {
+                html += `<tr><td style="font-weight: bold;">RE.${prop}</td><td>${costItem.raw_element_properties[prop]}</td></tr>`;
+            }
+        });
+
+        // 나머지 속성 (제한적으로)
+        let count = 0;
+        Object.entries(costItem.raw_element_properties).forEach(([key, value]) => {
+            if (!importantProps.includes(key) && value !== null && value !== undefined && count < 10) {
+                const displayValue = String(value).substring(0, 40);
+                html += `<tr><td style="font-weight: bold;">RE.${key}</td><td>${displayValue}${String(value).length > 40 ? '...' : ''}</td></tr>`;
+                count++;
+            }
+        });
+
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    html += '</div>';
+    panel.innerHTML = html;
+}
+
+/**
+ * 코스트아이템 details-panel 탭 전환 핸들러
+ */
+function handleCiDetailTabClick(event) {
+    const target = event.target;
+    if (!target.classList.contains('detail-tab-button')) return;
+
+    const targetTab = target.dataset.tab;
+    const container = document.querySelector('#cost-item-management .details-panel');
+
+    // 모든 탭 버튼 비활성화
+    container.querySelectorAll('.detail-tab-button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // 모든 탭 컨텐츠 숨기기
+    container.querySelectorAll('.detail-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+
+    // 클릭된 탭 활성화
+    target.classList.add('active');
+    const targetContent = container.querySelector(`.detail-tab-content[data-tab="${targetTab}"]`);
+    if (targetContent) {
+        targetContent.classList.add('active');
+    }
+}
+
+// 전역 스코프에 노출
+window.updateCiRulesetHelperPanel = updateCiRulesetHelperPanel;

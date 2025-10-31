@@ -49,6 +49,15 @@
     // Camera state for restoration after reload (전역으로 노출)
     window.savedCameraState = null;
 
+    // ▼▼▼ [추가] 시뮬레이션 재생 관련 변수 ▼▼▼
+    let simulationTimer = null;
+    let simulationStartDate = null;
+    let simulationEndDate = null;
+    let simulationCurrentDate = null;
+    let simulationIsPlaying = false;
+    let simulationIsPaused = false;
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     window.initThreeDViewer = function() {
         console.log("[3D Viewer] Initializing 3D Viewer...");
 
@@ -861,6 +870,244 @@
                 showAll();
             };
         }
+
+        // ▼▼▼ [추가] 공정 기준일 필터링 ▼▼▼
+        const viewerCutoffDateInput = document.getElementById('viewer-cutoff-date');
+        const applyViewerDateBtn = document.getElementById('apply-viewer-date-btn');
+        const resetViewerDateBtn = document.getElementById('reset-viewer-date-btn');
+
+        if (applyViewerDateBtn) {
+            applyViewerDateBtn.onclick = async function() {
+                const selectedDate = viewerCutoffDateInput?.value;
+                if (!selectedDate) {
+                    showToast('날짜를 선택해주세요', 'warning');
+                    return;
+                }
+                console.log("[3D Viewer] Applying date filter:", selectedDate);
+                await applyConstructionScheduleFilterWithColors(selectedDate); // ▼▼▼ [수정] 색상 구분 필터 사용 ▼▼▼
+            };
+        }
+
+        if (resetViewerDateBtn) {
+            resetViewerDateBtn.onclick = function() {
+                console.log("[3D Viewer] Resetting date filter");
+                if (viewerCutoffDateInput) {
+                    viewerCutoffDateInput.value = '';
+                }
+                showAll();
+
+                // ▼▼▼ [추가] 상태 표시 숨기기 ▼▼▼
+                const statusDisplay = document.getElementById('schedule-status-display');
+                if (statusDisplay) {
+                    statusDisplay.style.display = 'none';
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+                showToast('전체 객체가 표시됩니다', 'success');
+            };
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 시뮬레이션 재생 컨트롤 ▼▼▼
+        const simPlayBtn = document.getElementById('sim-play-btn');
+        const simPauseBtn = document.getElementById('sim-pause-btn');
+        const simStopBtn = document.getElementById('sim-stop-btn');
+
+        if (simPlayBtn) {
+            simPlayBtn.onclick = function() {
+                console.log("[3D Viewer] Starting simulation");
+                startSimulation();
+            };
+        }
+
+        if (simPauseBtn) {
+            simPauseBtn.onclick = function() {
+                console.log("[3D Viewer] Pausing simulation");
+                pauseSimulation();
+            };
+        }
+
+        if (simStopBtn) {
+            simStopBtn.onclick = function() {
+                console.log("[3D Viewer] Stopping simulation");
+                stopSimulation();
+            };
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 하단 탭 전환 ▼▼▼
+        const viewerBottomTabBtns = document.querySelectorAll('.viewer-bottom-tab-btn');
+        viewerBottomTabBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const targetTab = this.getAttribute('data-tab');
+
+                // Remove active class from all buttons
+                viewerBottomTabBtns.forEach(b => {
+                    b.style.background = '#f5f5f5';
+                    b.style.color = '#666';
+                });
+
+                // Add active class to clicked button
+                this.style.background = '#1976d2';
+                this.style.color = 'white';
+
+                // Hide all tab contents
+                document.querySelectorAll('.viewer-bottom-tab-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+
+                // Show target tab content
+                const targetContent = document.querySelector(`.viewer-bottom-tab-content[data-tab="${targetTab}"]`);
+                if (targetContent) {
+                    targetContent.style.display = 'block';
+
+                    // If gantt chart tab is clicked, render gantt chart
+                    if (targetTab === 'gantt-chart') {
+                        renderViewerGanttChart();
+                    }
+                }
+            });
+        });
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 내역집계표 접기/펼치기 ▼▼▼
+        const boqToggleHeader = document.getElementById('viewer-boq-toggle-header');
+        const boqContent = document.getElementById('viewer-boq-content');
+        const boqToggleIcon = document.getElementById('viewer-boq-toggle-icon');
+        const boqSection = document.getElementById('viewer-boq-section');
+        const bottomSection = document.querySelector('.three-d-viewer-bottom-section');
+
+        if (boqToggleHeader && boqContent && boqToggleIcon && boqSection) {
+            boqToggleHeader.addEventListener('click', function() {
+                if (boqContent.style.display === 'none') {
+                    // 펼치기
+                    boqContent.style.display = 'block';
+                    boqToggleIcon.textContent = '▲';
+                    // Section이 공간을 차지하도록 설정 (최대 450px)
+                    boqSection.style.flex = '0 0 450px';
+                } else {
+                    // 접기
+                    boqContent.style.display = 'none';
+                    boqToggleIcon.textContent = '▼';
+                    // Section이 헤더만 차지하도록 설정
+                    boqSection.style.flex = '0 0 auto';
+                }
+
+                // ▼▼▼ [추가] 3D 뷰어 캔버스 크기 조정 ▼▼▼
+                setTimeout(() => {
+                    resizeViewer();
+                }, 100); // DOM 업데이트 후 실행
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+            });
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 첫 번째 스플릿바 드래그 기능 (3D 뷰포트 ↔ 공정표) ▼▼▼
+        const resizeHandleTop = document.getElementById('viewer-resize-handle-top');
+        const topSection = document.querySelector('.three-d-viewer-top-section');
+
+        if (resizeHandleTop && topSection) {
+            let isResizingTop = false;
+            let startY = 0;
+            let startHeight = 0;
+
+            resizeHandleTop.addEventListener('mousedown', function(e) {
+                isResizingTop = true;
+                startY = e.clientY;
+                startHeight = topSection.offsetHeight;
+                document.body.style.cursor = 'ns-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isResizingTop) return;
+
+                const delta = e.clientY - startY;
+                let newHeight = startHeight + delta;
+
+                // 최소/최대 높이 제한
+                const minHeight = 300;
+                const maxHeight = window.innerHeight - 400;
+                newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+                // top-section 높이 변경
+                topSection.style.flex = `0 0 ${newHeight}px`;
+
+                // 3D 뷰어 크기 조정
+                resizeViewer();
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isResizingTop) {
+                    isResizingTop = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 두 번째 스플릿바 드래그 기능 (공정표 ↔ 내역집계표) ▼▼▼
+        const resizeHandleBottom = document.getElementById('viewer-resize-handle-bottom');
+        // bottomSection과 boqSection은 이미 위에서 선언되었으므로 재사용
+
+        if (resizeHandleBottom && bottomSection && boqSection) {
+            let isResizingBottom = false;
+            let startY = 0;
+            let startBottomHeight = 0;
+            let startBoqHeight = 0;
+
+            resizeHandleBottom.addEventListener('mousedown', function(e) {
+                // BOQ가 펼쳐져 있을 때만 동작
+                const boqContent = document.getElementById('viewer-boq-content');
+                if (!boqContent || boqContent.style.display === 'none') {
+                    return;
+                }
+
+                isResizingBottom = true;
+                startY = e.clientY;
+                startBottomHeight = bottomSection.offsetHeight;
+                startBoqHeight = boqSection.offsetHeight;
+                document.body.style.cursor = 'ns-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isResizingBottom) return;
+
+                const delta = e.clientY - startY;
+
+                // 공정표 영역 높이 조정
+                let newBottomHeight = startBottomHeight + delta;
+                const minBottomHeight = 150;
+                const maxBottomHeight = window.innerHeight - 500;
+                newBottomHeight = Math.max(minBottomHeight, Math.min(maxBottomHeight, newBottomHeight));
+
+                // 내역집계표 영역 높이 조정 (반대 방향)
+                let newBoqHeight = startBoqHeight - delta;
+                const minBoqHeight = 200;
+                const maxBoqHeight = 600;
+                newBoqHeight = Math.max(minBoqHeight, Math.min(maxBoqHeight, newBoqHeight));
+
+                // 높이 적용
+                bottomSection.style.flex = `0 0 ${newBottomHeight}px`;
+                boqSection.style.flex = `0 0 ${newBoqHeight}px`;
+
+                // 3D 뷰어 크기 조정
+                resizeViewer();
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isResizingBottom) {
+                    isResizingBottom = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Setup properties panel tab listeners
         setupPropertiesPanelTabs();
@@ -6097,6 +6344,217 @@
     }
 
     /**
+     * ▼▼▼ [추가] 공정 기준일 기준으로 3D 객체 필터링 ▼▼▼
+     * Apply construction schedule filter: show only objects related to activities before/on the selected date
+     * Uses gantt chart data for accurate date calculations
+     */
+    async function applyConstructionScheduleFilter(cutoffDateString) {
+        try {
+            if (!window.currentProjectId) {
+                showToast('프로젝트를 먼저 선택하세요', 'warning');
+                return;
+            }
+
+            console.log('[3D Viewer] Applying construction schedule filter for date:', cutoffDateString);
+            const cutoffDate = new Date(cutoffDateString);
+
+            // Check if gantt chart data is available
+            if (typeof window.ganttData === 'undefined' || !window.ganttData || window.ganttData.length === 0) {
+                console.warn('[3D Viewer] Gantt data not available, loading...');
+                showToast('간트차트 데이터를 먼저 로드해주세요', 'warning');
+                return;
+            }
+
+            console.log('[3D Viewer] Using gantt data:', window.ganttData.length, 'tasks');
+
+            // 1. Filter gantt tasks that start before or on the cutoff date
+            const completedTasks = window.ganttData.filter(task => {
+                const startDate = new Date(task.start);
+                return startDate <= cutoffDate;
+            });
+            console.log('[3D Viewer] Completed tasks (started before/on date):', completedTasks.length);
+
+            // 2. Identify in-progress tasks (started before/on cutoff AND ends after cutoff)
+            const inProgressTasks = completedTasks.filter(task => {
+                const startDate = new Date(task.start);
+                const endDate = new Date(task.end);
+                return startDate <= cutoffDate && endDate >= cutoffDate;
+            });
+            console.log('[3D Viewer] In-progress tasks (currently active):', inProgressTasks.length);
+
+            if (completedTasks.length === 0) {
+                showToast('선택한 기준일까지 진행 중인 액티비티가 없습니다', 'warning');
+                // Hide all objects
+                scene.traverse((object) => {
+                    if (object.isMesh) {
+                        const objectId = getObjectId(object);
+                        if (objectId) {
+                            object.visible = false;
+                            hiddenObjectIds.add(objectId);
+                        }
+                    }
+                });
+                return;
+            }
+
+            // 3. Get activity IDs
+            const completedActivityIds = new Set(completedTasks.map(t => t.activityId));
+            const inProgressActivityIds = new Set(inProgressTasks.map(t => t.activityId));
+
+            // 4. Fetch cost items (use ganttCostItems if available)
+            let costItems;
+            if (typeof window.ganttCostItems !== 'undefined' && window.ganttCostItems && window.ganttCostItems.length > 0) {
+                costItems = window.ganttCostItems;
+                console.log('[3D Viewer] Using cached gantt cost items:', costItems.length);
+            } else {
+                const costItemResponse = await fetch(`/connections/api/cost-items/${window.currentProjectId}/`);
+                if (!costItemResponse.ok) {
+                    throw new Error('산출항목 데이터를 불러오는데 실패했습니다.');
+                }
+                costItems = await costItemResponse.json();
+                console.log('[3D Viewer] Fetched cost items:', costItems.length);
+            }
+
+            // 5. Filter cost items related to completed activities
+            const completedCostItems = costItems.filter(item =>
+                item.activities && item.activities.some(actId => completedActivityIds.has(actId))
+            );
+            console.log('[3D Viewer] Cost items for completed activities:', completedCostItems.length);
+
+            // 6. Filter cost items related to in-progress activities
+            const inProgressCostItems = costItems.filter(item =>
+                item.activities && item.activities.some(actId => inProgressActivityIds.has(actId))
+            );
+            console.log('[3D Viewer] Cost items for in-progress activities:', inProgressCostItems.length);
+
+            // 7. Extract element IDs
+            const completedElementIds = new Set();
+            const inProgressElementIds = new Set();
+
+            completedCostItems.forEach(item => {
+                if (item.raw_element_id) completedElementIds.add(item.raw_element_id);
+                if (item.split_element_id) completedElementIds.add(item.split_element_id);
+            });
+
+            inProgressCostItems.forEach(item => {
+                if (item.raw_element_id) inProgressElementIds.add(item.raw_element_id);
+                if (item.split_element_id) inProgressElementIds.add(item.split_element_id);
+            });
+
+            console.log('[3D Viewer] Completed element IDs:', completedElementIds.size);
+            console.log('[3D Viewer] In-progress element IDs:', inProgressElementIds.size);
+
+            if (completedElementIds.size === 0 && inProgressElementIds.size === 0) {
+                showToast('해당 액티비티에 연결된 BIM 객체가 없습니다', 'warning');
+                // Hide all objects
+                scene.traverse((object) => {
+                    if (object.isMesh) {
+                        const objectId = getObjectId(object);
+                        if (objectId) {
+                            object.visible = false;
+                            hiddenObjectIds.add(objectId);
+                        }
+                    }
+                });
+                return;
+            }
+
+            // 8. Show/hide and color objects based on status
+            hiddenObjectIds.clear();
+            let visibleCount = 0;
+            let hiddenCount = 0;
+            let inProgressCount = 0;
+
+            scene.traverse((object) => {
+                if (object.isMesh) {
+                    const objectId = getObjectId(object);
+                    if (objectId) {
+                        // ▼▼▼ [수정] 분할 객체는 splitElementId만 체크, 원본 객체는 rawElementId 체크 ▼▼▼
+                        let isInProgress = false;
+                        let isCompleted = false;
+
+                        if (object.userData.splitElementId) {
+                            // 분할 객체: splitElementId만 체크 (rawElementId 체크 안 함 - 다른 분할 객체와 구분하기 위해)
+                            isInProgress = inProgressElementIds.has(object.userData.splitElementId);
+                            isCompleted = completedElementIds.has(object.userData.splitElementId);
+                        } else {
+                            // 원본 객체: bimObjectId 또는 rawElementId 체크
+                            isInProgress = inProgressElementIds.has(objectId) ||
+                                         inProgressElementIds.has(object.userData.bimObjectId) ||
+                                         inProgressElementIds.has(object.userData.rawElementId);
+
+                            isCompleted = completedElementIds.has(objectId) ||
+                                        completedElementIds.has(object.userData.bimObjectId) ||
+                                        completedElementIds.has(object.userData.rawElementId);
+                        }
+                        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                        if (isInProgress || isCompleted) {
+                            object.visible = true;
+                            visibleCount++;
+
+                            // Color in-progress objects differently
+                            if (isInProgress) {
+                                // Store original material if not already stored
+                                if (!originalMaterials.has(object)) {
+                                    originalMaterials.set(object, object.material.clone());
+                                }
+
+                                // Apply orange/yellow color for in-progress
+                                const inProgressMaterial = new THREE.MeshStandardMaterial({
+                                    color: 0xFFA500, // Orange
+                                    metalness: 0.3,
+                                    roughness: 0.5,
+                                    emissive: 0xFF8800,
+                                    emissiveIntensity: 0.2
+                                });
+                                object.material = inProgressMaterial;
+                                inProgressCount++;
+                            } else {
+                                // Restore original material for completed objects
+                                if (originalMaterials.has(object)) {
+                                    object.material = originalMaterials.get(object);
+                                }
+                            }
+                        } else {
+                            object.visible = false;
+                            hiddenObjectIds.add(objectId);
+                            hiddenCount++;
+
+                            // Restore original material
+                            if (originalMaterials.has(object)) {
+                                object.material = originalMaterials.get(object);
+                            }
+                        }
+                    }
+                }
+            });
+
+            console.log('[3D Viewer] Filtering complete - Visible:', visibleCount, 'Hidden:', hiddenCount, 'In-progress:', inProgressCount);
+            showToast(`${cutoffDateString} 기준: ${visibleCount}개 표시 (진행중: ${inProgressCount}개, 숨김: ${hiddenCount}개)`, 'success');
+
+            // Persist visibility state
+            window.viewerVisibilityState = { hiddenObjectIds: Array.from(hiddenObjectIds) };
+
+            // Update button states
+            updateVisibilityControlButtons();
+
+            // ▼▼▼ [추가] 간트차트 업데이트 ▼▼▼
+            // Check if gantt chart tab is active
+            const ganttTab = document.querySelector('.viewer-bottom-tab-content[data-tab="gantt-chart"]');
+            if (ganttTab && ganttTab.style.display !== 'none') {
+                renderViewerGanttChart();
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        } catch (error) {
+            console.error('[3D Viewer] Error applying construction schedule filter:', error);
+            showToast('공정 필터 적용 중 오류가 발생했습니다: ' + error.message, 'error');
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
      * Restore visibility state (called after loading geometry or tab switch)
      */
     function restoreVisibilityState() {
@@ -6323,6 +6781,787 @@
             return 0;
         }
     };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 간트차트 렌더링 (3D 뷰어용) - 시각적 간트차트 ▼▼▼
+     */
+    function renderViewerGanttChart(highlightDate = null) {
+        const container = document.getElementById('viewer-gantt-chart-container');
+        if (!container) return;
+
+        // Check if gantt data is available
+        if (typeof window.ganttData === 'undefined' || !window.ganttData || window.ganttData.length === 0) {
+            container.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">간트차트 탭에서 먼저 간트차트를 로드해주세요</p>';
+            return;
+        }
+
+        console.log('[3D Viewer] Rendering gantt chart with', window.ganttData.length, 'tasks');
+
+        // Get current date from input (if set)
+        const cutoffDateString = document.getElementById('viewer-cutoff-date')?.value;
+        const cutoffDate = cutoffDateString ? new Date(cutoffDateString) : null;
+
+        // Filter tasks: only show tasks that overlap with cutoff date
+        let tasksToShow = window.ganttData;
+        if (cutoffDate) {
+            tasksToShow = window.ganttData.filter(task => {
+                const startDate = new Date(task.start);
+                const endDate = new Date(task.end);
+                // Show task if it overlaps with cutoff date (start <= cutoff <= end)
+                return startDate <= cutoffDate && endDate >= cutoffDate;
+            });
+            console.log('[3D Viewer] Filtered to', tasksToShow.length, 'overlapping tasks on', cutoffDateString);
+        }
+
+        if (tasksToShow.length === 0) {
+            container.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">선택한 날짜에 진행 중인 액티비티가 없습니다</p>';
+            return;
+        }
+
+        // Calculate date range
+        const allDates = tasksToShow.map(t => new Date(t.start)).concat(tasksToShow.map(t => new Date(t.end)));
+        const minDate = new Date(Math.min(...allDates));
+        const maxDate = new Date(Math.max(...allDates));
+
+        // Build date array
+        const dateArray = [];
+        let currentDate = new Date(minDate);
+        while (currentDate <= maxDate) {
+            dateArray.push(new Date(currentDate));
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        // Build gantt chart HTML with fixed column width
+        const dateColumnWidth = 40; // Fixed width for each date column
+        const activityColumnWidth = 200; // Fixed width for activity name column
+
+        let html = '<div id="gantt-scroll-container" style="overflow-x: auto; overflow-y: auto; max-height: 100%; position: relative;">';
+        html += '<table style="border-collapse: collapse; font-size: 11px;">';
+
+        // Header: dates
+        html += '<thead style="position: sticky; top: 0; background: white; z-index: 10;">';
+        html += '<tr>';
+        html += `<th style="padding: 10px; text-align: left; width: ${activityColumnWidth}px; min-width: ${activityColumnWidth}px; max-width: ${activityColumnWidth}px; background: #f5f5f5; position: sticky; left: 0; z-index: 11; border-right: 2px solid #ddd;">액티비티</th>`;
+
+        dateArray.forEach(date => {
+            const dateString = date.toISOString().split('T')[0];
+            const day = date.getDate();
+            const dayOfWeek = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+            const isHighlightDate = cutoffDate && dateString === cutoffDate.toISOString().split('T')[0];
+
+            let bgColor = isWeekend ? '#ffe0e0' : '#f9f9f9';
+            if (isHighlightDate) bgColor = '#ffd700';
+
+            html += `<th class="gantt-date-col" data-date="${dateString}" style="padding: 5px 2px; text-align: center; width: ${dateColumnWidth}px; min-width: ${dateColumnWidth}px; max-width: ${dateColumnWidth}px; font-size: 10px; background: ${bgColor}; border-right: 1px solid #ddd;">`;
+            html += `<div>${day}</div>`;
+            html += `<div style="font-size: 9px; font-weight: normal;">${dayOfWeek}</div>`;
+            html += '</th>';
+        });
+
+        html += '</tr>';
+        html += '</thead>';
+
+        // Body: tasks
+        html += '<tbody>';
+
+        tasksToShow.forEach((task, taskIndex) => {
+            const startDate = new Date(task.start);
+            const endDate = new Date(task.end);
+
+            html += '<tr style="border-bottom: 1px solid #e0e0e0;">';
+            html += `<td style="padding: 8px; background: white; position: sticky; left: 0; z-index: 5; border-right: 2px solid #ddd; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: ${activityColumnWidth}px; min-width: ${activityColumnWidth}px; max-width: ${activityColumnWidth}px;">${task.name || '-'}</td>`;
+
+            dateArray.forEach(date => {
+                const dateString = date.toISOString().split('T')[0];
+                const isInTaskRange = date >= startDate && date <= endDate;
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                const isHighlightDate = cutoffDate && dateString === cutoffDate.toISOString().split('T')[0];
+
+                let bgColor = isWeekend ? '#fff5f5' : 'white';
+                let content = '';
+
+                if (isInTaskRange) {
+                    bgColor = '#4caf50'; // Green for task bar
+                    content = '&nbsp;';
+                }
+
+                // Highlight date column
+                if (isHighlightDate) {
+                    if (isInTaskRange) {
+                        bgColor = '#ff9800'; // Orange for task on highlight date
+                    } else {
+                        bgColor = '#ffd700'; // Yellow for highlight date
+                    }
+                }
+
+                html += `<td class="gantt-date-col" data-date="${dateString}" style="padding: 0; background: ${bgColor}; border-right: 1px solid #ddd; text-align: center; width: ${dateColumnWidth}px; min-width: ${dateColumnWidth}px; max-width: ${dateColumnWidth}px;">${content}</td>`;
+            });
+
+            html += '</tr>';
+        });
+
+        html += '</tbody>';
+        html += '</table>';
+        html += '</div>';
+
+        container.innerHTML = html;
+
+        // ▼▼▼ [추가] 선택된 날짜로 자동 스크롤 ▼▼▼
+        if (cutoffDate) {
+            const cutoffDateString = cutoffDate.toISOString().split('T')[0];
+            scrollToGanttDate(cutoffDateString);
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 날짜 열 클릭 이벤트 ▼▼▼
+        const scrollContainer = document.getElementById('gantt-scroll-container');
+        if (scrollContainer) {
+            const dateCells = scrollContainer.querySelectorAll('.gantt-date-col');
+            dateCells.forEach(cell => {
+                cell.style.cursor = 'pointer';
+                cell.addEventListener('click', function() {
+                    const clickedDate = this.getAttribute('data-date');
+                    console.log('[3D Viewer] Gantt date cell clicked:', clickedDate);
+
+                    // Update date input
+                    const dateInput = document.getElementById('viewer-cutoff-date');
+                    if (dateInput) {
+                        dateInput.value = clickedDate;
+                    }
+
+                    // Apply filter
+                    applyConstructionScheduleFilterWithColors(clickedDate);
+                });
+            });
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 색상 구분 필터링 (간트차트 클릭용) ▼▼▼
+     */
+    async function applyConstructionScheduleFilterWithColors(cutoffDateString) {
+        try {
+            if (!window.currentProjectId) {
+                showToast('프로젝트를 먼저 선택하세요', 'warning');
+                return;
+            }
+
+            console.log('[3D Viewer] Applying construction schedule filter with colors for date:', cutoffDateString);
+            const cutoffDate = new Date(cutoffDateString);
+
+            // Check if gantt chart data is available
+            if (typeof window.ganttData === 'undefined' || !window.ganttData || window.ganttData.length === 0) {
+                console.warn('[3D Viewer] Gantt data not available');
+                showToast('간트차트 데이터를 먼저 로드해주세요', 'warning');
+                return;
+            }
+
+            console.log('[3D Viewer] Using gantt data:', window.ganttData.length, 'tasks');
+
+            // 1. Categorize tasks
+            const completedTasks = [];
+            const inProgressTasks = [];
+            const futureTasks = [];
+
+            window.ganttData.forEach(task => {
+                const startDate = new Date(task.start);
+                const endDate = new Date(task.end);
+
+                if (endDate < cutoffDate) {
+                    // Completed
+                    completedTasks.push(task);
+                } else if (startDate <= cutoffDate && endDate >= cutoffDate) {
+                    // In progress
+                    inProgressTasks.push(task);
+                } else if (startDate > cutoffDate) {
+                    // Future
+                    futureTasks.push(task);
+                }
+            });
+
+            console.log('[3D Viewer] Task breakdown - Completed:', completedTasks.length, 'In-progress:', inProgressTasks.length, 'Future:', futureTasks.length);
+
+            // 2. Get activity IDs
+            const completedActivityIds = new Set(completedTasks.map(t => t.activityId));
+            const inProgressActivityIds = new Set(inProgressTasks.map(t => t.activityId));
+
+            // 3. Get cost items
+            let costItems;
+            if (typeof window.ganttCostItems !== 'undefined' && window.ganttCostItems && window.ganttCostItems.length > 0) {
+                costItems = window.ganttCostItems;
+            } else {
+                const costItemResponse = await fetch(`/connections/api/cost-items/${window.currentProjectId}/`);
+                if (!costItemResponse.ok) {
+                    throw new Error('산출항목 데이터를 불러오는데 실패했습니다.');
+                }
+                costItems = await costItemResponse.json();
+            }
+
+            // 4. Filter cost items
+            const completedCostItems = costItems.filter(item =>
+                item.activities && item.activities.some(actId => completedActivityIds.has(actId))
+            );
+
+            const inProgressCostItems = costItems.filter(item =>
+                item.activities && item.activities.some(actId => inProgressActivityIds.has(actId))
+            );
+
+            console.log('[3D Viewer] Cost items - Completed:', completedCostItems.length, 'In-progress:', inProgressCostItems.length);
+
+            // 5. Extract element IDs
+            const completedElementIds = new Set();
+            const inProgressElementIds = new Set();
+
+            completedCostItems.forEach(item => {
+                if (item.raw_element_id) completedElementIds.add(item.raw_element_id);
+                if (item.split_element_id) completedElementIds.add(item.split_element_id);
+            });
+
+            inProgressCostItems.forEach(item => {
+                if (item.raw_element_id) inProgressElementIds.add(item.raw_element_id);
+                if (item.split_element_id) inProgressElementIds.add(item.split_element_id);
+            });
+
+            console.log('[3D Viewer] Element IDs - Completed:', completedElementIds.size, 'In-progress:', inProgressElementIds.size);
+
+            // 6. Apply colors to objects
+            hiddenObjectIds.clear();
+            let completedCount = 0;
+            let inProgressCount = 0;
+            let hiddenCount = 0;
+
+            scene.traverse((object) => {
+                if (object.isMesh) {
+                    const objectId = getObjectId(object);
+                    if (objectId) {
+                        // ▼▼▼ [수정] 분할 객체는 splitElementId만 체크, 원본 객체는 rawElementId 체크 ▼▼▼
+                        let isInProgress = false;
+                        let isCompleted = false;
+
+                        if (object.userData.splitElementId) {
+                            // 분할 객체: splitElementId만 체크 (rawElementId 체크 안 함 - 다른 분할 객체와 구분하기 위해)
+                            isInProgress = inProgressElementIds.has(object.userData.splitElementId);
+                            isCompleted = completedElementIds.has(object.userData.splitElementId);
+                        } else {
+                            // 원본 객체: bimObjectId 또는 rawElementId 체크
+                            isInProgress = inProgressElementIds.has(objectId) ||
+                                         inProgressElementIds.has(object.userData.bimObjectId) ||
+                                         inProgressElementIds.has(object.userData.rawElementId);
+
+                            isCompleted = completedElementIds.has(objectId) ||
+                                        completedElementIds.has(object.userData.bimObjectId) ||
+                                        completedElementIds.has(object.userData.rawElementId);
+                        }
+                        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                        if (isInProgress) {
+                            // In-progress: RED
+                            object.visible = true;
+
+                            if (!originalMaterials.has(object)) {
+                                originalMaterials.set(object, object.material.clone());
+                            }
+
+                            const redMaterial = new THREE.MeshStandardMaterial({
+                                color: 0xFF0000, // Red
+                                metalness: 0.3,
+                                roughness: 0.5,
+                                emissive: 0xFF0000,
+                                emissiveIntensity: 0.3
+                            });
+                            object.material = redMaterial;
+                            inProgressCount++;
+
+                        } else if (isCompleted) {
+                            // Completed: GRAY
+                            object.visible = true;
+
+                            if (!originalMaterials.has(object)) {
+                                originalMaterials.set(object, object.material.clone());
+                            }
+
+                            const grayMaterial = new THREE.MeshStandardMaterial({
+                                color: 0x808080, // Gray
+                                metalness: 0.2,
+                                roughness: 0.7
+                            });
+                            object.material = grayMaterial;
+                            completedCount++;
+
+                        } else {
+                            // Future or not related: HIDE
+                            object.visible = false;
+                            hiddenObjectIds.add(objectId);
+                            hiddenCount++;
+
+                            // Restore original material
+                            if (originalMaterials.has(object)) {
+                                object.material = originalMaterials.get(object);
+                            }
+                        }
+                    }
+                }
+            });
+
+            console.log('[3D Viewer] Color filtering complete - Completed(gray):', completedCount, 'In-progress(red):', inProgressCount, 'Hidden:', hiddenCount);
+
+            // ▼▼▼ [수정] 고정 상태 표시 영역 업데이트 (토스트 대신) ▼▼▼
+            const statusDisplay = document.getElementById('schedule-status-display');
+            const statusText = document.getElementById('schedule-status-text');
+            if (statusDisplay && statusText) {
+                statusText.innerHTML = `<div style="margin-bottom: 5px; font-size: 14px; color: #4fc3f7;">${cutoffDateString} 기준</div>` +
+                                      `<div style="color: #ff5252;">진행중: ${inProgressCount}개 (빨강)</div>` +
+                                      `<div style="color: #bdbdbd;">완료: ${completedCount}개 (회색)</div>` +
+                                      `<div style="color: #888;">숨김: ${hiddenCount}개</div>`;
+                statusDisplay.style.display = 'block';
+            }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            // Persist visibility state
+            window.viewerVisibilityState = { hiddenObjectIds: Array.from(hiddenObjectIds) };
+
+            // Update button states
+            updateVisibilityControlButtons();
+
+            // Update gantt chart
+            const ganttTab = document.querySelector('.viewer-bottom-tab-content[data-tab="gantt-chart"]');
+            if (ganttTab && ganttTab.style.display !== 'none') {
+                renderViewerGanttChart();
+            }
+
+            // ▼▼▼ [추가] 내역집계표 자동 업데이트 ▼▼▼
+            renderViewerBoqSummary(cutoffDateString);
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        } catch (error) {
+            console.error('[3D Viewer] Error applying color filter:', error);
+            showToast('필터 적용 중 오류가 발생했습니다: ' + error.message, 'error');
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 간트차트 날짜로 스크롤 ▼▼▼
+     */
+    function scrollToGanttDate(dateString) {
+        const scrollContainer = document.getElementById('gantt-scroll-container');
+        if (!scrollContainer) return;
+
+        // Find the date column
+        const dateColumn = scrollContainer.querySelector(`.gantt-date-col[data-date="${dateString}"]`);
+        if (!dateColumn) {
+            console.warn('[3D Viewer] Date column not found:', dateString);
+            return;
+        }
+
+        // Calculate scroll position to center the date column
+        const containerWidth = scrollContainer.clientWidth;
+        const columnLeft = dateColumn.offsetLeft;
+        const columnWidth = dateColumn.offsetWidth;
+        const activityColumnWidth = 200; // Same as defined in renderViewerGanttChart
+
+        // Scroll to position: center the selected date in view (accounting for sticky activity column)
+        const scrollLeft = columnLeft - activityColumnWidth - (containerWidth - activityColumnWidth - columnWidth) / 2;
+
+        scrollContainer.scrollLeft = Math.max(0, scrollLeft);
+
+        console.log('[3D Viewer] Scrolled to date:', dateString, 'scrollLeft:', scrollContainer.scrollLeft);
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 시뮬레이션 재생 시작 ▼▼▼
+     */
+    function startSimulation() {
+        // Check if gantt data is available
+        if (typeof window.ganttData === 'undefined' || !window.ganttData || window.ganttData.length === 0) {
+            showToast('간트차트 데이터가 없습니다. 간트차트 탭에서 먼저 로드해주세요.', 'warning');
+            return;
+        }
+
+        // Get simulation settings
+        const speedMultiplier = parseFloat(document.getElementById('sim-speed')?.value || 1);
+        const dayInterval = parseInt(document.getElementById('sim-interval')?.value || 1);
+
+        // Calculate date range from gantt data
+        const dates = window.ganttData.map(task => new Date(task.start));
+        const endDates = window.ganttData.map(task => new Date(task.end));
+        simulationStartDate = new Date(Math.min(...dates));
+        simulationEndDate = new Date(Math.max(...endDates));
+
+        // If paused, resume from current date
+        if (simulationIsPaused) {
+            simulationIsPaused = false;
+        } else {
+            // Start from beginning
+            simulationCurrentDate = new Date(simulationStartDate);
+        }
+
+        simulationIsPlaying = true;
+
+        // Update button states
+        document.getElementById('sim-play-btn').disabled = true;
+        document.getElementById('sim-pause-btn').disabled = false;
+        document.getElementById('sim-stop-btn').disabled = false;
+
+        console.log('[3D Viewer] Simulation started:', {
+            start: simulationStartDate.toISOString().split('T')[0],
+            end: simulationEndDate.toISOString().split('T')[0],
+            speed: speedMultiplier,
+            interval: dayInterval
+        });
+
+        // Start simulation loop
+        const intervalMs = (1000 / speedMultiplier); // Base interval: 1 second per day
+        simulationTimer = setInterval(() => {
+            if (!simulationIsPlaying) return;
+
+            // Update current date display
+            const dateString = simulationCurrentDate.toISOString().split('T')[0];
+            document.getElementById('sim-current-date').textContent = dateString;
+            document.getElementById('viewer-cutoff-date').value = dateString;
+
+            // Apply filter for current date
+            applyConstructionScheduleFilterWithColors(dateString); // ▼▼▼ [수정] 색상 구분 필터 사용 ▼▼▼
+
+            // Advance date
+            simulationCurrentDate.setDate(simulationCurrentDate.getDate() + dayInterval);
+
+            // Check if reached end
+            if (simulationCurrentDate > simulationEndDate) {
+                console.log('[3D Viewer] Simulation reached end');
+                stopSimulation();
+            }
+        }, intervalMs);
+
+        showToast('시뮬레이션 재생 시작', 'success');
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 시뮬레이션 일시정지 ▼▼▼
+     */
+    function pauseSimulation() {
+        if (!simulationIsPlaying) return;
+
+        simulationIsPlaying = false;
+        simulationIsPaused = true;
+
+        if (simulationTimer) {
+            clearInterval(simulationTimer);
+            simulationTimer = null;
+        }
+
+        // Update button states
+        document.getElementById('sim-play-btn').disabled = false;
+        document.getElementById('sim-pause-btn').disabled = true;
+
+        console.log('[3D Viewer] Simulation paused');
+        showToast('시뮬레이션 일시정지', 'info');
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 시뮬레이션 정지 ▼▼▼
+     */
+    function stopSimulation() {
+        simulationIsPlaying = false;
+        simulationIsPaused = false;
+
+        if (simulationTimer) {
+            clearInterval(simulationTimer);
+            simulationTimer = null;
+        }
+
+        // Reset date
+        simulationCurrentDate = null;
+        document.getElementById('sim-current-date').textContent = '';
+
+        // Update button states
+        document.getElementById('sim-play-btn').disabled = false;
+        document.getElementById('sim-pause-btn').disabled = true;
+        document.getElementById('sim-stop-btn').disabled = true;
+
+        // ▼▼▼ [추가] 상태 표시 숨기기 ▼▼▼
+        const statusDisplay = document.getElementById('schedule-status-display');
+        if (statusDisplay) {
+            statusDisplay.style.display = 'none';
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        console.log('[3D Viewer] Simulation stopped');
+        showToast('시뮬레이션 정지', 'info');
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 3D 뷰어용 내역집계표 렌더링 ▼▼▼
+     */
+    async function renderViewerBoqSummary(cutoffDateString) {
+        const boqContainer = document.getElementById('viewer-boq-content');
+
+        if (!boqContainer) {
+            console.error('[Viewer BOQ] Container not found');
+            return;
+        }
+
+        if (!cutoffDateString) {
+            boqContainer.innerHTML = '<p style="text-align: center; color: #999;">공정 기준일을 선택하면 해당 일자까지의 내역집계표가 표시됩니다.</p>';
+            return;
+        }
+
+        if (!window.ganttData || !window.ganttCostItems) {
+            boqContainer.innerHTML = '<p style="text-align: center; color: #999;">간트차트 데이터를 먼저 로드해주세요.</p>';
+            return;
+        }
+
+        boqContainer.innerHTML = '<p style="text-align: center; color: #999;">집계 중...</p>';
+
+        try {
+            const cutoffDate = new Date(cutoffDateString);
+
+            // 기준일까지 진행 중인 액티비티 필터링
+            const activeActivities = window.ganttData.filter(task => {
+                const startDate = new Date(task.start);
+                return startDate <= cutoffDate;
+            });
+
+            console.log('[Viewer BOQ] Active activities:', activeActivities.length);
+
+            if (activeActivities.length === 0) {
+                boqContainer.innerHTML = '<p style="text-align: center; color: #999;">선택한 기준일까지 진행 중인 액티비티가 없습니다.</p>';
+                return;
+            }
+
+            // 액티비티에 연결된 산출항목 수집
+            const activityIds = new Set(activeActivities.map(a => a.activityId));
+            const relevantCostItems = window.ganttCostItems.filter(item =>
+                item.activities && item.activities.some(actId => activityIds.has(actId))
+            );
+
+            console.log('[Viewer BOQ] Relevant cost items:', relevantCostItems.length);
+
+            if (relevantCostItems.length === 0) {
+                boqContainer.innerHTML = '<p style="text-align: center; color: #999;">해당 액티비티에 연결된 산출항목이 없습니다.</p>';
+                return;
+            }
+
+            // 단가 정보 로드 (gantt_chart_handlers.js의 전역 맵 사용)
+            if (!window.ganttUnitPriceMap) {
+                await loadViewerUnitPrices();
+            }
+
+            // CostCode별로 그룹화 및 집계
+            const boqData = aggregateViewerByCostCode(relevantCostItems);
+
+            // 렌더링
+            renderViewerBoqTable(boqData, cutoffDateString);
+
+        } catch (error) {
+            console.error('[Viewer BOQ] Error:', error);
+            boqContainer.innerHTML = `<p style="text-align: center; color: #d32f2f;">오류: ${error.message}</p>`;
+        }
+    }
+
+    /**
+     * 3D 뷰어용 단가 정보 로드
+     */
+    async function loadViewerUnitPrices() {
+        if (!window.currentProjectId) return;
+
+        try {
+            const response = await fetch(`/connections/api/all-unit-prices/${window.currentProjectId}/`);
+            if (!response.ok) {
+                console.warn('[Viewer BOQ] Failed to load unit prices');
+                return;
+            }
+
+            const unitPrices = await response.json();
+
+            // costCode를 키로 하는 맵으로 변환 (gantt_chart_handlers.js와 동일)
+            window.ganttUnitPriceMap = new Map();
+            unitPrices.forEach(up => {
+                window.ganttUnitPriceMap.set(up.cost_code, up);
+            });
+
+            console.log('[Viewer BOQ] Unit prices loaded:', window.ganttUnitPriceMap.size);
+        } catch (error) {
+            console.error('[Viewer BOQ] Error loading unit prices:', error);
+        }
+    }
+
+    /**
+     * CostCode별로 그룹화 및 집계
+     */
+    function aggregateViewerByCostCode(costItems) {
+        const aggregated = {};
+
+        costItems.forEach(item => {
+            const costCode = item.cost_code;
+
+            if (!aggregated[costCode]) {
+                const unitPrice = window.ganttUnitPriceMap?.get(costCode);
+
+                aggregated[costCode] = {
+                    cost_code: costCode,
+                    cost_code_detail_code: item.cost_code_detail_code || '',
+                    cost_code_name: item.cost_code_name || '',
+                    cost_code_unit: item.cost_code_unit || '',
+                    quantity: 0,
+                    material_cost: unitPrice?.material_cost || 0,
+                    labor_cost: unitPrice?.labor_cost || 0,
+                    expense_cost: unitPrice?.expense_cost || 0,
+                    total_cost: unitPrice?.total_cost || 0,
+                    material_amount: 0,
+                    labor_amount: 0,
+                    expense_amount: 0,
+                    total_amount: 0
+                };
+            }
+
+            const quantity = item.quantity || 0;
+            aggregated[costCode].quantity += quantity;
+            aggregated[costCode].material_amount += quantity * aggregated[costCode].material_cost;
+            aggregated[costCode].labor_amount += quantity * aggregated[costCode].labor_cost;
+            aggregated[costCode].expense_amount += quantity * aggregated[costCode].expense_cost;
+            aggregated[costCode].total_amount += quantity * aggregated[costCode].total_cost;
+        });
+
+        return Object.values(aggregated);
+    }
+
+    /**
+     * 내역집계표 테이블 렌더링
+     */
+    function renderViewerBoqTable(boqData, cutoffDateString) {
+        const boqContainer = document.getElementById('viewer-boq-content');
+
+        if (!boqContainer) return;
+
+        const cutoffDate = new Date(cutoffDateString);
+
+        // 합계 계산
+        const totals = boqData.reduce((acc, row) => {
+            acc.quantity += row.quantity;
+            acc.material_amount += row.material_amount;
+            acc.labor_amount += row.labor_amount;
+            acc.expense_amount += row.expense_amount;
+            acc.total_amount += row.total_amount;
+            return acc;
+        }, {
+            quantity: 0,
+            material_amount: 0,
+            labor_amount: 0,
+            expense_amount: 0,
+            total_amount: 0
+        });
+
+        let html = `
+            <div style="background: white; border-radius: 8px; padding: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h4 style="margin: 0; color: #1976d2;">내역집계표 (기준일: ${cutoffDate.toLocaleDateString('ko-KR')})</h4>
+                    <div style="font-size: 16px; font-weight: bold; color: #d32f2f;">
+                        총 공사비: ${totals.total_amount.toLocaleString('ko-KR')}원
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="background: #1976d2; color: white;">
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">내역코드</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">세부코드</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">이름</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">단위</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">수량</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">재료비단가</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">재료비</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">노무비단가</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">노무비</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">경비단가</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">경비</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">합계단가</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">합계금액</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+
+        boqData.forEach((row, index) => {
+            const bgColor = index % 2 === 0 ? '#ffffff' : '#f9f9f9';
+            html += `
+                <tr style="background: ${bgColor};">
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.cost_code || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.cost_code_detail_code || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${row.cost_code_name || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.cost_code_unit || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.quantity.toFixed(2)}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.material_cost.toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${Math.round(row.material_amount).toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.labor_cost.toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${Math.round(row.labor_amount).toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.expense_cost.toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${Math.round(row.expense_amount).toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.total_cost.toLocaleString('ko-KR')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${Math.round(row.total_amount).toLocaleString('ko-KR')}</td>
+                </tr>
+            `;
+        });
+
+        // 합계 행
+        html += `
+                            <tr style="background: #e3f2fd; font-weight: bold;">
+                                <td colspan="4" style="padding: 10px; border: 1px solid #ddd; text-align: center;">합계</td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${totals.quantity.toFixed(2)}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd;"></td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #1976d2;">${Math.round(totals.material_amount).toLocaleString('ko-KR')}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd;"></td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #1976d2;">${Math.round(totals.labor_amount).toLocaleString('ko-KR')}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd;"></td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #1976d2;">${Math.round(totals.expense_amount).toLocaleString('ko-KR')}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd;"></td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f; font-size: 14px;">${Math.round(totals.total_amount).toLocaleString('ko-KR')}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div style="margin-top: 15px; padding: 12px; background: #f5f5f5; border-radius: 4px; font-size: 11px; color: #666;">
+                    <p style="margin: 0 0 3px 0;"><strong>집계 정보:</strong></p>
+                    <p style="margin: 0 0 3px 0;">• 집계 항목 수: ${boqData.length}개</p>
+                    <p style="margin: 0;">• 기준일까지 진행 중인 액티비티 수: ${window.ganttData.filter(t => new Date(t.start) <= cutoffDate).length}개</p>
+                </div>
+            </div>
+        `;
+
+        boqContainer.innerHTML = html;
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    /**
+     * ▼▼▼ [추가] 3D 뷰어 캔버스 크기 조정 ▼▼▼
+     */
+    function resizeViewer() {
+        const container = document.querySelector('.three-d-viewer-container');
+        if (!container || !renderer || !camera) {
+            console.warn('[3D Viewer] Cannot resize - container, renderer or camera not found');
+            return;
+        }
+
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        console.log('[3D Viewer] Resizing viewer:', { width, height });
+
+        // Update camera aspect ratio
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+
+        // Update renderer size
+        renderer.setSize(width, height);
+    }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 })();

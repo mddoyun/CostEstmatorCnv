@@ -17,13 +17,13 @@ async function loadMemberMarks() {
         if (!response.ok)
             throw new Error('일람부호 목록을 불러오는데 실패했습니다.');
 
-        loadedMemberMarks = await response.json();
-        renderMemberMarksTable(loadedMemberMarks);
+        window.loadedMemberMarks = await response.json();
+        renderMemberMarksTable(window.loadedMemberMarks);
 
         // 수량산출부재 탭의 일람부호 드롭다운도 채웁니다.
         const select = document.getElementById('qm-member-mark-assign-select');
         select.innerHTML = '<option value="">-- 일람부호 선택 --</option>'; // 초기화
-        loadedMemberMarks.forEach((mark) => {
+        window.loadedMemberMarks.forEach((mark) => {
             const option = document.createElement('option');
             option.value = mark.id;
             option.textContent = mark.mark;
@@ -132,7 +132,7 @@ async function handleMemberMarkActions(event) {
             showToast('이미 편집 중인 항목이 있습니다.', 'error');
             return;
         }
-        renderMemberMarksTable(loadedMemberMarks, markId);
+        renderMemberMarksTable(window.loadedMemberMarks, markId);
     } else if (target.classList.contains('delete-member-mark-btn')) {
         if (!confirm('이 일람부호를 정말 삭제하시겠습니까?')) return;
         try {
@@ -196,7 +196,7 @@ async function handleMemberMarkActions(event) {
             showToast(error.message, 'error');
         }
     } else if (target.classList.contains('cancel-member-mark-btn')) {
-        renderMemberMarksTable(loadedMemberMarks);
+        renderMemberMarksTable(window.loadedMemberMarks);
     }
 }
 

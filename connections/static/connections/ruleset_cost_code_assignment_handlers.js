@@ -44,35 +44,48 @@ async function handleCostCodeAssignmentRuleActions(event) {
             showToast('삭제 실패', 'error');
         }
     } else if (target.classList.contains('save-rule-btn')) {
-        let conditions, expressions;
-        try {
-            conditions = JSON.parse(
-                ruleRow.querySelector('.rule-conditions-input').value || '[]'
-            );
-        } catch (e) {
-            showToast('적용 조건이 유효한 JSON 형식이 아닙니다.', 'error');
+        // 조건 빌더에서 조건 수집
+        const conditionRows = ruleRow.querySelectorAll('.condition-row');
+        const conditions = [];
+        conditionRows.forEach(row => {
+            const property = row.querySelector('.condition-property').value;
+            const operator = row.querySelector('.condition-operator').value;
+            const value = row.querySelector('.condition-value').value;
+            if (property && operator && value) {
+                conditions.push({ property, operator, value });
+            }
+        });
+
+        // 공사코드 선택에서 cost_code_expressions 생성
+        const costCodeSelect = ruleRow.querySelector('.rule-cost-code-select');
+        const selectedCostCodeId = costCodeSelect.value;
+
+        if (!selectedCostCodeId) {
+            showToast('공사코드를 선택해주세요.', 'error');
             return;
         }
-        try {
-            expressions = JSON.parse(
-                ruleRow.querySelector('.rule-expression-input').value || '{}'
-            );
-        } catch (e) {
-            showToast(
-                'CostCode 표현식이 유효한 JSON 형식이 아닙니다.',
-                'error'
-            );
+
+        // 선택된 공사코드 정보 가져오기
+        const selectedCostCode = window.loadedCostCodes.find(cc => cc.id === selectedCostCodeId);
+        if (!selectedCostCode) {
+            showToast('선택된 공사코드를 찾을 수 없습니다.', 'error');
             return;
         }
+
+        const cost_code_expressions = {
+            code: selectedCostCode.code,
+            name: selectedCostCode.name
+        };
 
         const ruleData = {
             id: ruleId !== 'new' ? ruleId : null,
             name: ruleRow.querySelector('.rule-name-input').value,
+            description: ruleRow.querySelector('.rule-description-input')?.value || '',
             priority:
                 parseInt(ruleRow.querySelector('.rule-priority-input').value) ||
                 0,
             conditions: conditions,
-            cost_code_expressions: expressions,
+            cost_code_expressions: cost_code_expressions,
         };
 
         const response = await fetch(

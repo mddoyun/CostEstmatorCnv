@@ -17,13 +17,13 @@ async function loadCostCodes() {
         if (!response.ok)
             throw new Error('공사코드 목록을 불러오는데 실패했습니다.');
 
-        loadedCostCodes = await response.json();
-        renderCostCodesTable(loadedCostCodes);
+        window.loadedCostCodes = await response.json();
+        renderCostCodesTable(window.loadedCostCodes);
 
         // 수량산출부재 탭의 공사코드 드롭다운도 채웁니다.
         const select = document.getElementById('qm-cost-code-assign-select');
         select.innerHTML = '<option value="">-- 공사코드 선택 --</option>'; // 초기화
-        loadedCostCodes.forEach((code) => {
+        window.loadedCostCodes.forEach((code) => {
             const option = document.createElement('option');
             option.value = code.id;
             option.textContent = `${code.code} - ${code.name}`;
@@ -185,7 +185,7 @@ async function handleCostCodeActions(event) {
             showToast('이미 편집 중인 항목이 있습니다.', 'error');
             return;
         }
-        renderCostCodesTable(loadedCostCodes, codeId);
+        renderCostCodesTable(window.loadedCostCodes, codeId);
     }
 
     // --- 삭제 버튼 ---
@@ -260,7 +260,7 @@ async function handleCostCodeActions(event) {
 
     // --- 취소 버튼 ---
     else if (target.classList.contains('cancel-cost-code-btn')) {
-        renderCostCodesTable(loadedCostCodes);
+        renderCostCodesTable(window.loadedCostCodes);
     }
 }
 

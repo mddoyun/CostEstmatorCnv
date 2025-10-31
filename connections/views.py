@@ -4,6 +4,7 @@ from django.db.models import FloatField # FloatField 임포트 추가
 from django.shortcuts import render, get_object_or_404 # get_object_or_404 추가
 from django.http import JsonResponse, HttpResponse, FileResponse,Http404 # FileResponse 추가
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import json
@@ -53,7 +54,11 @@ from .models import (
     SpaceAssignmentRule, # <--- 이 부분을 추가해주세요.
     UnitPriceType, # <--- 추가 확인
     UnitPrice,     # <--- 추가 확인
-    SplitElement   # <--- 분할 객체 모델 추가
+    SplitElement,  # <--- 분할 객체 모델 추가
+    Activity,      # <--- 액티비티 모델 추가
+    ActivityDependency,  # <--- 액티비티 의존성 모델 추가
+    WorkCalendar,  # <--- 작업 캘린더 모델 추가
+    ActivityAssignmentRule  # <--- 액티비티 할당 룰셋 모델 추가
 
 )
 from tensorflow.keras import models # <<< models 임포트 추가
@@ -379,10 +384,11 @@ def evaluate_conditions(data_dict, conditions):
             return any(evaluate_conditions(data_dict, cond) for cond in conditions['OR'])
         
         # 개별 조건 처리
-        p = conditions.get('parameter')
+        # 'parameter' 또는 'property' 키를 모두 지원 (호환성)
+        p = conditions.get('parameter') or conditions.get('property')
         o = conditions.get('operator')
         v = conditions.get('value')
-        
+
         if not all([p, o, v is not None]): return False
 
         # ▼▼▼ [핵심 수정] 값 찾는 로직 개선 ▼▼▼
@@ -419,7 +425,7 @@ def evaluate_conditions(data_dict, conditions):
         elif o == 'not_exists': result = (actual_value is None)
 
         # ▼▼▼ [디버깅 추가] 조건 평가 결과 출력 ▼▼▼
-        # print(f"    - 조건 평가: '{p}' ({o}) '{v}' | 실제값: '{actual_v_str}' -> 결과: {result}")
+        print(f"    - 조건 평가: '{p}' ({o}) '{v}' | 실제값: '{actual_v_str}' -> 결과: {result}")
         # ▲▲▲ 위 코드는 너무 많은 로그를 유발할 수 있으므로, 필요 시에만 주석을 해제하여 사용하세요.
 
         return result
@@ -723,9 +729,28 @@ def quantity_members_api(request, project_id, member_id=None):
     # --- GET: 부재 목록 조회 ---
     if request.method == 'GET':
         # [수정] prefetch_related에 'space_classifications'를 추가합니다.
-        members = QuantityMember.objects.filter(project_id=project_id).select_related('classification_tag', 'member_mark').prefetch_related('cost_codes', 'space_classifications')
+        members = QuantityMember.objects.filter(project_id=project_id).select_related('classification_tag', 'member_mark', 'raw_element').prefetch_related('cost_codes', 'space_classifications')
         data = []
         for m in members:
+            # MemberMark 상세 정보
+            member_mark_properties = {}
+            member_mark_mark = None
+            if m.member_mark:
+                member_mark_mark = m.member_mark.mark
+                member_mark_properties = m.member_mark.properties or {}
+
+            # RawElement 상세 정보 (주요 속성만)
+            raw_element_data = {}
+            if m.raw_element:
+                raw_data = m.raw_element.raw_data or {}
+                # 중요 속성들만 추출
+                for key in ['Category', 'Family', 'Type', 'Level']:
+                    if key in raw_data:
+                        raw_element_data[key] = raw_data[key]
+                # Parameters도 포함
+                if 'Parameters' in raw_data:
+                    raw_element_data['Parameters'] = raw_data['Parameters']
+
             item = {
                 'id': str(m.id),
                 'name': m.name,
@@ -738,6 +763,10 @@ def quantity_members_api(request, project_id, member_id=None):
                 'raw_element_id': str(m.raw_element_id) if m.raw_element_id else None,
                 'cost_code_ids': [str(cc.id) for cc in m.cost_codes.all()],
                 'member_mark_id': str(m.member_mark.id) if m.member_mark else None,
+                # ▼▼▼ [추가] MemberMark와 RawElement 상세 정보 ▼▼▼
+                'member_mark_mark': member_mark_mark,
+                'member_mark_properties': member_mark_properties,
+                'raw_element': raw_element_data,
                 # ▼▼▼ [추가] 할당된 공간분류 정보를 추가합니다. ▼▼▼
                 'space_classification_ids': [str(sc.id) for sc in m.space_classifications.all()],
                 # ▼▼▼ [추가] 분할 관련 필드 추가 ▼▼▼
@@ -1208,6 +1237,164 @@ def space_assignment_rules_api(request, project_id, rule_id=None):
         except SpaceAssignmentRule.DoesNotExist:
             return JsonResponse({'status': 'error', 'message': '규칙을 찾을 수 없습니다.'}, status=404)
 
+
+@require_http_methods(["GET", "POST", "DELETE"])
+def activity_assignment_rules_api(request, project_id, rule_id=None):
+    """액티비티 할당 룰셋 API - CostItem에 Activity를 자동 할당"""
+    if request.method == 'GET':
+        rules = ActivityAssignmentRule.objects.filter(project_id=project_id)
+        rules_data = [{
+            'id': str(r.id),
+            'name': r.name,
+            'description': r.description,
+            'conditions': r.conditions,
+            'target_activity_id': str(r.target_activity.id),
+            'target_activity_code': r.target_activity.code,
+            'target_activity_name': r.target_activity.name,
+            'priority': r.priority
+        } for r in rules]
+        return JsonResponse(rules_data, safe=False)
+
+    elif request.method == 'POST':
+        data = json.loads(request.body)
+        try:
+            project = Project.objects.get(id=project_id)
+            target_activity_id = data.get('target_activity_id')
+
+            if not target_activity_id:
+                return JsonResponse({'status': 'error', 'message': '대상 액티비티를 선택해주세요.'}, status=400)
+
+            target_activity = Activity.objects.get(id=target_activity_id, project=project)
+
+            # 기존 규칙 업데이트 또는 새 규칙 생성
+            rule = ActivityAssignmentRule.objects.get(id=data.get('id'), project=project) if data.get('id') else ActivityAssignmentRule(project=project)
+            rule.name = data.get('name', '이름 없는 규칙')
+            rule.description = data.get('description', '')
+            rule.conditions = data.get('conditions', [])
+            rule.target_activity = target_activity
+            rule.priority = data.get('priority', 0)
+            rule.save()
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '액티비티 할당 규칙이 저장되었습니다.',
+                'rule_id': str(rule.id)
+            })
+        except Activity.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '해당 액티비티를 찾을 수 없습니다.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+    elif request.method == 'DELETE':
+        try:
+            ActivityAssignmentRule.objects.get(id=rule_id, project_id=project_id).delete()
+            return JsonResponse({'status': 'success', 'message': '규칙이 삭제되었습니다.'})
+        except ActivityAssignmentRule.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '규칙을 찾을 수 없습니다.'}, status=404)
+
+
+@require_http_methods(["POST"])
+def apply_activity_assignment_rules_view(request, project_id):
+    """액티비티 할당 룰셋을 CostItem에 일괄 적용"""
+    print("\n[DEBUG] --- '액티비티 할당 룰셋 일괄적용' API 요청 수신 ---")
+    try:
+        project = Project.objects.get(id=project_id)
+
+        # is_active=True인 CostItem만 가져오기
+        cost_items_qs = CostItem.objects.filter(
+            project=project,
+            is_active=True
+        ).select_related(
+            'cost_code',
+            'quantity_member',
+            'quantity_member__member_mark',
+            'quantity_member__raw_element'
+        ).prefetch_related('activities')
+
+        # ActivityAssignmentRule을 우선순위대로 가져오기
+        activity_rules = list(ActivityAssignmentRule.objects.filter(project=project).select_related('target_activity').order_by('priority'))
+
+        print(f"[DEBUG] {cost_items_qs.count()}개의 산출항목에 대해 액티비티 할당 룰셋 적용을 시작합니다.")
+        print(f"  > 적용할 액티비티 할당 룰셋: {len(activity_rules)}개")
+
+        updated_count = 0
+
+        # 각 CostItem에 대해 룰 적용
+        for cost_item in cost_items_qs.iterator(chunk_size=500):
+            # 다단계 속성 접근을 위한 combined_properties 구성
+            combined_properties = {}
+
+            # 1. CostItem 자체 속성 - 직접 접근: {property_name}
+            combined_properties['quantity'] = cost_item.quantity
+            if cost_item.description:
+                combined_properties['description'] = cost_item.description
+
+            # 2. CostCode 속성 - CC 접두사: CC.{property_name}
+            if cost_item.cost_code:
+                cc = cost_item.cost_code
+                combined_properties['CC.code'] = cc.code
+                combined_properties['CC.name'] = cc.name
+                if cc.category:
+                    combined_properties['CC.category'] = cc.category
+                if cc.spec:
+                    combined_properties['CC.spec'] = cc.spec
+                if cc.unit:
+                    combined_properties['CC.unit'] = cc.unit
+
+            # 3. QuantityMember 속성 - QM 접두사: QM.{property_name}
+            if cost_item.quantity_member:
+                qm = cost_item.quantity_member
+                combined_properties['QM.name'] = qm.name
+                if qm.properties:
+                    for k, v in qm.properties.items():
+                        combined_properties[f'QM.{k}'] = v
+
+                # 4. MemberMark 속성 - MM 접두사: MM.{property_name}
+                if qm.member_mark:
+                    mm = qm.member_mark
+                    combined_properties['MM.mark'] = mm.mark
+                    if mm.description:
+                        combined_properties['MM.description'] = mm.description
+                    if mm.properties:
+                        for k, v in mm.properties.items():
+                            combined_properties[f'MM.{k}'] = v
+
+                # 5. RawElement (BIM 원본) 속성 - RE 접두사: RE.{property_name}
+                if qm.raw_element and qm.raw_element.raw_data:
+                    raw_data = qm.raw_element.raw_data
+                    for k, v in raw_data.items():
+                        if not isinstance(v, (dict, list)):
+                            combined_properties[f'RE.{k}'] = v
+                    # TypeParameters와 Parameters도 포함
+                    for k, v in raw_data.get('TypeParameters', {}).items():
+                        combined_properties[f'RE.TypeParameters.{k}'] = v
+                    for k, v in raw_data.get('Parameters', {}).items():
+                        combined_properties[f'RE.Parameters.{k}'] = v
+
+            # 룰셋 적용 (조건에 맞는 모든 룰을 적용)
+            for rule in activity_rules:
+                if evaluate_conditions(combined_properties, rule.conditions):
+                    # 이미 할당되어 있지 않으면 추가
+                    if not cost_item.activities.filter(id=rule.target_activity.id).exists():
+                        cost_item.activities.add(rule.target_activity)
+                        updated_count += 1
+                        print(f"[DEBUG] CostItem {cost_item.id}에 Activity '{rule.target_activity.code}' 할당")
+                    # break 제거: 모든 매칭되는 룰을 적용
+
+        message = f"액티비티 할당 완료: {updated_count}개의 산출항목에 액티비티가 할당되었습니다."
+        print(f"[DEBUG] {message}")
+        return JsonResponse({'status': 'success', 'message': message, 'updated_count': updated_count})
+
+    except Project.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        import traceback
+        error_msg = f'오류 발생: {str(e)}'
+        print(f"[ERROR] {error_msg}")
+        print(traceback.format_exc())
+        return JsonResponse({'status': 'error', 'message': error_msg, 'details': traceback.format_exc()}, status=500)
+
+
 def evaluate_expression_for_cost_item(expression, quantity_member):
     """
     (개선된 버전)
@@ -1288,15 +1475,17 @@ def evaluate_expression_for_cost_item(expression, quantity_member):
 
 # connections/views.py 파일에서 cost_items_api 함수를 찾아 아래 코드로 교체하세요.
 
-@require_http_methods(["GET", "POST", "PUT", "DELETE"])
+@require_http_methods(["GET", "POST", "PUT", "PATCH", "DELETE"])
+@csrf_exempt
 def cost_items_api(request, project_id, item_id=None):
+    print(f"[DEBUG][cost_items_api] ENTRY: method={request.method}, project_id={project_id}, item_id={item_id}")
     if request.method == 'GET':
         items = CostItem.objects.filter(project_id=project_id).select_related(
-            'cost_code', 
-            'quantity_member__raw_element', 
+            'cost_code',
+            'quantity_member__raw_element',
             'quantity_member__member_mark'
-        )
-        
+        ).prefetch_related('activities')  # ▼▼▼ [수정] ManyToManyField는 prefetch_related 사용 ▼▼▼
+
         data = []
         for item in items:
             item_data = {
@@ -1304,11 +1493,17 @@ def cost_items_api(request, project_id, item_id=None):
                 'quantity': item.quantity,
                 'quantity_mapping_expression': item.quantity_mapping_expression,
                 'cost_code_name': f"{item.cost_code.code} - {item.cost_code.name}" if item.cost_code else "미지정",
+                'cost_code': item.cost_code.code if item.cost_code else None,  # ▼▼▼ [추가] 공사코드 ▼▼▼
+                'cost_code_detail_code': item.cost_code.detail_code if item.cost_code else None,  # ▼▼▼ [추가] 상세코드/이름 ▼▼▼
+                'cost_code_unit': item.cost_code.unit if item.cost_code else None,  # ▼▼▼ [추가] 단위 ▼▼▼
                 'quantity_member_id': str(item.quantity_member_id) if item.quantity_member_id else None,
+                'quantity_member': str(item.quantity_member_id) if item.quantity_member_id else None,  # ▼▼▼ [추가] quantity_member FK ▼▼▼
                 'description': item.description,
+                'activities': [str(act.id) for act in item.activities.all()],  # ▼▼▼ [수정] 복수 activities 리스트로 변경 ▼▼▼
                 'quantity_member_properties': {},
                 'member_mark_properties': {},
                 'raw_element_properties': {},
+                'raw_element_id': str(item.quantity_member.raw_element_id) if item.quantity_member and item.quantity_member.raw_element_id else None,  # ▼▼▼ [추가] 3D viewer 연동용 ▼▼▼
                 # ▼▼▼ [추가] 분할 관련 필드 추가 ▼▼▼
                 'is_active': item.is_active,
                 'split_element_id': str(item.split_element_id) if item.split_element_id else None,
@@ -1390,6 +1585,51 @@ def cost_items_api(request, project_id, item_id=None):
         except CostItem.DoesNotExist:
             return JsonResponse({'status': 'error', 'message': '해당 산출항목을 찾을 수 없습니다.'}, status=404)
         except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+    elif request.method == 'PATCH':
+        # PATCH: 부분 업데이트 (예: activity 필드만 업데이트)
+        print(f"[DEBUG][cost_items_api] PATCH request received: project_id={project_id}, item_id={item_id}")
+        if not item_id:
+            print(f"[ERROR][cost_items_api] No item_id provided")
+            return JsonResponse({'status': 'error', 'message': 'Item ID가 필요합니다.'}, status=400)
+        try:
+            data = json.loads(request.body)
+            print(f"[DEBUG][cost_items_api] PATCH data: {data}")
+            item = CostItem.objects.get(id=item_id, project_id=project_id)
+            print(f"[DEBUG][cost_items_api] Found CostItem: {item.id}")
+
+            # ▼▼▼ [수정] activities 필드 업데이트 (복수 할당 지원) ▼▼▼
+            if 'activities' in data:
+                activity_ids = data['activities']  # 리스트로 전달됨
+                if activity_ids and isinstance(activity_ids, list):
+                    # 모든 activity ID가 유효한지 확인
+                    activities = Activity.objects.filter(id__in=activity_ids, project_id=project_id)
+                    if activities.count() != len(activity_ids):
+                        return JsonResponse({'status': 'error', 'message': '일부 액티비티를 찾을 수 없습니다.'}, status=404)
+                    # ManyToMany 관계 설정
+                    item.activities.set(activities)
+                    print(f"[DEBUG][cost_items_api] PATCH: Set {activities.count()} activities")
+                else:
+                    # 빈 리스트이거나 None인 경우 모두 제거
+                    item.activities.clear()
+                    print(f"[DEBUG][cost_items_api] PATCH: Cleared all activities")
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            # 다른 필드들도 필요시 업데이트
+            if 'description' in data: item.description = data['description']
+            if 'quantity' in data: item.quantity = data['quantity']
+
+            item.save()
+            print(f"[DEBUG][cost_items_api] PATCH: Item saved successfully")
+            return JsonResponse({'status': 'success', 'message': '산출항목이 업데이트되었습니다.'})
+        except CostItem.DoesNotExist:
+            print(f"[ERROR][cost_items_api] PATCH: CostItem not found")
+            return JsonResponse({'status': 'error', 'message': '해당 산출항목을 찾을 수 없습니다.'}, status=404)
+        except Exception as e:
+            print(f"[ERROR][cost_items_api] PATCH Exception: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
     elif request.method == 'DELETE':
@@ -2679,6 +2919,57 @@ def import_space_assignment_rules(request, project_id):
     except Exception as e: return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 
+def export_activity_assignment_rules(request, project_id):
+    """액티비티 할당 룰셋 내보내기"""
+    project = Project.objects.get(id=project_id)
+    rules = ActivityAssignmentRule.objects.filter(project=project)
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{project.name}_activity_assignment_rules.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['name', 'description', 'priority', 'conditions', 'target_activity_code'])
+    for rule in rules:
+        writer.writerow([
+            rule.name,
+            rule.description,
+            rule.priority,
+            json.dumps(rule.conditions, ensure_ascii=False),
+            rule.target_activity.code
+        ])
+    return response
+
+
+@require_http_methods(["POST"])
+def import_activity_assignment_rules(request, project_id):
+    """액티비티 할당 룰셋 가져오기"""
+    project = Project.objects.get(id=project_id)
+    csv_file = request.FILES.get('csv_file')
+    if not csv_file:
+        return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+    try:
+        ActivityAssignmentRule.objects.filter(project=project).delete()
+        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        for row in reader:
+            activity_code = row.get('target_activity_code')
+            try:
+                target_activity = Activity.objects.get(project=project, code=activity_code)
+                ActivityAssignmentRule.objects.create(
+                    project=project,
+                    name=row.get('name', ''),
+                    description=row.get('description', ''),
+                    priority=int(row.get('priority', 0)),
+                    conditions=json.loads(row.get('conditions', '[]')),
+                    target_activity=target_activity
+                )
+            except Activity.DoesNotExist:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'액티비티 코드 "{activity_code}"를 찾을 수 없습니다. 먼저 액티비티를 생성해주세요.'
+                }, status=400)
+        return JsonResponse({'status': 'success', 'message': '액티비티 할당 룰셋을 성공적으로 가져왔습니다.'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
+
+
 # --- CostCode (공사코드) ---
 @require_http_methods(["GET"])
 def export_cost_codes(request, project_id):
@@ -3498,6 +3789,28 @@ def unit_price_types_api(request, project_id, type_id=None):
             print(f"[ERROR][UnitPriceType API] DELETE Error: {e}")
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
+
+# ▼▼▼ [추가] 프로젝트의 모든 단가 조회 API ▼▼▼
+@require_http_methods(["GET"])
+def all_unit_prices_api(request, project_id):
+    """프로젝트의 모든 단가(UnitPrice) 조회 API"""
+    try:
+        prices = UnitPrice.objects.filter(project_id=project_id).select_related('cost_code', 'unit_price_type')
+        data = [{
+            'id': str(p.id),
+            'cost_code_id': str(p.cost_code_id),
+            'cost_code': p.cost_code.code if p.cost_code else None,
+            'unit_price_type_id': str(p.unit_price_type.id),
+            'unit_price_type_name': p.unit_price_type.name,
+            'material_cost': str(p.material_cost),
+            'labor_cost': str(p.labor_cost),
+            'expense_cost': str(p.expense_cost),
+            'total_cost': str(p.total_cost),
+        } for p in prices]
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+# ▲▲▲ [추가] 여기까지 ▲▲▲
 
 # ▼▼▼ [수정] 공사코드별 단가(UnitPrice) API (Decimal 처리 및 디버깅 추가) ▼▼▼
 @require_http_methods(["GET", "POST", "PUT", "DELETE"])
@@ -4632,3 +4945,406 @@ def delete_all_split_elements(request, project_id):
             'status': 'error',
             'message': f'분할 객체 삭제 중 오류 발생: {str(e)}'
         }, status=500)
+
+
+# =====================================================================
+# Activity (액티비티/공정) 관련 API
+# =====================================================================
+
+@csrf_exempt
+def activities_api(request, project_id=None, activity_id=None):
+    """
+    액티비티 CRUD API
+    GET /api/activities/<project_id>/ - 프로젝트의 모든 액티비티 조회
+    POST /api/activities/<project_id>/ - 새 액티비티 생성
+    PUT /api/activities/<activity_id>/ - 액티비티 수정
+    DELETE /api/activities/<activity_id>/ - 액티비티 삭제
+    """
+    from .models import Activity, Project
+    import json
+
+    try:
+        # GET: 프로젝트의 모든 액티비티 조회
+        if request.method == 'GET' and project_id:
+            project = Project.objects.get(pk=project_id)
+            activities = Activity.objects.filter(project=project).order_by('wbs_code', 'code')
+
+            activities_data = []
+            for activity in activities:
+                activities_data.append({
+                    'id': str(activity.id),
+                    'code': activity.code,
+                    'name': activity.name,
+                    'description': activity.description,
+                    'duration_per_unit': float(activity.duration_per_unit),
+                    'responsible_person': activity.responsible_person,
+                    'contractor': activity.contractor,
+                    'location': activity.location,
+                    'notes': activity.notes,
+                    'wbs_code': activity.wbs_code,
+                    'parent_activity': str(activity.parent_activity.id) if activity.parent_activity else None,
+                    'work_calendar': str(activity.work_calendar.id) if activity.work_calendar else None,  # ▼▼▼ [추가] 작업 캘린더 ▼▼▼
+                })
+
+            return JsonResponse(activities_data, safe=False)
+
+        # POST: 새 액티비티 생성
+        elif request.method == 'POST' and project_id:
+            project = Project.objects.get(pk=project_id)
+            data = json.loads(request.body)
+
+            activity = Activity.objects.create(
+                project=project,
+                code=data.get('code'),
+                name=data.get('name'),
+                description=data.get('description', ''),
+                duration_per_unit=data.get('duration_per_unit', 1.0),
+                responsible_person=data.get('responsible_person', ''),
+                contractor=data.get('contractor', ''),
+                location=data.get('location', ''),
+                notes=data.get('notes', ''),
+                wbs_code=data.get('wbs_code', ''),
+            )
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '액티비티가 추가되었습니다.',
+                'activity_id': str(activity.id)
+            })
+
+        # PUT: 액티비티 수정
+        elif request.method == 'PUT' and activity_id:
+            activity = Activity.objects.get(pk=activity_id)
+            data = json.loads(request.body)
+
+            activity.code = data.get('code', activity.code)
+            activity.name = data.get('name', activity.name)
+            activity.description = data.get('description', activity.description)
+            activity.duration_per_unit = data.get('duration_per_unit', activity.duration_per_unit)
+            activity.responsible_person = data.get('responsible_person', activity.responsible_person)
+            activity.contractor = data.get('contractor', activity.contractor)
+            activity.location = data.get('location', activity.location)
+            activity.notes = data.get('notes', activity.notes)
+            activity.wbs_code = data.get('wbs_code', activity.wbs_code)
+
+            # ▼▼▼ [추가] 작업 캘린더 업데이트 지원 ▼▼▼
+            if 'work_calendar' in data:
+                calendar_id = data.get('work_calendar')
+                if calendar_id:
+                    try:
+                        calendar = WorkCalendar.objects.get(pk=calendar_id, project=activity.project)
+                        activity.work_calendar = calendar
+                    except WorkCalendar.DoesNotExist:
+                        pass  # 캘린더를 찾지 못하면 무시
+                else:
+                    activity.work_calendar = None  # 캘린더 제거 (메인 캘린더 사용)
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+            activity.save()
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '액티비티가 수정되었습니다.'
+            })
+
+        # DELETE: 액티비티 삭제
+        elif request.method == 'DELETE' and activity_id:
+            activity = Activity.objects.get(pk=activity_id)
+            activity.delete()
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '액티비티가 삭제되었습니다.'
+            })
+
+        else:
+            return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    except Project.DoesNotExist:
+        return JsonResponse({'error': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Activity.DoesNotExist:
+        return JsonResponse({'error': '액티비티를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        print(f"[ERROR][activities_api] {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def activity_dependencies_api(request, project_id=None, dependency_id=None):
+    """
+    선후행 관계 CRUD API
+    GET /api/activity-dependencies/<project_id>/ - 프로젝트의 모든 선후행 관계 조회
+    POST /api/activity-dependencies/<project_id>/ - 새 선후행 관계 생성
+    PUT /api/activity-dependencies/<dependency_id>/ - 선후행 관계 수정
+    DELETE /api/activity-dependencies/<dependency_id>/ - 선후행 관계 삭제
+    """
+    from .models import ActivityDependency, Activity, Project
+    import json
+
+    try:
+        # GET: 프로젝트의 모든 선후행 관계 조회
+        if request.method == 'GET' and project_id:
+            project = Project.objects.get(pk=project_id)
+            dependencies = ActivityDependency.objects.filter(project=project)
+
+            dependencies_data = []
+            for dep in dependencies:
+                dependencies_data.append({
+                    'id': str(dep.id),
+                    'predecessor_activity': str(dep.predecessor_activity.id),
+                    'successor_activity': str(dep.successor_activity.id),
+                    'dependency_type': dep.dependency_type,
+                    'lag_days': float(dep.lag_days),
+                    'description': dep.description,
+                })
+
+            return JsonResponse(dependencies_data, safe=False)
+
+        # POST: 새 선후행 관계 생성
+        elif request.method == 'POST' and project_id:
+            project = Project.objects.get(pk=project_id)
+            data = json.loads(request.body)
+
+            predecessor = Activity.objects.get(pk=data['predecessor_activity'])
+            successor = Activity.objects.get(pk=data['successor_activity'])
+
+            # 순환 참조 체크
+            if predecessor == successor:
+                return JsonResponse({
+                    'error': '공정이 자기 자신을 선행/후행 공정으로 가질 수 없습니다.'
+                }, status=400)
+
+            dependency = ActivityDependency.objects.create(
+                project=project,
+                predecessor_activity=predecessor,
+                successor_activity=successor,
+                dependency_type=data.get('dependency_type', 'FS'),
+                lag_days=data.get('lag_days', 0),
+                description=data.get('description', ''),
+            )
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '선후행 관계가 추가되었습니다.',
+                'dependency_id': str(dependency.id)
+            })
+
+        # PUT: 선후행 관계 수정
+        elif request.method == 'PUT' and dependency_id:
+            dependency = ActivityDependency.objects.get(pk=dependency_id)
+            data = json.loads(request.body)
+
+            if 'predecessor_activity' in data:
+                dependency.predecessor_activity = Activity.objects.get(pk=data['predecessor_activity'])
+            if 'successor_activity' in data:
+                dependency.successor_activity = Activity.objects.get(pk=data['successor_activity'])
+
+            dependency.dependency_type = data.get('dependency_type', dependency.dependency_type)
+            dependency.lag_days = data.get('lag_days', dependency.lag_days)
+            dependency.description = data.get('description', dependency.description)
+
+            dependency.save()
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '선후행 관계가 수정되었습니다.'
+            })
+
+        # DELETE: 선후행 관계 삭제
+        elif request.method == 'DELETE' and dependency_id:
+            dependency = ActivityDependency.objects.get(pk=dependency_id)
+            dependency.delete()
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '선후행 관계가 삭제되었습니다.'
+            })
+
+        else:
+            return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    except Project.DoesNotExist:
+        return JsonResponse({'error': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Activity.DoesNotExist:
+        return JsonResponse({'error': '액티비티를 찾을 수 없습니다.'}, status=404)
+    except ActivityDependency.DoesNotExist:
+        return JsonResponse({'error': '선후행 관계를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        print(f"[ERROR][activity_dependencies_api] {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def work_calendars_api(request, project_id, calendar_id=None):
+    """
+    작업 캘린더 API (여러 캘린더 관리)
+    GET: 프로젝트의 모든 작업 캘린더 조회 (calendar_id 없으면 리스트, 있으면 특정 캘린더)
+    POST: 새 작업 캘린더 생성
+    PUT: 작업 캘린더 수정
+    DELETE: 작업 캘린더 삭제
+    """
+    try:
+        project = Project.objects.get(pk=project_id)
+
+        # GET: 캘린더 조회
+        if request.method == 'GET':
+            if calendar_id:
+                # 특정 캘린더 조회
+                calendar = WorkCalendar.objects.get(pk=calendar_id, project=project)
+                return JsonResponse({
+                    'status': 'success',
+                    'calendar': {
+                        'id': str(calendar.id),
+                        'name': calendar.name,
+                        'is_main': calendar.is_main,
+                        'working_days': calendar.working_days,
+                        'holidays': calendar.holidays,
+                        'special_working_days': calendar.special_working_days,
+                        'created_at': calendar.created_at.isoformat(),
+                        'updated_at': calendar.updated_at.isoformat()
+                    }
+                })
+            else:
+                # 모든 캘린더 리스트
+                calendars = WorkCalendar.objects.filter(project=project)
+                calendars_data = [{
+                    'id': str(cal.id),
+                    'name': cal.name,
+                    'is_main': cal.is_main,
+                    'working_days': cal.working_days,
+                    'holidays': cal.holidays,
+                    'special_working_days': cal.special_working_days,
+                    'created_at': cal.created_at.isoformat(),
+                    'updated_at': cal.updated_at.isoformat()
+                } for cal in calendars]
+
+                return JsonResponse({
+                    'status': 'success',
+                    'calendars': calendars_data
+                })
+
+        # POST: 새 캘린더 생성
+        elif request.method == 'POST':
+            data = json.loads(request.body)
+
+            # ▼▼▼ [추가] 중복 이름 처리: 같은 이름이 있으면 번호 붙이기 ▼▼▼
+            base_name = data.get('name', '새 캘린더')
+            name = base_name
+            counter = 1
+
+            while WorkCalendar.objects.filter(project=project, name=name).exists():
+                name = f"{base_name} ({counter})"
+                counter += 1
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+            calendar = WorkCalendar.objects.create(
+                project=project,
+                name=name,  # ▼▼▼ [수정] 고유한 이름 사용 ▼▼▼
+                is_main=data.get('is_main', False),
+                working_days=data.get('working_days', {
+                    'mon': True, 'tue': True, 'wed': True, 'thu': True,
+                    'fri': True, 'sat': True, 'sun': False
+                }),
+                holidays=data.get('holidays', []),
+                special_working_days=data.get('special_working_days', [])
+            )
+
+            print(f"[INFO][work_calendars_api] 작업 캘린더 생성됨: {calendar.name}, project_id={project_id}")
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '작업 캘린더가 생성되었습니다.',
+                'calendar': {
+                    'id': str(calendar.id),
+                    'name': calendar.name,
+                    'is_main': calendar.is_main,
+                    'working_days': calendar.working_days,
+                    'holidays': calendar.holidays,
+                    'special_working_days': calendar.special_working_days
+                }
+            })
+
+        # PUT: 캘린더 수정
+        elif request.method == 'PUT':
+            if not calendar_id:
+                return JsonResponse({'error': '캘린더 ID가 필요합니다.'}, status=400)
+
+            calendar = WorkCalendar.objects.get(pk=calendar_id, project=project)
+            data = json.loads(request.body)
+
+            # ▼▼▼ [추가] 이름 변경 시 중복 체크 ▼▼▼
+            if 'name' in data:
+                new_name = data['name']
+                # 같은 이름의 다른 캘린더가 있는지 확인 (자기 자신은 제외)
+                if WorkCalendar.objects.filter(project=project, name=new_name).exclude(pk=calendar_id).exists():
+                    # 중복이 있으면 번호 붙이기
+                    base_name = new_name
+                    counter = 1
+                    while WorkCalendar.objects.filter(project=project, name=new_name).exclude(pk=calendar_id).exists():
+                        new_name = f"{base_name} ({counter})"
+                        counter += 1
+                calendar.name = new_name
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+            # 필드 업데이트
+            if 'is_main' in data:
+                calendar.is_main = data['is_main']
+            if 'working_days' in data:
+                calendar.working_days = data['working_days']
+            if 'holidays' in data:
+                calendar.holidays = data['holidays']
+            if 'special_working_days' in data:
+                calendar.special_working_days = data['special_working_days']
+
+            calendar.save()
+
+            print(f"[INFO][work_calendars_api] 작업 캘린더 수정됨: {calendar.name}")
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '작업 캘린더가 수정되었습니다.',
+                'calendar': {
+                    'id': str(calendar.id),
+                    'name': calendar.name,
+                    'is_main': calendar.is_main,
+                    'working_days': calendar.working_days,
+                    'holidays': calendar.holidays,
+                    'special_working_days': calendar.special_working_days
+                }
+            })
+
+        # DELETE: 캘린더 삭제
+        elif request.method == 'DELETE':
+            if not calendar_id:
+                return JsonResponse({'error': '캘린더 ID가 필요합니다.'}, status=400)
+
+            calendar = WorkCalendar.objects.get(pk=calendar_id, project=project)
+
+            # 메인 캘린더는 삭제 불가
+            if calendar.is_main:
+                return JsonResponse({'error': '메인 캘린더는 삭제할 수 없습니다.'}, status=400)
+
+            calendar_name = calendar.name
+            calendar.delete()
+
+            print(f"[INFO][work_calendars_api] 작업 캘린더 삭제됨: {calendar_name}")
+
+            return JsonResponse({
+                'status': 'success',
+                'message': '작업 캘린더가 삭제되었습니다.'
+            })
+
+        else:
+            return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+    except Project.DoesNotExist:
+        return JsonResponse({'error': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except WorkCalendar.DoesNotExist:
+        return JsonResponse({'error': '작업 캘린더를 찾을 수 없습니다.'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        print(f"[ERROR][work_calendars_api] {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)

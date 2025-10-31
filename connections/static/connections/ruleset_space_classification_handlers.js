@@ -55,14 +55,20 @@ async function handleSpaceClassificationRuleActions(event) {
             showToast('삭제 실패', 'error');
         }
     } else if (target.classList.contains('save-rule-btn')) {
-        let bim_object_filter;
-        try {
-            bim_object_filter = JSON.parse(
-                ruleRow.querySelector('.rule-bim-filter-input').value || '{}'
-            );
-        } catch (e) {
-            showToast('BIM 객체 필터가 유효한 JSON 형식이 아닙니다.', 'error');
-            return;
+        // 조건 빌더에서 BIM 객체 필터 수집
+        const conditionRows = ruleRow.querySelectorAll('.condition-row');
+        let bim_object_filter = {};
+
+        if (conditionRows.length > 0) {
+            // 첫 번째 조건만 사용 (단일 필터 객체로 저장)
+            const firstRow = conditionRows[0];
+            const parameter = firstRow.querySelector('.condition-parameter').value;
+            const operator = firstRow.querySelector('.condition-operator').value;
+            const value = firstRow.querySelector('.condition-value').value;
+
+            if (parameter && operator && value) {
+                bim_object_filter = { parameter, operator, value };
+            }
         }
 
         const ruleData = {
@@ -82,8 +88,8 @@ async function handleSpaceClassificationRuleActions(event) {
         };
 
         const response = await fetch(
-            `/connections/api/rules/space-classification/${currentProjectId}/
-`,            {
+            `/connections/api/rules/space-classification/${currentProjectId}/`,
+            {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

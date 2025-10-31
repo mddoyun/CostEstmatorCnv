@@ -38,27 +38,26 @@ async function handleClassificationRuleActions(event) {
             '.rule-description-input'
         ).value;
         const target_tag_id = ruleRow.querySelector('.rule-tag-select').value;
-        const conditionsStr = ruleRow.querySelector(
-            '.rule-conditions-input'
-        ).value;
 
         if (!target_tag_id) {
             showToast('대상 분류를 선택하세요.', 'error');
             return;
         }
 
-        let conditions;
-        try {
-            conditions = JSON.parse(conditionsStr || '[]'); // 비어있으면 빈 배열로 처리
-            if (!Array.isArray(conditions)) throw new Error();
-        } catch (e) {
-            showToast('조건이 유효한 JSON 배열 형식이 아닙니다.', 'error');
-            return;
-        }
+        // 조건 빌더에서 조건 수집
+        const conditionRows = ruleRow.querySelectorAll('.condition-row');
+        const conditions = [];
+        conditionRows.forEach(row => {
+            const parameter = row.querySelector('.condition-parameter').value;
+            const operator = row.querySelector('.condition-operator').value;
+            const value = row.querySelector('.condition-value').value;
+            if (parameter && operator && value) {
+                conditions.push({ parameter, operator, value });
+            }
+        });
 
         const ruleData = {
             id: ruleId !== 'new' ? parseInt(ruleId) : null,
-            // ▼▼▼ [핵심 수정] parseInt()를 제거하여 ID를 문자열 그대로 전달합니다. ▼▼▼
             target_tag_id: target_tag_id,
             conditions: conditions,
             priority: parseInt(priority) || 0,

@@ -56,24 +56,28 @@ async function handleCostCodeRuleActions(event) {
             showToast(error.message, 'error');
         }
     } else if (target.classList.contains('save-rule-btn')) {
-        let conditions, quantity_mapping_script;
-        try {
-            conditions = JSON.parse(
-                ruleRow.querySelector('.rule-conditions-input').value || '[]'
-            );
-        } catch (e) {
-            showToast('적용 조건이 유효한 JSON 형식이 아닙니다.', 'error');
-            return;
-        }
-        try {
-            quantity_mapping_script = JSON.parse(
-                ruleRow.querySelector('.rule-quantity-mapping-input').value ||
-                    '{}'
-            );
-        } catch (e) {
-            showToast('수량 계산식이 유효한 JSON 형식이 아닙니다.', 'error');
-            return;
-        }
+        // 조건 빌더에서 조건 수집
+        const conditionRows = ruleRow.querySelectorAll('.condition-row');
+        const conditions = [];
+        conditionRows.forEach(row => {
+            const property = row.querySelector('.condition-property').value;
+            const operator = row.querySelector('.condition-operator').value;
+            const value = row.querySelector('.condition-value').value;
+            if (property && operator && value) {
+                conditions.push({ property, operator, value });
+            }
+        });
+
+        // 맵핑 빌더에서 수량 계산식 수집
+        const mappingRows = ruleRow.querySelectorAll('.mapping-row');
+        const quantity_mapping_script = {};
+        mappingRows.forEach(row => {
+            const key = row.querySelector('.mapping-key-input').value.trim();
+            const value = row.querySelector('.mapping-value-input').value.trim();
+            if (key && value) {
+                quantity_mapping_script[key] = value;
+            }
+        });
 
         const ruleData = {
             id: ruleId !== 'new' ? ruleId : null,

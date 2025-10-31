@@ -13,3 +13,13 @@ function getCookie(name) {
 let csrftoken =
     document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
     getCookie('csrftoken');
+
+// CSRF 토큰을 반환하는 함수
+function getCSRFToken() {
+    if (!csrftoken) {
+        csrftoken =
+            document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
+            getCookie('csrftoken');
+    }
+    return csrftoken;
+}

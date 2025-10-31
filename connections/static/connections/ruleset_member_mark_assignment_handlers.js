@@ -44,25 +44,43 @@ async function handleMemberMarkAssignmentRuleActions(event) {
             showToast('삭제 실패', 'error');
         }
     } else if (target.classList.contains('save-rule-btn')) {
-        let conditions;
-        try {
-            conditions = JSON.parse(
-                ruleRow.querySelector('.rule-conditions-input').value || '[]'
-            );
-        } catch (e) {
-            showToast('적용 조건이 유효한 JSON 형식이 아닙니다.', 'error');
+        // 조건 빌더에서 조건 수집
+        const conditionRows = ruleRow.querySelectorAll('.condition-row');
+        const conditions = [];
+        conditionRows.forEach(row => {
+            const property = row.querySelector('.condition-property').value;
+            const operator = row.querySelector('.condition-operator').value;
+            const value = row.querySelector('.condition-value').value;
+            if (property && operator && value) {
+                conditions.push({ property, operator, value });
+            }
+        });
+
+        // 일람부호 선택에서 mark_expression 생성
+        const memberMarkSelect = ruleRow.querySelector('.rule-member-mark-select');
+        const selectedMemberMarkId = memberMarkSelect.value;
+
+        if (!selectedMemberMarkId) {
+            showToast('일람부호를 선택해주세요.', 'error');
+            return;
+        }
+
+        // 선택된 일람부호 정보 가져오기
+        const selectedMemberMark = window.loadedMemberMarks.find(mm => mm.id === selectedMemberMarkId);
+        if (!selectedMemberMark) {
+            showToast('선택된 일람부호를 찾을 수 없습니다.', 'error');
             return;
         }
 
         const ruleData = {
             id: ruleId !== 'new' ? ruleId : null,
             name: ruleRow.querySelector('.rule-name-input').value,
+            description: ruleRow.querySelector('.rule-description-input')?.value || '',
             priority:
                 parseInt(ruleRow.querySelector('.rule-priority-input').value) ||
                 0,
             conditions: conditions,
-            mark_expression: ruleRow.querySelector('.rule-expression-input')
-                .value,
+            mark_expression: selectedMemberMark.mark,
         };
 
         const response = await fetch(

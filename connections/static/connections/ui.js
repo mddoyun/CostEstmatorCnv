@@ -581,75 +581,75 @@ function renderClassificationRulesetTable(rules, editingRuleId = null) {
         <table class="ruleset-table">
             <thead>
                 <tr>
-                    <th style="width: 10%;">우선순위</th>
-                    <th style="width: 25%;">설명</th>
+                    <th style="width: 8%;">우선순위</th>
+                    <th style="width: 20%;">설명</th>
                     <th style="width: 15%;">대상 분류</th>
-                    <th>조건 (JSON 형식)</th>
-                    <th style="width: 15%;">작업</th>
+                    <th style="width: 40%;">적용 조건</th>
+                    <th style="width: 17%;">작업</th>
                 </tr>
             </thead>
             <tbody>
     `;
 
+    const renderRow = (rule) => {
+        if (rule.id === editingRuleId) {
+            // 편집 모드
+            // 조건 빌더 UI 생성
+            const conditions = rule.conditions || [];
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 300px; overflow-y: auto;">';
+
+            conditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRowForRE(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
+            return `<tr class="rule-edit-row" data-rule-id="${rule.id}">
+                <td><input type="number" class="rule-priority-input" value="${rule.priority || 0}" style="width: 60px;"></td>
+                <td><input type="text" class="rule-description-input" value="${rule.description || ''}" placeholder="예: 모든 RC벽 분류"></td>
+                <td><select class="rule-tag-select" style="width: 100%;">${rule.id === 'new' ? '<option value="">-- 분류 선택 --</option>' : ''}${tagOptions}</select></td>
+                <td>${conditionsHtml}</td>
+                <td>
+                    <button class="save-rule-btn">💾 저장</button>
+                    <button class="cancel-edit-btn">❌ 취소</button>
+                </td>
+            </tr>`;
+        }
+
+        // 읽기 전용 모드
+        let conditionsDisplay = '';
+        if (rule.conditions && rule.conditions.length > 0) {
+            conditionsDisplay = rule.conditions.map(c =>
+                `${c.parameter} ${c.operator} "${c.value}"`
+            ).join('<br>');
+        } else {
+            conditionsDisplay = '<em>조건 없음</em>';
+        }
+
+        return `<tr data-rule-id="${rule.id}">
+            <td>${rule.priority}</td>
+            <td>${rule.description}</td>
+            <td>${rule.target_tag_name}</td>
+            <td>${conditionsDisplay}</td>
+            <td>
+                <button class="edit-rule-btn">✏️ 수정</button>
+                <button class="delete-rule-btn">🗑️ 삭제</button>
+            </td>
+        </tr>`;
+    };
+
     // 기존 규칙들을 순회하며 행 생성
     rules.forEach((rule) => {
-        if (rule.id === editingRuleId) {
-            // 편집 모드 행
-            tableHtml += `
-                <tr class="rule-edit-row" data-rule-id="${rule.id}">
-                    <td><input type="number" class="rule-priority-input" value="${
-                        rule.priority
-                    }"></td>
-                    <td><input type="text" class="rule-description-input" value="${
-                        rule.description
-                    }" placeholder="예: 모든 RC벽 분류"></td>
-                    <td><select class="rule-tag-select">${tagOptions}</select></td>
-                    <td><textarea class="rule-conditions-input" placeholder='[{"parameter": "Category", "operator": "equals", "value": "Walls"}]'>${JSON.stringify(
-                        rule.conditions,
-                        null,
-                        2
-                    )}</textarea></td>
-                    <td>
-                        <button class="save-rule-btn">저장</button>
-                        <button class="cancel-edit-btn">취소</button>
-                    </td>
-                </tr>
-            `;
-        } else {
-            // 일반 보기 모드 행
-            tableHtml += `
-                <tr data-rule-id="${rule.id}">
-                    <td>${rule.priority}</td>
-                    <td>${rule.description}</td>
-                    <td>${rule.target_tag_name}</td>
-                    <td><pre>${JSON.stringify(
-                        rule.conditions,
-                        null,
-                        2
-                    )}</pre></td>
-                    <td>
-                        <button class="edit-rule-btn">수정</button>
-                        <button class="delete-rule-btn">삭제</button>
-                    </td>
-                </tr>
-            `;
-        }
+        tableHtml += renderRow(rule);
     });
 
-    // 새 규칙 추가 행 (editingRuleId가 'new'일 경우)
+    // 새 규칙 추가 행
     if (editingRuleId === 'new') {
-        tableHtml += `
-            <tr class="rule-edit-row" data-rule-id="new">
-                <td><input type="number" class="rule-priority-input" value="0"></td>
-                <td><input type="text" class="rule-description-input" placeholder="예: 모든 RC벽 분류"></td>
-                <td><select class="rule-tag-select"><option value="">-- 분류 선택 --</option>${tagOptions}</select></td>
-                <td><textarea class="rule-conditions-input" placeholder='[{"parameter": "Category", "operator": "equals", "value": "Walls"}]'></textarea></td>
-                <td>
-                    <button class="save-rule-btn">저장</button>
-                    <button class="cancel-edit-btn">취소</button>
-                </td>
-            </tr>
-        `;
+        tableHtml += renderRow({ id: 'new', priority: 0, description: '', conditions: [] });
     }
 
     if (rules.length === 0 && editingRuleId !== 'new') {
@@ -670,6 +670,9 @@ function renderClassificationRulesetTable(rules, editingRuleId = null) {
             if (selectElement) selectElement.value = rule.target_tag_id;
         }
     }
+
+    // 조건 빌더 리스너 설정
+    setupConditionBuilderListeners();
 }
 
 /**
@@ -1451,19 +1454,53 @@ function renderCostCodeRulesetTable(rules, editId = null) {
         )
         .join('');
 
-    let tableHtml = `<table class="ruleset-table"><thead>
+    let tableHtml = `<table class="ruleset-table" style="min-width: 1400px;"><thead>
         <tr>
-            <th style="width: 5%;">우선순위</th>
-            <th style="width: 15%;">이름/설명</th>
-            <th style="width: 20%;">대상 공사코드</th>
-            <th style="width: 30%;">적용 조건 (QuantityMember 속성 기준)</th>
-            <th style="width: 20%;">수량 계산식 (JSON)</th>
-            <th style="width: 10%;">작업</th>
+            <th style="width: 80px; min-width: 80px;">우선순위</th>
+            <th style="width: 200px; min-width: 200px;">이름/설명</th>
+            <th style="width: 200px; min-width: 200px;">대상 공사코드</th>
+            <th style="width: 400px; min-width: 400px;">적용 조건 (QuantityMember 속성 기준)</th>
+            <th style="width: 400px; min-width: 400px;">수량 계산식</th>
+            <th style="width: 120px; min-width: 120px;">작업</th>
         </tr>
     </thead><tbody>`;
 
     const renderRow = (rule) => {
         if (rule.id === editId) {
+            // 조건 빌더 UI 생성
+            const conditions = rule.conditions || [];
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 250px; overflow-y: auto;">';
+
+            conditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRowForQM(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
+            // 맵핑 빌더 UI 생성
+            const mappingScript = rule.quantity_mapping_script || {};
+            let mappingsHtml = '<div class="mappings-builder" style="max-height: 250px; overflow-y: auto;">';
+
+            const mappingEntries = Object.entries(mappingScript);
+            if (mappingEntries.length > 0) {
+                mappingEntries.forEach(([key, value], idx) => {
+                    mappingsHtml += renderMappingRow(key, value, idx);
+                });
+            } else {
+                // 빈 경우 초기 행 하나 추가
+                mappingsHtml += renderMappingRow('', '', 0);
+            }
+
+            mappingsHtml += `
+                <button type="button" class="add-mapping-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 맵핑 추가
+                </button>
+            </div>`;
+
             return `
                 <tr class="rule-edit-row" data-rule-id="${rule.id}">
                     <td><input type="number" class="rule-priority-input" value="${
@@ -1473,22 +1510,34 @@ function renderCostCodeRulesetTable(rules, editId = null) {
                         rule.name || ''
                     }" placeholder="규칙 이름"></td>
                     <td><select class="rule-cost-code-select">${costCodeOptions}</select></td>
-                    <td><textarea class="rule-conditions-input" placeholder='[{"parameter": "분류", "operator": "contains", "value": "벽"}]'>${JSON.stringify(
-                        rule.conditions || [],
-                        null,
-                        2
-                    )}</textarea></td>
-                    <td><textarea class="rule-quantity-mapping-input" placeholder='{"수량": "{면적} * 2"}' rows="3">${JSON.stringify(
-                        rule.quantity_mapping_script || {},
-                        null,
-                        2
-                    )}</textarea></td>
+                    <td>${conditionsHtml}</td>
+                    <td>${mappingsHtml}</td>
                     <td>
                         <button class="save-rule-btn">저장</button>
                         <button class="cancel-edit-btn">취소</button>
                     </td>
                 </tr>`;
         }
+
+        // 읽기 전용 모드 - 사용자 친화적인 표시
+        let conditionsDisplay = '';
+        if (rule.conditions && rule.conditions.length > 0) {
+            conditionsDisplay = rule.conditions.map(c =>
+                `<div style="padding: 2px 0;">${c.property} ${c.operator} "${c.value}"</div>`
+            ).join('');
+        } else {
+            conditionsDisplay = '<em style="color: #999;">조건 없음</em>';
+        }
+
+        let mappingDisplay = '';
+        if (rule.quantity_mapping_script && Object.keys(rule.quantity_mapping_script).length > 0) {
+            mappingDisplay = Object.entries(rule.quantity_mapping_script).map(([key, value]) =>
+                `<div style="padding: 2px 0;"><strong>${key}:</strong> ${value}</div>`
+            ).join('');
+        } else {
+            mappingDisplay = '<em style="color: #999;">맵핑 없음</em>';
+        }
+
         return `
             <tr data-rule-id="${rule.id}">
                 <td>${rule.priority}</td>
@@ -1496,12 +1545,8 @@ function renderCostCodeRulesetTable(rules, editId = null) {
             rule.description || ''
         }</small></td>
                 <td>${rule.target_cost_code_name}</td>
-                <td><pre>${JSON.stringify(rule.conditions, null, 2)}</pre></td>
-                <td><pre>${JSON.stringify(
-                    rule.quantity_mapping_script,
-                    null,
-                    2
-                )}</pre></td>
+                <td style="word-wrap: break-word; vertical-align: top;">${conditionsDisplay}</td>
+                <td style="word-wrap: break-word; vertical-align: top;">${mappingDisplay}</td>
                 <td>
                     <button class="edit-rule-btn">수정</button>
                     <button class="delete-rule-btn">삭제</button>
@@ -1520,7 +1565,15 @@ function renderCostCodeRulesetTable(rules, editId = null) {
             '<tr><td colspan="6">정의된 규칙이 없습니다. 새 규칙을 추가하세요.</td></tr>';
     }
     tableHtml += '</tbody></table>';
-    container.innerHTML = tableHtml;
+
+    // 스크롤 가능한 래퍼로 테이블 감싸기
+    const scrollWrapper = document.createElement('div');
+    scrollWrapper.style.overflowX = 'auto';
+    scrollWrapper.style.width = '100%';
+    scrollWrapper.innerHTML = tableHtml;
+
+    container.innerHTML = '';
+    container.appendChild(scrollWrapper);
 
     if (editId && editId !== 'new') {
         const rule = rules.find((r) => r.id === editId);
@@ -1529,6 +1582,9 @@ function renderCostCodeRulesetTable(rules, editId = null) {
                 `tr[data-rule-id="${rule.id}"] .rule-cost-code-select`
             ).value = rule.target_cost_code_id;
     }
+
+    // 조건 빌더 및 맵핑 빌더 리스너 설정
+    setupConditionBuilderListeners();
 }
 /**
  * 선택된 CostItem에 연결된 QuantityMember의 정보와
@@ -1815,40 +1871,79 @@ function renderMemberMarkAssignmentRulesetTable(rules, editId = null) {
     );
     let tableHtml = `<table class="ruleset-table"><thead>
         <tr>
-            <th style="width: 10%;">우선순위</th>
-            <th style="width: 20%;">규칙 이름</th>
-            <th style="width: 35%;">적용 조건 (QuantityMember 속성 기준)</th>
-            <th style="width: 25%;">Mark 표현식</th>
-            <th style="width: 10%;">작업</th>
+            <th style="width: 8%;">우선순위</th>
+            <th style="width: 15%;">규칙 이름</th>
+            <th style="width: 15%;">설명</th>
+            <th style="width: 30%;">적용 조건</th>
+            <th style="width: 20%;">대상 일람부호</th>
+            <th style="width: 12%;">작업</th>
         </tr>
     </thead><tbody>`;
 
     const renderRow = (rule) => {
         if (rule.id === editId) {
+            // 편집 모드
+            // 일람부호 드롭다운 생성
+            let memberMarkOptions = '<option value="">-- 일람부호 선택 --</option>';
+            if (window.loadedMemberMarks && window.loadedMemberMarks.length > 0) {
+                const selectedMark = rule.mark_expression || '';
+                window.loadedMemberMarks.forEach(mm => {
+                    const selected = mm.mark === selectedMark ? 'selected' : '';
+                    memberMarkOptions += `<option value="${mm.id}" ${selected}>${mm.mark}</option>`;
+                });
+            }
+
+            // 조건 빌더 UI 생성
+            const conditions = rule.conditions || [];
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 300px; overflow-y: auto;">';
+
+            conditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRowForQM(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
             return `<tr class="rule-edit-row" data-rule-id="${rule.id}">
-                <td><input type="number" class="rule-priority-input" value="${
-                    rule.priority || 0
-                }"></td>
-                <td><input type="text" class="rule-name-input" value="${
-                    rule.name || ''
-                }" placeholder="규칙 이름"></td>
-                <td><textarea class="rule-conditions-input" placeholder='[{"parameter": "분류", "operator": "contains", "value": "기둥"}]'>${JSON.stringify(
-                    rule.conditions || [],
-                    null,
-                    2
-                )}</textarea></td>
-                <td><input type="text" class="rule-expression-input" value="${
-                    rule.mark_expression || ''
-                }" placeholder="'C' + {층}"></td>
-                <td><button class="save-rule-btn">저장</button> <button class="cancel-edit-btn">취소</button></td>
+                <td><input type="number" class="rule-priority-input" value="${rule.priority || 0}" style="width: 60px;"></td>
+                <td><input type="text" class="rule-name-input" value="${rule.name || ''}" placeholder="규칙 이름"></td>
+                <td><input type="text" class="rule-description-input" value="${rule.description || ''}" placeholder="설명 (선택사항)"></td>
+                <td>${conditionsHtml}</td>
+                <td>
+                    <select class="rule-member-mark-select" style="width: 100%;">
+                        ${memberMarkOptions}
+                    </select>
+                </td>
+                <td>
+                    <button class="save-rule-btn">💾 저장</button>
+                    <button class="cancel-edit-btn">❌ 취소</button>
+                </td>
             </tr>`;
         }
+
+        // 읽기 전용 모드
+        let conditionsDisplay = '';
+        if (rule.conditions && rule.conditions.length > 0) {
+            conditionsDisplay = rule.conditions.map(c =>
+                `${c.property || c.parameter} ${c.operator} "${c.value}"`
+            ).join('<br>');
+        } else {
+            conditionsDisplay = '<em>조건 없음</em>';
+        }
+
         return `<tr data-rule-id="${rule.id}">
             <td>${rule.priority}</td>
             <td>${rule.name}</td>
-            <td><pre>${JSON.stringify(rule.conditions, null, 2)}</pre></td>
-            <td><code>${rule.mark_expression}</code></td>
-            <td><button class="edit-rule-btn">수정</button> <button class="delete-rule-btn">삭제</button></td>
+            <td>${rule.description || ''}</td>
+            <td>${conditionsDisplay}</td>
+            <td>${rule.mark_expression || ''}</td>
+            <td>
+                <button class="edit-rule-btn">✏️ 수정</button>
+                <button class="delete-rule-btn">🗑️ 삭제</button>
+            </td>
         </tr>`;
     };
 
@@ -1857,7 +1952,7 @@ function renderMemberMarkAssignmentRulesetTable(rules, editId = null) {
     });
     if (editId === 'new') tableHtml += renderRow({ id: 'new' });
     if (rules.length === 0 && editId !== 'new')
-        tableHtml += '<tr><td colspan="5">정의된 규칙이 없습니다.</td></tr>';
+        tableHtml += '<tr><td colspan="6">정의된 규칙이 없습니다.</td></tr>';
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
@@ -1872,45 +1967,76 @@ function renderCostCodeAssignmentRulesetTable(rules, editId = null) {
     );
     let tableHtml = `<table class="ruleset-table"><thead>
         <tr>
-            <th style="width: 10%;">우선순위</th>
-            <th style="width: 20%;">규칙 이름</th>
-            <th style="width: 30%;">적용 조건 (QuantityMember 속성 기준)</th>
-            <th style="width: 30%;">CostCode 표현식 (JSON)</th>
-            <th style="width: 10%;">작업</th>
+            <th style="width: 8%;">우선순위</th>
+            <th style="width: 15%;">규칙 이름</th>
+            <th style="width: 15%;">설명</th>
+            <th style="width: 30%;">적용 조건</th>
+            <th style="width: 20%;">대상 공사코드</th>
+            <th style="width: 12%;">작업</th>
         </tr>
     </thead><tbody>`;
 
     const renderRow = (rule) => {
         if (rule.id === editId) {
+            // 편집 모드
+            // 공사코드 드롭다운 생성
+            let costCodeOptions = '<option value="">-- 공사코드 선택 --</option>';
+            if (window.loadedCostCodes && window.loadedCostCodes.length > 0) {
+                // cost_code_expressions에서 code 추출
+                const selectedCode = rule.cost_code_expressions?.code || '';
+                window.loadedCostCodes.forEach(cc => {
+                    const selected = cc.code === selectedCode ? 'selected' : '';
+                    costCodeOptions += `<option value="${cc.id}" ${selected}>${cc.code} - ${cc.name}</option>`;
+                });
+            }
+
+            // 조건 빌더 UI 생성
+            const conditions = rule.conditions || [];
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 300px; overflow-y: auto;">';
+
+            conditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRowForQM(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
             return `<tr class="rule-edit-row" data-rule-id="${rule.id}">
                 <td><input type="number" class="rule-priority-input" value="${
                     rule.priority || 0
-                }"></td>
+                }" style="width: 60px;"></td>
                 <td><input type="text" class="rule-name-input" value="${
                     rule.name || ''
-                }" placeholder="규칙 이름"></td>
-                <td><textarea class="rule-conditions-input" placeholder='[{"parameter": "분류", "operator": "contains", "value": "벽"}]'>${JSON.stringify(
-                    rule.conditions || [],
-                    null,
-                    2
-                )}</textarea></td>
-                <td><textarea class="rule-expression-input" rows="4">${JSON.stringify(
-                    rule.cost_code_expressions || {},
-                    null,
-                    2
-                )}</textarea></td>
-                <td><button class="save-rule-btn">저장</button> <button class="cancel-edit-btn">취소</button></td>
+                }" placeholder="규칙 이름" style="width: 100%;"></td>
+                <td><input type="text" class="rule-description-input" value="${
+                    rule.description || ''
+                }" placeholder="설명 (선택)" style="width: 100%;"></td>
+                <td>${conditionsHtml}</td>
+                <td><select class="rule-cost-code-select" style="width: 100%;">${costCodeOptions}</select></td>
+                <td>
+                    <button class="save-rule-btn">저장</button>
+                    <button class="cancel-edit-btn">취소</button>
+                </td>
             </tr>`;
         }
+        // 읽기 전용 모드
+        const conditionsDisplay = rule.conditions && rule.conditions.length > 0
+            ? rule.conditions.map(c => `${c.property || c.parameter} ${c.operator} "${c.value}"`).join('<br>')
+            : '조건 없음';
+
+        const costCodeDisplay = rule.cost_code_expressions
+            ? `${rule.cost_code_expressions.code || ''} - ${rule.cost_code_expressions.name || ''}`
+            : '';
+
         return `<tr data-rule-id="${rule.id}">
             <td>${rule.priority}</td>
             <td>${rule.name}</td>
-            <td><pre>${JSON.stringify(rule.conditions, null, 2)}</pre></td>
-            <td><pre>${JSON.stringify(
-                rule.cost_code_expressions,
-                null,
-                2
-            )}</pre></td>
+            <td>${rule.description || ''}</td>
+            <td style="font-size: 0.9em;">${conditionsDisplay}</td>
+            <td>${costCodeDisplay}</td>
             <td><button class="edit-rule-btn">수정</button> <button class="delete-rule-btn">삭제</button></td>
         </tr>`;
     };
@@ -1918,12 +2044,450 @@ function renderCostCodeAssignmentRulesetTable(rules, editId = null) {
     rules.forEach((rule) => {
         tableHtml += renderRow(rule);
     });
-    if (editId === 'new') tableHtml += renderRow({ id: 'new' });
+    if (editId === 'new') tableHtml += renderRow({ id: 'new', conditions: [] });
     if (rules.length === 0 && editId !== 'new')
-        tableHtml += '<tr><td colspan="5">정의된 규칙이 없습니다.</td></tr>';
+        tableHtml += '<tr><td colspan="6">정의된 규칙이 없습니다.</td></tr>';
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
+
+    // 조건 추가/삭제 이벤트 리스너
+    setupConditionBuilderListeners();
+}
+
+/**
+ * 액티비티 할당 룰셋 테이블 렌더링 (조건 빌더 UI 포함)
+ */
+function renderActivityAssignmentRulesetTable(rules, editId = null) {
+    const container = document.getElementById(
+        'activity-assignment-ruleset-table-container'
+    );
+    let tableHtml = `<table class="ruleset-table"><thead>
+        <tr>
+            <th style="width: 8%;">우선순위</th>
+            <th style="width: 15%;">규칙 이름</th>
+            <th style="width: 15%;">설명</th>
+            <th style="width: 30%;">적용 조건</th>
+            <th style="width: 20%;">대상 액티비티</th>
+            <th style="width: 12%;">작업</th>
+        </tr>
+    </thead><tbody>`;
+
+    const renderRow = (rule) => {
+        if (rule.id === editId) {
+            // 편집 모드
+            // 액티비티 드롭다운 생성
+            let activityOptions = '<option value="">-- 액티비티 선택 --</option>';
+            if (window.loadedActivities && window.loadedActivities.length > 0) {
+                window.loadedActivities.forEach(activity => {
+                    const selected = rule.target_activity_id === activity.id ? 'selected' : '';
+                    activityOptions += `<option value="${activity.id}" ${selected}>${activity.code} - ${activity.name}</option>`;
+                });
+            }
+
+            // 조건 빌더 UI 생성
+            const conditions = rule.conditions || [];
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 300px; overflow-y: auto;">';
+
+            conditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRow(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
+            return `<tr class="rule-edit-row" data-rule-id="${rule.id}">
+                <td><input type="number" class="rule-priority-input" value="${
+                    rule.priority || 0
+                }" style="width: 60px;"></td>
+                <td><input type="text" class="rule-name-input" value="${
+                    rule.name || ''
+                }" placeholder="규칙 이름" style="width: 100%;"></td>
+                <td><input type="text" class="rule-description-input" value="${
+                    rule.description || ''
+                }" placeholder="설명 (선택)" style="width: 100%;"></td>
+                <td>${conditionsHtml}</td>
+                <td><select class="rule-activity-select" style="width: 100%;">${activityOptions}</select></td>
+                <td>
+                    <button class="save-rule-btn">저장</button>
+                    <button class="cancel-edit-btn">취소</button>
+                </td>
+            </tr>`;
+        }
+        // 읽기 전용 모드
+        const conditionsDisplay = rule.conditions && rule.conditions.length > 0
+            ? rule.conditions.map(c => `${c.property} ${c.operator} "${c.value}"`).join('<br>')
+            : '조건 없음';
+
+        return `<tr data-rule-id="${rule.id}">
+            <td>${rule.priority}</td>
+            <td>${rule.name}</td>
+            <td>${rule.description || ''}</td>
+            <td style="font-size: 0.9em;">${conditionsDisplay}</td>
+            <td>${rule.target_activity_code || ''} - ${rule.target_activity_name || ''}</td>
+            <td><button class="edit-rule-btn">수정</button> <button class="delete-rule-btn">삭제</button></td>
+        </tr>`;
+    };
+
+    rules.forEach((rule) => {
+        tableHtml += renderRow(rule);
+    });
+    if (editId === 'new') tableHtml += renderRow({ id: 'new', conditions: [] });
+    if (rules.length === 0 && editId !== 'new')
+        tableHtml += '<tr><td colspan="6">정의된 규칙이 없습니다.</td></tr>';
+
+    tableHtml += '</tbody></table>';
+    container.innerHTML = tableHtml;
+
+    // 조건 추가/삭제 이벤트 리스너
+    setupConditionBuilderListeners();
+}
+
+/**
+ * 조건 빌더 단일 행 렌더링
+ */
+function renderConditionRow(condition, index) {
+    const property = condition.property || '';
+    const operator = condition.operator || '==';
+    const value = condition.value || '';
+
+    // 속성 옵션 생성
+    const propertyOptions = [
+        { group: 'CostItem 속성', options: [
+            { value: 'quantity', label: 'quantity (수량)' },
+            { value: 'description', label: 'description (설명)' }
+        ]},
+        { group: 'CostCode 속성 (CC)', options: [
+            { value: 'CC.code', label: 'CC.code (공사코드)' },
+            { value: 'CC.name', label: 'CC.name (공사명)' },
+            { value: 'CC.category', label: 'CC.category (카테고리)' },
+            { value: 'CC.spec', label: 'CC.spec (규격)' },
+            { value: 'CC.unit', label: 'CC.unit (단위)' }
+        ]},
+        { group: 'QuantityMember 속성 (QM)', options: [
+            { value: 'QM.name', label: 'QM.name (부재명)' },
+            { value: 'QM.properties.면적', label: 'QM.properties.면적' },
+            { value: 'QM.properties.체적', label: 'QM.properties.체적' },
+            { value: 'QM.properties.길이', label: 'QM.properties.길이' }
+        ]},
+        { group: 'MemberMark 속성 (MM)', options: [
+            { value: 'MM.mark', label: 'MM.mark (일람부호)' },
+            { value: 'MM.description', label: 'MM.description (설명)' },
+            { value: 'MM.properties.단면폭', label: 'MM.properties.단면폭' },
+            { value: 'MM.properties.단면높이', label: 'MM.properties.단면높이' }
+        ]},
+        { group: 'RawElement 속성 (RE)', options: [
+            { value: 'RE.Category', label: 'RE.Category (카테고리)' },
+            { value: 'RE.Family', label: 'RE.Family (패밀리)' },
+            { value: 'RE.Type', label: 'RE.Type (타입)' },
+            { value: 'RE.Parameters.참조 레벨', label: 'RE.Parameters.참조 레벨' },
+            { value: 'RE.Parameters.구조용도', label: 'RE.Parameters.구조용도' },
+            { value: 'RE.TypeParameters.구조용도', label: 'RE.TypeParameters.구조용도' }
+        ]}
+    ];
+
+    let propertySelectHtml = '<select class="condition-property" style="width: 100%; margin-bottom: 3px;">';
+    propertySelectHtml += '<option value="">-- 속성 선택 --</option>';
+    propertyOptions.forEach(group => {
+        propertySelectHtml += `<optgroup label="${group.group}">`;
+        group.options.forEach(opt => {
+            const selected = opt.value === property ? 'selected' : '';
+            propertySelectHtml += `<option value="${opt.value}" ${selected}>${opt.label}</option>`;
+        });
+        propertySelectHtml += '</optgroup>';
+    });
+    propertySelectHtml += '</select>';
+
+    // 연산자 옵션
+    const operators = [
+        { value: '==', label: '같음 (==)' },
+        { value: '!=', label: '같지 않음 (!=)' },
+        { value: 'contains', label: '포함 (contains)' },
+        { value: 'startswith', label: '시작 (startswith)' },
+        { value: 'endswith', label: '끝 (endswith)' },
+        { value: '>', label: '크다 (>)' },
+        { value: '<', label: '작다 (<)' },
+        { value: '>=', label: '크거나 같다 (>=)' },
+        { value: '<=', label: '작거나 같다 (<=)' }
+    ];
+
+    let operatorSelectHtml = '<select class="condition-operator" style="width: 100%; margin-bottom: 3px;">';
+    operators.forEach(op => {
+        const selected = op.value === operator ? 'selected' : '';
+        operatorSelectHtml += `<option value="${op.value}" ${selected}>${op.label}</option>`;
+    });
+    operatorSelectHtml += '</select>';
+
+    return `
+        <div class="condition-row" data-index="${index}" style="border: 1px solid #ddd; padding: 8px; margin-bottom: 5px; background: #f9f9f9; border-radius: 4px;">
+            <div style="display: flex; gap: 5px; align-items: start;">
+                <div style="flex: 1;">
+                    ${propertySelectHtml}
+                    ${operatorSelectHtml}
+                    <input type="text" class="condition-value" value="${value}" placeholder="값 입력" style="width: 100%;">
+                </div>
+                <button type="button" class="remove-condition-btn" style="background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px;">
+                    삭제
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * QuantityMember용 조건 빌더 단일 행 렌더링
+ */
+function renderConditionRowForQM(condition, index) {
+    const property = condition.property || condition.parameter || '';
+    const operator = condition.operator || '==';
+    const value = condition.value || '';
+
+    // QuantityMember 속성 옵션 생성
+    const propertyOptions = [
+        { group: 'QuantityMember 속성', options: [
+            { value: 'name', label: 'name (부재명)' },
+            { value: 'classification_tag', label: 'classification_tag (분류 태그)' }
+        ]},
+        { group: 'QuantityMember Properties (properties.)', options: [
+            { value: 'properties.면적', label: 'properties.면적' },
+            { value: 'properties.체적', label: 'properties.체적' },
+            { value: 'properties.길이', label: 'properties.길이' },
+            { value: 'properties.너비', label: 'properties.너비' },
+            { value: 'properties.높이', label: 'properties.높이' }
+        ]},
+        { group: 'MemberMark 속성 (MM.)', options: [
+            { value: 'MM.mark', label: 'MM.mark (일람부호)' },
+            { value: 'MM.description', label: 'MM.description (설명)' },
+            { value: 'MM.properties.단면폭', label: 'MM.properties.단면폭' },
+            { value: 'MM.properties.단면높이', label: 'MM.properties.단면높이' }
+        ]},
+        { group: 'RawElement 속성 (RE.)', options: [
+            { value: 'RE.Category', label: 'RE.Category (카테고리)' },
+            { value: 'RE.Family', label: 'RE.Family (패밀리)' },
+            { value: 'RE.Type', label: 'RE.Type (타입)' },
+            { value: 'RE.Parameters.참조 레벨', label: 'RE.Parameters.참조 레벨' },
+            { value: 'RE.Parameters.구조용도', label: 'RE.Parameters.구조용도' },
+            { value: 'RE.TypeParameters.구조용도', label: 'RE.TypeParameters.구조용도' }
+        ]}
+    ];
+
+    let propertySelectHtml = '<select class="condition-property" style="width: 100%; margin-bottom: 3px;">';
+    propertySelectHtml += '<option value="">-- 속성 선택 --</option>';
+    propertyOptions.forEach(group => {
+        propertySelectHtml += `<optgroup label="${group.group}">`;
+        group.options.forEach(opt => {
+            const selected = opt.value === property ? 'selected' : '';
+            propertySelectHtml += `<option value="${opt.value}" ${selected}>${opt.label}</option>`;
+        });
+        propertySelectHtml += '</optgroup>';
+    });
+    propertySelectHtml += '</select>';
+
+    // 연산자 옵션
+    const operators = [
+        { value: '==', label: '같음 (==)' },
+        { value: '!=', label: '같지 않음 (!=)' },
+        { value: 'contains', label: '포함 (contains)' },
+        { value: 'startswith', label: '시작 (startswith)' },
+        { value: 'endswith', label: '끝 (endswith)' },
+        { value: '>', label: '크다 (>)' },
+        { value: '<', label: '작다 (<)' },
+        { value: '>=', label: '크거나 같다 (>=)' },
+        { value: '<=', label: '작거나 같다 (<=)' }
+    ];
+
+    let operatorSelectHtml = '<select class="condition-operator" style="width: 100%; margin-bottom: 3px;">';
+    operators.forEach(op => {
+        const selected = op.value === operator ? 'selected' : '';
+        operatorSelectHtml += `<option value="${op.value}" ${selected}>${op.label}</option>`;
+    });
+    operatorSelectHtml += '</select>';
+
+    return `
+        <div class="condition-row" data-index="${index}" style="border: 1px solid #ddd; padding: 8px; margin-bottom: 5px; background: #f9f9f9; border-radius: 4px;">
+            <div style="display: flex; gap: 5px; align-items: start;">
+                <div style="flex: 1;">
+                    ${propertySelectHtml}
+                    ${operatorSelectHtml}
+                    <input type="text" class="condition-value" value="${value}" placeholder="값 입력" style="width: 100%;">
+                </div>
+                <button type="button" class="remove-condition-btn" style="background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px;">
+                    삭제
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * RawElement용 조건 빌더 단일 행 렌더링 (Classification Rules용)
+ */
+function renderConditionRowForRE(condition, index) {
+    const parameter = condition.parameter || condition.property || '';
+    const operator = condition.operator || '==';
+    const value = condition.value || '';
+
+    // RawElement 속성 옵션 생성
+    const propertyOptions = [
+        { group: 'RawElement 시스템 속성', options: [
+            { value: 'Category', label: 'Category (카테고리)' },
+            { value: 'Family', label: 'Family (패밀리)' },
+            { value: 'Type', label: 'Type (타입)' },
+            { value: 'Level', label: 'Level (레벨)' }
+        ]},
+        { group: 'RawElement Parameters', options: [
+            { value: 'Parameters.참조 레벨', label: 'Parameters.참조 레벨' },
+            { value: 'Parameters.구조용도', label: 'Parameters.구조용도' },
+            { value: 'Parameters.두께', label: 'Parameters.두께' },
+            { value: 'Parameters.너비', label: 'Parameters.너비' },
+            { value: 'Parameters.높이', label: 'Parameters.높이' }
+        ]},
+        { group: 'RawElement TypeParameters', options: [
+            { value: 'TypeParameters.구조용도', label: 'TypeParameters.구조용도' },
+            { value: 'TypeParameters.두께', label: 'TypeParameters.두께' }
+        ]}
+    ];
+
+    let propertySelectHtml = '<select class="condition-parameter" style="width: 100%; margin-bottom: 3px;">';
+    propertySelectHtml += '<option value="">-- 속성 선택 --</option>';
+    propertyOptions.forEach(group => {
+        propertySelectHtml += `<optgroup label="${group.group}">`;
+        group.options.forEach(opt => {
+            const selected = opt.value === parameter ? 'selected' : '';
+            propertySelectHtml += `<option value="${opt.value}" ${selected}>${opt.label}</option>`;
+        });
+        propertySelectHtml += '</optgroup>';
+    });
+    propertySelectHtml += '</select>';
+
+    // 연산자 옵션
+    const operators = [
+        { value: 'equals', label: '같음 (equals)' },
+        { value: 'not_equals', label: '같지 않음 (not_equals)' },
+        { value: 'contains', label: '포함 (contains)' },
+        { value: 'startswith', label: '시작 (startswith)' },
+        { value: 'endswith', label: '끝 (endswith)' }
+    ];
+
+    let operatorSelectHtml = '<select class="condition-operator" style="width: 100%; margin-bottom: 3px;">';
+    operators.forEach(op => {
+        const selected = op.value === operator ? 'selected' : '';
+        operatorSelectHtml += `<option value="${op.value}" ${selected}>${op.label}</option>`;
+    });
+    operatorSelectHtml += '</select>';
+
+    return `
+        <div class="condition-row" data-index="${index}" style="border: 1px solid #ddd; padding: 8px; margin-bottom: 5px; background: #f9f9f9; border-radius: 4px;">
+            <div style="display: flex; gap: 5px; align-items: start;">
+                <div style="flex: 1;">
+                    ${propertySelectHtml}
+                    ${operatorSelectHtml}
+                    <input type="text" class="condition-value" value="${value}" placeholder="값 입력" style="width: 100%;">
+                </div>
+                <button type="button" class="remove-condition-btn" style="background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px;">
+                    삭제
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * 맵핑 스크립트의 개별 맵핑 행을 렌더링합니다.
+ * @param {String} key - 속성 이름 (예: "체적")
+ * @param {String} value - 표현식 또는 값 (예: "{Volume}", "{Area} * 2")
+ * @param {Number} index - 행 번호
+ */
+function renderMappingRow(key = '', value = '', index = 0) {
+    return `
+        <div class="mapping-row" style="display: flex; gap: 10px; margin-bottom: 8px; align-items: center;">
+            <input type="text"
+                   class="mapping-key-input"
+                   value="${key}"
+                   placeholder="속성 이름 (예: 체적)"
+                   style="flex: 1; padding: 5px;">
+            <input type="text"
+                   class="mapping-value-input"
+                   value="${value}"
+                   placeholder="표현식 (예: {Volume}, {Area} * 2)"
+                   style="flex: 2; padding: 5px;">
+            <button type="button" class="remove-mapping-btn" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                🗑️ 삭제
+            </button>
+        </div>
+    `;
+}
+
+/**
+ * 조건 빌더 이벤트 리스너 설정
+ */
+function setupConditionBuilderListeners() {
+    // 조건 추가 버튼
+    document.querySelectorAll('.add-condition-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const conditionsBuilder = e.target.closest('.conditions-builder');
+            const editRow = conditionsBuilder.closest('.rule-edit-row');
+            const newIndex = conditionsBuilder.querySelectorAll('.condition-row').length;
+
+            // 어떤 테이블인지 확인
+            let newConditionHtml;
+            const isCostCodeRule = editRow.closest('#cost-code-assignment-ruleset-table-container');
+            const isMemberMarkRule = editRow.closest('#member-mark-assignment-ruleset-table-container');
+            const isClassificationRule = editRow.closest('#classification-ruleset');
+            const isSpaceAssignmentRule = editRow.closest('#space-assignment-ruleset-table-container');
+            const isSpaceClassificationRule = editRow.closest('#space-classification-ruleset-table-container');
+            const isPropertyMappingRule = editRow.closest('#mapping-ruleset-table-container');
+
+            if (isCostCodeRule || isMemberMarkRule || isSpaceAssignmentRule) {
+                // QuantityMember 속성 기반 조건 빌더
+                newConditionHtml = renderConditionRowForQM({}, newIndex);
+            } else if (isClassificationRule || isSpaceClassificationRule || isPropertyMappingRule) {
+                // RawElement 속성 기반 조건 빌더
+                newConditionHtml = renderConditionRowForRE({}, newIndex);
+            } else {
+                // Activity 기반 조건 빌더
+                newConditionHtml = renderConditionRow({}, newIndex);
+            }
+
+            // 버튼 바로 위에 추가
+            e.target.insertAdjacentHTML('beforebegin', newConditionHtml);
+
+            // 새로 추가된 행의 삭제 버튼에도 이벤트 추가
+            setupConditionBuilderListeners();
+        });
+    });
+
+    // 조건 삭제 버튼
+    document.querySelectorAll('.remove-condition-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.target.closest('.condition-row').remove();
+        });
+    });
+
+    // 맵핑 추가 버튼
+    document.querySelectorAll('.add-mapping-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const mappingsBuilder = e.target.closest('.mappings-builder');
+            const newIndex = mappingsBuilder.querySelectorAll('.mapping-row').length;
+            const newMappingHtml = renderMappingRow('', '', newIndex);
+
+            // 버튼 바로 위에 추가
+            e.target.insertAdjacentHTML('beforebegin', newMappingHtml);
+
+            // 새로 추가된 행의 삭제 버튼에도 이벤트 추가
+            setupConditionBuilderListeners();
+        });
+    });
+
+    // 맵핑 삭제 버튼
+    document.querySelectorAll('.remove-mapping-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.target.closest('.mapping-row').remove();
+        });
+    });
 }
 
 // connections/static/connections/ui.js
@@ -3078,54 +3642,82 @@ function renderSpaceClassificationRulesetTable(rules, editId = null) {
         <thead>
             <tr>
                 <th style="width: 5%;">레벨</th>
-                <th style="width: 15%;">위계 이름</th>
-                <th style="width: 25%;">BIM 객체 필터 (JSON)</th>
-                <th style="width: 15%;">이름 속성</th>
-                <th style="width: 15%;">상위 연결 속성</th>
-                <th style="width: 15%;">하위 연결 속성</th>
-                <th style="width: 10%;">작업</th>
+                <th style="width: 12%;">위계 이름</th>
+                <th style="width: 28%;">BIM 객체 필터</th>
+                <th style="width: 13%;">이름 속성</th>
+                <th style="width: 13%;">상위 연결 속성</th>
+                <th style="width: 13%;">하위 연결 속성</th>
+                <th style="width: 16%;">작업</th>
             </tr>
         </thead>
         <tbody>`;
 
     const renderRow = (rule) => {
         if (rule.id === editId) {
+            // 편집 모드
+            // BIM 객체 필터를 조건 배열로 변환
+            let filterConditions = [];
+            if (rule.bim_object_filter && typeof rule.bim_object_filter === 'object') {
+                // 단일 조건 객체를 배열로 변환
+                if (rule.bim_object_filter.parameter || rule.bim_object_filter.property) {
+                    filterConditions = [rule.bim_object_filter];
+                }
+            }
+
+            // 조건 빌더 UI 생성
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 250px; overflow-y: auto;">';
+
+            filterConditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRowForRE(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
             return `<tr class="rule-edit-row" data-rule-id="${rule.id}">
-                <td><input type="number" class="rule-level-depth-input" value="${
-                    rule.level_depth || 0
-                }"></td>
-                <td><input type="text" class="rule-level-name-input" value="${
-                    rule.level_name || ''
-                }" placeholder="예: Building"></td>
-                <td><textarea class="rule-bim-filter-input" placeholder='{"parameter": "IfcEntityType", "value": "IfcBuilding"}' rows="3">${JSON.stringify(
-                    rule.bim_object_filter || {},
-                    null,
-                    2
-                )}</textarea></td>
-                <td><input type="text" class="rule-name-source-input" value="${
-                    rule.name_source_param || ''
-                }" placeholder="예: Name"></td>
-                <td><input type="text" class="rule-parent-join-input" value="${
-                    rule.parent_join_param || ''
-                }" placeholder="예: GlobalId"></td>
-                <td><input type="text" class="rule-child-join-input" value="${
-                    rule.child_join_param || ''
-                }" placeholder="예: SiteGlobalId"></td>
-                <td><button class="save-rule-btn">저장</button> <button class="cancel-edit-btn">취소</button></td>
+                <td><input type="number" class="rule-level-depth-input" value="${rule.level_depth || 0}" style="width: 50px;"></td>
+                <td><input type="text" class="rule-level-name-input" value="${rule.level_name || ''}" placeholder="예: Building"></td>
+                <td>${conditionsHtml}</td>
+                <td><input type="text" class="rule-name-source-input" value="${rule.name_source_param || ''}" placeholder="예: Name"></td>
+                <td><input type="text" class="rule-parent-join-input" value="${rule.parent_join_param || ''}" placeholder="예: GlobalId"></td>
+                <td><input type="text" class="rule-child-join-input" value="${rule.child_join_param || ''}" placeholder="예: SiteGlobalId"></td>
+                <td>
+                    <button class="save-rule-btn">💾 저장</button>
+                    <button class="cancel-edit-btn">❌ 취소</button>
+                </td>
             </tr>`;
         }
+
+        // 읽기 전용 모드
+        let filterDisplay = '';
+        if (rule.bim_object_filter && typeof rule.bim_object_filter === 'object') {
+            const filter = rule.bim_object_filter;
+            if (filter.parameter || filter.property) {
+                const param = filter.parameter || filter.property;
+                const op = filter.operator || '==';
+                const val = filter.value || '';
+                filterDisplay = `${param} ${op} "${val}"`;
+            } else {
+                filterDisplay = '<em>필터 없음</em>';
+            }
+        } else {
+            filterDisplay = '<em>필터 없음</em>';
+        }
+
         return `<tr data-rule-id="${rule.id}">
             <td>${rule.level_depth}</td>
             <td>${rule.level_name}</td>
-            <td><pre>${JSON.stringify(
-                rule.bim_object_filter,
-                null,
-                2
-            )}</pre></td>
+            <td>${filterDisplay}</td>
             <td>${rule.name_source_param}</td>
-            <td>${rule.parent_join_param}</td>
-            <td>${rule.child_join_param}</td>
-            <td><button class="edit-rule-btn">수정</button> <button class="delete-rule-btn">삭제</button></td>
+            <td>${rule.parent_join_param || ''}</td>
+            <td>${rule.child_join_param || ''}</td>
+            <td>
+                <button class="edit-rule-btn">✏️ 수정</button>
+                <button class="delete-rule-btn">🗑️ 삭제</button>
+            </td>
         </tr>`;
     };
 
@@ -3149,6 +3741,9 @@ function renderSpaceClassificationRulesetTable(rules, editId = null) {
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
+
+    // 조건 빌더 리스너 설정
+    setupConditionBuilderListeners();
 }
 
 // ▼▼▼ [추가] 공간분류 할당 룰셋 테이블 렌더링 함수 ▼▼▼
@@ -3163,49 +3758,65 @@ function renderSpaceAssignmentRulesetTable(rules, editId = null) {
 
     let tableHtml = `<table class="ruleset-table"><thead>
         <tr>
-            <th style="width: 5%;">우선순위</th>
+            <th style="width: 8%;">우선순위</th>
             <th style="width: 15%;">규칙 이름</th>
-            <th style="width: 30%;">부재 필터 조건 (JSON)</th>
+            <th style="width: 30%;">부재 필터 조건</th>
             <th style="width: 20%;">부재 연결 속성</th>
-            <th style="width: 20%;">공간 연결 속성</th>
-            <th style="width: 10%;">작업</th>
+            <th style="width: 15%;">공간 연결 속성</th>
+            <th style="width: 12%;">작업</th>
         </tr>
     </thead><tbody>`;
 
     const renderRow = (rule) => {
         if (rule.id === editId) {
+            // 편집 모드
+            // 조건 빌더 UI 생성
+            const conditions = rule.member_filter_conditions || [];
+            let conditionsHtml = '<div class="conditions-builder" style="max-height: 300px; overflow-y: auto;">';
+
+            conditions.forEach((cond, idx) => {
+                conditionsHtml += renderConditionRowForQM(cond, idx);
+            });
+
+            conditionsHtml += `
+                <button type="button" class="add-condition-btn" style="margin-top: 5px; padding: 5px 10px;">
+                    + 조건 추가
+                </button>
+            </div>`;
+
             return `<tr class="rule-edit-row" data-rule-id="${rule.id}">
-                <td><input type="number" class="rule-priority-input" value="${
-                    rule.priority || 0
-                }"></td>
-                <td><input type="text" class="rule-name-input" value="${
-                    rule.name || ''
-                }" placeholder="규칙 이름"></td>
-                <td><textarea class="rule-member-filter-input" placeholder="(선택사항) 부재 필터링 조건 입력">${JSON.stringify(
-                    rule.member_filter_conditions || [],
-                    null,
-                    2
-                )}</textarea></td>
-                <td><input type="text" class="rule-member-join-input" value="${
-                    rule.member_join_property || ''
-                }" placeholder="예: BIM원본.참조 레벨"></td>
-                <td><input type="text" class="rule-space-join-input" value="${
-                    rule.space_join_property || ''
-                }" placeholder="예: Name 또는 BIM원본.Name"></td>
-                <td><button class="save-rule-btn">저장</button> <button class="cancel-edit-btn">취소</button></td>
+                <td><input type="number" class="rule-priority-input" value="${rule.priority || 0}" style="width: 60px;"></td>
+                <td><input type="text" class="rule-name-input" value="${rule.name || ''}" placeholder="규칙 이름"></td>
+                <td>${conditionsHtml}</td>
+                <td><input type="text" class="rule-member-join-input" value="${rule.member_join_property || ''}" placeholder="예: RE.참조 레벨"></td>
+                <td><input type="text" class="rule-space-join-input" value="${rule.space_join_property || ''}" placeholder="예: Name"></td>
+                <td>
+                    <button class="save-rule-btn">💾 저장</button>
+                    <button class="cancel-edit-btn">❌ 취소</button>
+                </td>
             </tr>`;
         }
+
+        // 읽기 전용 모드
+        let conditionsDisplay = '';
+        if (rule.member_filter_conditions && rule.member_filter_conditions.length > 0) {
+            conditionsDisplay = rule.member_filter_conditions.map(c =>
+                `${c.property || c.parameter} ${c.operator} "${c.value}"`
+            ).join('<br>');
+        } else {
+            conditionsDisplay = '<em>필터 조건 없음</em>';
+        }
+
         return `<tr data-rule-id="${rule.id}">
             <td>${rule.priority}</td>
             <td>${rule.name}</td>
-            <td><pre>${JSON.stringify(
-                rule.member_filter_conditions,
-                null,
-                2
-            )}</pre></td>
+            <td>${conditionsDisplay}</td>
             <td><code>${rule.member_join_property}</code></td>
             <td><code>${rule.space_join_property}</code></td>
-            <td><button class="edit-rule-btn">수정</button> <button class="delete-rule-btn">삭제</button></td>
+            <td>
+                <button class="edit-rule-btn">✏️ 수정</button>
+                <button class="delete-rule-btn">🗑️ 삭제</button>
+            </td>
         </tr>`;
     };
 
@@ -3218,6 +3829,9 @@ function renderSpaceAssignmentRulesetTable(rules, editId = null) {
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
+
+    // 조건 빌더 리스너 설정
+    setupConditionBuilderListeners();
 }
 
 function renderCostCodeListForUnitPrice(costCodes) {

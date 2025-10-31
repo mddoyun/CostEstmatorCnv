@@ -340,6 +340,308 @@ class RawElement(models.Model):
         # print(f"[DEBUG][RawElement.__str__] Returning RawElement info for project {self.project.name}") # 너무 빈번할 수 있어 주석 처리
         return f"{self.project.name} - {self.element_unique_id}"
 
+class Activity(models.Model):
+    """4D 시뮬레이션을 위한 공정/액티비티 관리"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activities')
+
+    # Basic information
+    code = models.CharField(max_length=100, help_text="공정코드")
+    name = models.CharField(max_length=255, help_text="공정명")
+    description = models.TextField(blank=True, null=True, help_text="공정 설명")
+
+    # Schedule information
+    duration_per_unit = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=decimal.Decimal('1.0'),
+        help_text="단위수량당 소요일수 (duration per unit quantity)"
+    )
+
+    # Resource and cost
+    resources = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="투입 자원 정보 (인력, 장비 등)"
+    )
+    estimated_cost = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=decimal.Decimal('0.0'),
+        help_text="예상 비용"
+    )
+    actual_cost = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=decimal.Decimal('0.0'),
+        help_text="실제 비용"
+    )
+
+    # Work breakdown structure
+    parent_activity = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='sub_activities',
+        help_text="상위 공정 (WBS 구조)"
+    )
+    wbs_code = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="WBS 코드 (예: 1.2.3)"
+    )
+
+    # Additional information
+    responsible_person = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="담당자"
+    )
+    contractor = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="시공사/협력업체"
+    )
+    location = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="작업 위치"
+    )
+    notes = models.TextField(blank=True, help_text="비고")
+
+    # Metadata
+    metadata = models.JSONField(default=dict, blank=True, help_text="추가 메타데이터")
+
+    # Work Calendar (optional - uses project's main calendar if not set)
+    work_calendar = models.ForeignKey(
+        'WorkCalendar',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='activities',
+        help_text="이 액티비티에 적용할 작업 캘린더 (미설정시 프로젝트 기본 캘린더 사용)"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('project', 'code')
+        ordering = ['wbs_code', 'code']
+        indexes = [
+            models.Index(fields=['project', 'code']),
+        ]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class ActivityDependency(models.Model):
+    """공정 간 선후행 관계 (Dependency)"""
+
+    # Dependency types (PDM - Precedence Diagramming Method)
+    TYPE_FINISH_TO_START = 'FS'
+    TYPE_START_TO_START = 'SS'
+    TYPE_FINISH_TO_FINISH = 'FF'
+    TYPE_START_TO_FINISH = 'SF'
+    TYPE_CHOICES = [
+        (TYPE_FINISH_TO_START, 'Finish-to-Start (FS)'),
+        (TYPE_START_TO_START, 'Start-to-Start (SS)'),
+        (TYPE_FINISH_TO_FINISH, 'Finish-to-Finish (FF)'),
+        (TYPE_START_TO_FINISH, 'Start-to-Finish (SF)'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activity_dependencies')
+
+    # Predecessor and Successor
+    predecessor_activity = models.ForeignKey(
+        Activity,
+        on_delete=models.CASCADE,
+        related_name='successor_dependencies',
+        help_text="선행 공정"
+    )
+    successor_activity = models.ForeignKey(
+        Activity,
+        on_delete=models.CASCADE,
+        related_name='predecessor_dependencies',
+        help_text="후행 공정"
+    )
+
+    # Relationship type
+    dependency_type = models.CharField(
+        max_length=2,
+        choices=TYPE_CHOICES,
+        default=TYPE_FINISH_TO_START,
+        help_text="선후행 관계 유형"
+    )
+
+    # Lag and Lead time
+    lag_days = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=decimal.Decimal('0.0'),
+        help_text="Lag Time (지연 시간, 양수 = 지연, 음수 = 앞당기기/Lead)"
+    )
+
+    # Additional information
+    description = models.TextField(blank=True, help_text="관계 설명")
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('predecessor_activity', 'successor_activity', 'dependency_type')
+        ordering = ['predecessor_activity__code', 'successor_activity__code']
+
+    def __str__(self):
+        lag_str = f" +{self.lag_days}d" if self.lag_days > 0 else f" {self.lag_days}d" if self.lag_days < 0 else ""
+        return f"{self.predecessor_activity.code} → {self.successor_activity.code} ({self.dependency_type}{lag_str})"
+
+    def clean(self):
+        """순환 참조 방지"""
+        from django.core.exceptions import ValidationError
+
+        if self.predecessor_activity == self.successor_activity:
+            raise ValidationError("공정이 자기 자신을 선행/후행 공정으로 가질 수 없습니다.")
+
+        # 순환 참조 체크 (간단한 버전)
+        if self.would_create_cycle():
+            raise ValidationError("이 관계는 순환 참조를 생성합니다.")
+
+    def would_create_cycle(self):
+        """순환 참조 발생 여부 확인"""
+        visited = set()
+
+        def has_path(start, end):
+            if start == end:
+                return True
+            if start in visited:
+                return False
+            visited.add(start)
+
+            for dep in start.successor_dependencies.all():
+                if has_path(dep.successor_activity, end):
+                    return True
+            return False
+
+        return has_path(self.successor_activity, self.predecessor_activity)
+
+
+class WorkCalendar(models.Model):
+    """프로젝트별 작업 캘린더 (작업일/휴일/특별작업일 설정)"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='work_calendars')
+
+    # 캘린더 이름
+    name = models.CharField(max_length=200, default="기본 캘린더", help_text="캘린더 이름")
+
+    # 메인 캘린더 여부 (프로젝트당 하나만 메인)
+    is_main = models.BooleanField(default=False, help_text="메인 캘린더 여부")
+
+    # 작업 요일 설정 (기본값: 월~토 작업, 일요일 휴무)
+    working_days = models.JSONField(
+        default=dict,
+        help_text="작업 요일 설정 예: {'mon': true, 'tue': true, ..., 'sun': false}"
+    )
+
+    # 휴일 목록 (특정 날짜)
+    holidays = models.JSONField(
+        default=list,
+        help_text="휴일 목록 예: ['2025-01-01', '2025-12-25']"
+    )
+
+    # 특별 작업일 (휴일이지만 작업하는 날)
+    special_working_days = models.JSONField(
+        default=list,
+        help_text="특별 작업일 목록 예: ['2025-05-05']"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('project', 'name')
+        ordering = ['-is_main', 'name']
+
+    def __str__(self):
+        main_text = " (메인)" if self.is_main else ""
+        return f"{self.name}{main_text} - {self.project.name}"
+
+    def save(self, *args, **kwargs):
+        # 메인 캘린더로 설정하면, 같은 프로젝트의 다른 캘린더들의 메인 설정 해제
+        if self.is_main:
+            WorkCalendar.objects.filter(project=self.project, is_main=True).exclude(pk=self.pk).update(is_main=False)
+        super().save(*args, **kwargs)
+
+    def is_working_day(self, date):
+        """주어진 날짜가 작업일인지 확인"""
+        from datetime import datetime
+
+        # 날짜를 문자열로 변환
+        if isinstance(date, datetime):
+            date_str = date.strftime('%Y-%m-%d')
+        else:
+            date_str = str(date)
+
+        # 특별 작업일이면 True
+        if date_str in self.special_working_days:
+            return True
+
+        # 휴일이면 False
+        if date_str in self.holidays:
+            return False
+
+        # 요일별 작업 여부 확인
+        if isinstance(date, str):
+            date = datetime.strptime(date, '%Y-%m-%d')
+
+        weekday_map = {
+            0: 'mon', 1: 'tue', 2: 'wed', 3: 'thu',
+            4: 'fri', 5: 'sat', 6: 'sun'
+        }
+        weekday_key = weekday_map[date.weekday()]
+
+        # working_days에 설정이 없으면 기본값 사용 (월~토 작업)
+        return self.working_days.get(weekday_key, weekday_key != 'sun')
+
+    def get_working_days_count(self, start_date, end_date):
+        """시작일부터 종료일까지의 작업일 수 계산"""
+        from datetime import timedelta
+
+        count = 0
+        current_date = start_date
+
+        while current_date <= end_date:
+            if self.is_working_day(current_date):
+                count += 1
+            current_date += timedelta(days=1)
+
+        return count
+
+    def add_working_days(self, start_date, working_days):
+        """시작일로부터 working_days만큼의 작업일 후 날짜 계산"""
+        from datetime import timedelta
+
+        current_date = start_date
+        count = 0
+
+        while count < working_days:
+            if self.is_working_day(current_date):
+                count += 1
+                if count == working_days:
+                    return current_date
+            current_date += timedelta(days=1)
+
+        return current_date
+
+
 class QuantityMember(models.Model):
     """수량산출의 기본 단위가 되는 부재"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -358,6 +660,17 @@ class QuantityMember(models.Model):
     space_classifications = models.ManyToManyField(SpaceClassification, related_name='quantity_members', blank=True)
 
     cost_code_expressions = models.JSONField(default=list, blank=True, help_text="개별 부재에 적용될 공사코드 표현식 목록 (JSON)")
+
+    # ▼▼▼ [추가] 4D 액티비티 연결 ▼▼▼
+    activity = models.ForeignKey(
+        Activity,
+        on_delete=models.SET_NULL,
+        related_name='quantity_members',
+        null=True,
+        blank=True,
+        help_text="이 산출부재에 할당된 공정/액티비티"
+    )
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     # Split-related fields
     is_active = models.BooleanField(default=True, help_text="활성 상태 (분할된 경우 원본은 False)")
@@ -394,6 +707,15 @@ class CostItem(models.Model):
             related_name='cost_items',
             help_text="이 산출항목에 적용할 단가 기준"
         )
+
+    # ▼▼▼ [수정] 4D 액티비티 코드 연결: ForeignKey → ManyToManyField로 변경 ▼▼▼
+    activities = models.ManyToManyField(
+        'Activity',
+        related_name='cost_items',
+        blank=True,
+        help_text="이 산출항목에 할당된 액티비티 코드들 (복수 할당 가능)"
+    )
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
 
     description = models.TextField(blank=True, null=True, help_text="수동 생성 시 특이사항 기록")
 
@@ -558,6 +880,32 @@ class SpaceAssignmentRule(models.Model):
         # 디버깅: 공간 할당 규칙 정보 반환 확인
         # print(f"[DEBUG][SpaceAssignmentRule.__str__] Returning space assignment rule: {self.name}") # 너무 빈번할 수 있어 주석 처리
         return self.name
+
+
+class ActivityAssignmentRule(models.Model):
+    """'조건'에 맞는 CostItem에 Activity를 할당하는 규칙
+
+    조건문에서 사용 가능한 속성 접근 문법:
+    - CostItem 자체 속성: {property_name} (예: {quantity}, {description})
+    - QuantityMember 속성: QM.{property_name} (예: QM.{name}, QM.{properties.면적})
+    - MemberMark 속성: MM.{property_name} (예: MM.{mark}, MM.{description})
+    - RawElement (BIM 원본) 속성: RE.{property_name} (예: RE.{Category}, RE.{Family})
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, related_name='activity_assignment_rules', on_delete=models.CASCADE)
+    name = models.CharField(max_length=255, default="새 액티비티 할당 규칙")
+    description = models.TextField(blank=True, null=True, help_text="규칙 설명")
+    conditions = models.JSONField(default=list, blank=True, help_text="규칙이 적용될 CostItem을 필터링하는 조건 (다단계 속성 접근 지원)")
+    target_activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name='assignment_rules', help_text="할당할 액티비티")
+    priority = models.IntegerField(default=0, help_text="우선순위 (낮을수록 먼저 적용)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['priority', 'name']
+
+    def __str__(self):
+        return f"{self.name} (→ {self.target_activity.code})"
 
 # -----------------------------------------------------------------------------
 # 3D 객체 분할 관리

@@ -231,6 +231,17 @@ async function handleQuantityMemberActions(event) {
         renderQmLinkedRawElementPropertiesTable();
         renderQmSpacesList();
 
+        // 룰셋 작성 도우미 패널 업데이트 (선택된 부재가 1개일 때만)
+        if (selectedQmIds.size === 1) {
+            const selectedId = Array.from(selectedQmIds)[0];
+            const selectedMember = loadedQuantityMembers.find(m => m.id === selectedId);
+            if (selectedMember) {
+                updateQmRulesetHelperPanel(selectedMember);
+            }
+        } else {
+            updateQmRulesetHelperPanel(null);
+        }
+
         return;
     }
 
@@ -848,3 +859,92 @@ async function clearSpacesFromQm() {
 // ▼▼▼ [추가] 3D Viewer에서 사용할 수 있도록 window에 노출 ▼▼▼
 window.loadQuantityMembersForViewer = loadQuantityMembers;
 // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+/**
+ * 룰셋 작성 도우미 패널 업데이트 (수량산출부재)
+ */
+function updateQmRulesetHelperPanel(member) {
+    const panel = document.getElementById('qm-ruleset-properties-content');
+    if (!panel) return;
+
+    if (!member) {
+        panel.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">부재를 선택해주세요</p>';
+        return;
+    }
+
+    let html = '<div style="font-size: 13px;">';
+
+    // 기본 속성
+    html += '<div style="margin-bottom: 20px;">';
+    html += '<h5 style="margin: 0 0 10px 0; color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성</h5>';
+    html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+    if (member.name) html += `<tr><td style="font-weight: bold;">name</td><td>${member.name}</td></tr>`;
+    if (member.classification_tag_name) html += `<tr><td style="font-weight: bold;">classification_tag</td><td>${member.classification_tag_name}</td></tr>`;
+    html += '</tbody></table>';
+    html += '</div>';
+
+    // QuantityMember Properties
+    if (member.properties && Object.keys(member.properties).length > 0) {
+        html += '<div style="margin-bottom: 20px;">';
+        html += '<h5 style="margin: 0 0 10px 0; color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (properties.)</h5>';
+        html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+        Object.entries(member.properties).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+                const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
+                html += `<tr><td style="font-weight: bold;">properties.${key}</td><td>${displayValue}</td></tr>`;
+            }
+        });
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // MemberMark 속성
+    if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
+        html += '<div style="margin-bottom: 20px;">';
+        html += '<h5 style="margin: 0 0 10px 0; color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호 (MM.)</h5>';
+        html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+        if (member.member_mark_mark) html += `<tr><td style="font-weight: bold;">MM.mark</td><td>${member.member_mark_mark}</td></tr>`;
+        if (member.member_mark_properties) {
+            Object.entries(member.member_mark_properties).forEach(([key, value]) => {
+                if (value !== null && value !== undefined) {
+                    html += `<tr><td style="font-weight: bold;">MM.properties.${key}</td><td>${value}</td></tr>`;
+                }
+            });
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // RawElement 속성 (주요 속성만)
+    if (member.raw_element && Object.keys(member.raw_element).length > 0) {
+        html += '<div style="margin-bottom: 20px;">';
+        html += '<h5 style="margin: 0 0 10px 0; color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 원본 (RE.)</h5>';
+        html += '<table class="ruleset-table" style="font-size: 12px; width: 100%;"><tbody>';
+
+        // 중요 속성 우선 표시
+        const importantProps = ['Category', 'Family', 'Type', 'Level'];
+        importantProps.forEach(prop => {
+            if (member.raw_element[prop]) {
+                html += `<tr><td style="font-weight: bold;">RE.${prop}</td><td>${member.raw_element[prop]}</td></tr>`;
+            }
+        });
+
+        // Parameters
+        if (member.raw_element.Parameters) {
+            Object.entries(member.raw_element.Parameters).forEach(([key, value]) => {
+                if (!importantProps.includes(key) && value !== null && value !== undefined) {
+                    const displayValue = String(value).substring(0, 40);
+                    html += `<tr><td style="font-weight: bold;">RE.Parameters.${key}</td><td>${displayValue}${String(value).length > 40 ? '...' : ''}</td></tr>`;
+                }
+            });
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    html += '</div>';
+    panel.innerHTML = html;
+}
+
+// 전역 스코프에 노출
+window.updateQmRulesetHelperPanel = updateQmRulesetHelperPanel;

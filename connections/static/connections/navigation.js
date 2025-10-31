@@ -85,6 +85,7 @@ window.handleMainNavClick = function handleMainNavClick(e) {
         targetContent &&
         (primaryTabId === 'detailed-estimation-dd' ||
             primaryTabId === 'schematic-estimation-sd' ||
+            primaryTabId === 'gantt-chart' ||
             primaryTabId === 'three-d-viewer')
     ) {
         console.log(
@@ -102,10 +103,11 @@ window.handleMainNavClick = function handleMainNavClick(e) {
             }
         }
     } else {
-        // [추가] SD, DD 탭은 보조 네비게이션이 없는 것이 정상이므로 경고 제외
+        // [추가] SD, DD, 간트차트 탭은 보조 네비게이션이 없는 것이 정상이므로 경고 제외
         const noSecondaryNavTabs = [
             'detailed-estimation-dd',
             'schematic-estimation-sd',
+            'gantt-chart',
             'three-d-viewer',
         ];
         if (!noSecondaryNavTabs.includes(primaryTabId)) {
@@ -288,6 +290,40 @@ window.handleSubNavClick = function handleSubNavClick(e) {
         } else {
             console.warn(
                 "[WARN][handleSubNavClick] Ruleset navigation container not found in 'ruleset-management'. Loading default data for the tab."
+            );
+            loadDataForActiveTab();
+        }
+    } else if (targetTabId === 'activity-management') {
+        // '액티비티 관리' 탭 진입 시
+        console.log(
+            "[DEBUG][handleSubNavClick] Entering 'activity-management' tab. Handling inner tabs..."
+        );
+        const innerNav = targetContent.querySelector('.inner-tab-nav');
+        if (innerNav) {
+            let activeInnerButton = innerNav.querySelector(
+                '.inner-tab-button.active'
+            );
+            const innerTabId = activeInnerButton
+                ? activeInnerButton.dataset.innerTab
+                : 'activity-list';
+
+            console.log(
+                `[DEBUG][handleSubNavClick] Loading activity inner tab: ${innerTabId}`
+            );
+
+            // 액티비티 목록 또는 선후행 관계 로드
+            if (innerTabId === 'activity-list') {
+                if (typeof loadActivities === 'function') {
+                    loadActivities();
+                }
+            } else if (innerTabId === 'activity-dependency') {
+                if (typeof loadActivityDependencies === 'function') {
+                    loadActivityDependencies();
+                }
+            }
+        } else {
+            console.warn(
+                "[WARN][handleSubNavClick] Inner tab navigation not found in 'activity-management'."
             );
             loadDataForActiveTab();
         }
@@ -492,6 +528,15 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             // SD 상단 UI 초기화 (모델 선택, 입력 필드 등)
             initializeSdUI();
             break;
+        case 'gantt-chart': // 간트차트 탭
+            console.log(
+                `[DEBUG][loadDataForActiveTab] Gantt Chart tab activated. Loading activities and cost items.`
+            );
+            // 간트차트 로드
+            if (typeof window.loadGanttChart === 'function') {
+                window.loadGanttChart();
+            }
+            break;
         case 'three-d-viewer': // 3D 뷰어 탭
             console.log(
                 `[DEBUG][loadDataForActiveTab] 3D Viewer tab activated. Keeping existing BIM data and loading quantity members and cost items with prices.`
@@ -507,6 +552,26 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
                 window.loadCostItemsWithPrices();
             }
             break;
+        case 'activity-management': // 액티비티 관리 탭
+            console.log(
+                `[DEBUG][loadDataForActiveTab] Activity Management tab activated. Loading activities and dependencies.`
+            );
+            // 내부 탭 로직은 handleSubNavClick에서 처리되므로 여기서는 기본 로드
+            if (typeof loadActivities === 'function') {
+                loadActivities();
+            }
+            break;
+        case 'activity-assignment': // 액티비티 할당 탭
+            console.log(
+                `[DEBUG][loadDataForActiveTab] Activity Assignment tab activated. Loading quantity members with activity info.`
+            );
+            if (typeof loadActivities === 'function') {
+                loadActivities(); // 액티비티 목록 먼저 로드
+            }
+            if (typeof loadActivityAssignments === 'function') {
+                loadActivityAssignments(); // 산출부재별 할당 정보 로드
+            }
+            break;
         default:
             console.log(
                 `[DEBUG][loadDataForActiveTab] No specific data loading function defined for currently active tab: ${activeTab}`
@@ -519,7 +584,7 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
     ); // 디버깅
 }
 
-window.loadSpecificRuleset = function loadSpecificRuleset(rulesetType) {
+window.loadSpecificRuleset = async function loadSpecificRuleset(rulesetType) {
     console.log(`[DEBUG][loadSpecificRuleset] Loading ruleset: ${rulesetType}`);
     if (!currentProjectId) return; // 프로젝트 ID 없으면 중단
 
@@ -534,9 +599,11 @@ window.loadSpecificRuleset = function loadSpecificRuleset(rulesetType) {
             loadCostCodeRules();
             break;
         case 'member-mark-assignment-ruleset':
+            await loadMemberMarks(); // Load member marks first for dropdown
             loadMemberMarkAssignmentRules();
             break;
         case 'cost-code-assignment-ruleset':
+            await loadCostCodes(); // Load cost codes first for dropdown
             loadCostCodeAssignmentRules();
             break;
         case 'space-classification-ruleset':
@@ -544,6 +611,10 @@ window.loadSpecificRuleset = function loadSpecificRuleset(rulesetType) {
             break;
         case 'space-assignment-ruleset':
             loadSpaceAssignmentRules();
+            break;
+        case 'activity-assignment-ruleset':
+            await loadActivities(); // 액티비티 목록 먼저 로드하고 기다림
+            loadActivityAssignmentRules();
             break;
         default:
             console.error(
@@ -587,6 +658,16 @@ window.clearAllTabData = function clearAllTabData() {
     sdEnabledCostCodes = [];
     selectedSdModelId = null;
     loadedSdCostItems = [];
+    // Activity 데이터 초기화
+    if (typeof loadedActivities !== 'undefined') {
+        loadedActivities = [];
+    }
+    if (typeof loadedActivityDependencies !== 'undefined') {
+        loadedActivityDependencies = [];
+    }
+    if (typeof activityAssignmentData !== 'undefined') {
+        activityAssignmentData = [];
+    }
 
     // --- 상태 변수 초기화 ---
     Object.keys(viewerStates).forEach((context) => {

@@ -135,6 +135,29 @@ function setupRulesetManagementListeners() {
     document
         .getElementById("space-assignment-ruleset-table-container")
         ?.addEventListener("click", handleSpaceAssignmentRuleActions);
+    // ▼▼▼ [추가] 액티비티 할당 룰셋 이벤트 리스너 ▼▼▼
+    document
+        .getElementById("activity-assignment-ruleset-table-container")
+        ?.addEventListener("click", handleActivityAssignmentRuleActions);
+    document
+        .getElementById("add-activity-assignment-rule-btn")
+        ?.addEventListener("click", () =>
+            renderActivityAssignmentRulesetTable(loadedActivityAssignmentRules, "new")
+        );
+    document
+        .getElementById("import-activity-assignment-rules-btn")
+        ?.addEventListener("click", importActivityAssignmentRules);
+    document
+        .getElementById("export-activity-assignment-rules-btn")
+        ?.addEventListener("click", exportActivityAssignmentRules);
+    document
+        .getElementById("apply-activity-assignment-rules-btn")
+        ?.addEventListener("click", applyActivityAssignmentRules);
+    // 산출-액티비티 탭의 룰셋 일괄 적용 버튼
+    document
+        .getElementById("apply-activity-rules-from-assignment-tab")
+        ?.addEventListener("click", applyActivityAssignmentRules);
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
     // CSV 가져오기/내보내기 버튼 (동적 설정)
     setupRulesetCsvButtons();
     console.log("[DEBUG] Ruleset Management listeners setup complete.");

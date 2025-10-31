@@ -9,7 +9,7 @@
         <link
             rel="stylesheet"
             type="text/css"
-            href="{% static 'connections/style.css' %}"
+            href="{% static 'connections/style.css' %}?v=3"
         />
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
         <!-- Three.js 글로벌 로드 (r140 - 안정적인 글로벌 스크립트 버전) -->
@@ -106,6 +106,12 @@
                 </button>
                 <button
                     class="nav-button"
+                    data-primary-tab="gantt-chart"
+                >
+                    📊 공정표
+                </button>
+                <button
+                    class="nav-button"
                     data-primary-tab="three-d-viewer"
                 >
                     🧊 3D 뷰어
@@ -146,6 +152,9 @@
                     <button class="sub-nav-button" data-tab="ai-model-manager">
                         🧠 AI 모델 관리
                     </button>
+                    <button class="sub-nav-button" data-tab="activity-management">
+                        📅 액티비티 관리
+                    </button>
                 </nav>
                 <nav id="secondary-nav-takeoff" class="secondary-nav">
                     <button class="sub-nav-button" data-tab="data-management">
@@ -158,7 +167,10 @@
                         class="sub-nav-button"
                         data-tab="cost-item-management"
                     >
-                        🧱 수량산출
+                        💰 코스트아이템
+                    </button>
+                    <button class="sub-nav-button" data-tab="activity-assignment">
+                        📅 액티비티
                     </button>
                 </nav>
                 <nav
@@ -284,63 +296,83 @@
                     </aside>
 
                     <main class="right-panel">
-                        <div class="table-area">
-                            <div class="view-tabs">
-                                <button
-                                    class="view-tab-button active"
-                                    data-view="raw-data-view"
-                                >
-                                    Raw 데이터 뷰
-                                </button>
-                                <button
-                                    class="view-tab-button"
-                                    data-view="classification-view"
-                                >
-                                    수량산출분류 뷰
-                                </button>
-                            </div>
-                            <div class="table-controls">
-                                <div id="grouping-controls-container">
-                                    <button id="add-group-level-btn">
-                                        그룹핑 추가
-                                    </button>
-                                    <div
-                                        id="data-management-grouping-controls"
-                                    ></div>
-                                </div>
-                                <div id="tag-assignment-controls">
-                                    <select id="tag-assign-select">
-                                        <option value="">
-                                            -- 분류 선택 --
-                                        </option>
-                                    </select>
-                                    <button id="assign-tag-btn">
-                                        분류 적용
+                        <div class="main-split-layout">
+                            <div class="table-area">
+                                <div class="view-tabs">
+                                    <button
+                                        class="view-tab-button active"
+                                        data-view="raw-data-view"
+                                    >
+                                        Raw 데이터 뷰
                                     </button>
                                     <button
-                                        id="apply-rules-btn"
-                                        title="룰셋을 기준으로 모든 객체에 분류를 일괄 적용합니다."
+                                        class="view-tab-button"
+                                        data-view="classification-view"
                                     >
-                                        룰셋 일괄적용
+                                        수량산출분류 뷰
                                     </button>
-                                    <button id="clear-tags-btn">
-                                        분류 제거
+                                </div>
+                                <div class="table-controls">
+                                    <div id="grouping-controls-container">
+                                        <button id="add-group-level-btn">
+                                            그룹핑 추가
+                                        </button>
+                                        <div
+                                            id="data-management-grouping-controls"
+                                        ></div>
+                                    </div>
+                                    <div id="tag-assignment-controls">
+                                        <select id="tag-assign-select">
+                                            <option value="">
+                                                -- 분류 선택 --
+                                            </option>
+                                        </select>
+                                        <button id="assign-tag-btn">
+                                            분류 적용
+                                        </button>
+                                        <button
+                                            id="apply-rules-btn"
+                                            title="룰셋을 기준으로 모든 객체에 분류를 일괄 적용합니다."
+                                        >
+                                            룰셋 일괄적용
+                                        </button>
+                                        <button id="clear-tags-btn">
+                                            분류 제거
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    id="data-management-data-table-container"
+                                    class="table-container"
+                                >
+                                    데이터가 여기에 표시됩니다...
+                                </div>
+                                <div class="table-footer-controls">
+                                    <button
+                                        id="clear-selection-filter-btn"
+                                        style="display: none"
+                                    >
+                                        선택 필터 해제
                                     </button>
                                 </div>
                             </div>
-                            <div
-                                id="data-management-data-table-container"
-                                class="table-container"
-                            >
-                                데이터가 여기에 표시됩니다...
-                            </div>
-                            <div class="table-footer-controls">
-                                <button
-                                    id="clear-selection-filter-btn"
-                                    style="display: none"
-                                >
-                                    선택 필터 해제
-                                </button>
+                            <div class="details-panel">
+                                <div class="details-panel-tabs">
+                                    <button
+                                        class="detail-tab-button active"
+                                        data-tab="ruleset-helper"
+                                    >
+                                        룰셋 작성 도우미
+                                    </button>
+                                </div>
+                                <div class="detail-tab-content active" id="detail-tab-ruleset-helper">
+                                    <div class="control-box">
+                                        <h4>선택한 BIM 객체 속성</h4>
+                                        <div id="raw-data-helper-properties-container" style="max-height: 600px; overflow-y: auto;">
+                                            <p style="color: #999;">테이블에서 행을 선택하면 해당 객체의 속성이 여기에 표시됩니다.</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </main>
@@ -572,6 +604,18 @@
                                         ></span
                                     >
                                 </button>
+                                <!-- ▼▼▼ [추가] 액티비티 할당 룰셋 버튼 ▼▼▼ -->
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="activity-assignment-ruleset"
+                                >
+                                    <span class="ruleset-icon">⚡</span>
+                                    <span class="ruleset-text"
+                                        ><strong>액티비티 할당 룰셋</strong
+                                        ><small>CostItem → Activity</small></span
+                                    >
+                                </button>
+                                <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
                                 <button
                                     class="ruleset-nav-button"
                                     data-ruleset="space-classification-ruleset"
@@ -747,6 +791,75 @@
                                     </p>
                                 </div>
                             </div>
+                            <!-- ▼▼▼ [추가] 액티비티 할당 룰셋 섹션 ▼▼▼ -->
+                            <div
+                                id="activity-assignment-ruleset"
+                                class="ruleset-content"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>액티비티 할당 룰셋 관리</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="import-activity-assignment-rules-btn"
+                                        >
+                                            가져오기
+                                        </button>
+                                        <button
+                                            id="export-activity-assignment-rules-btn"
+                                        >
+                                            내보내기
+                                        </button>
+                                        <button
+                                            id="add-activity-assignment-rule-btn"
+                                        >
+                                            새 규칙 추가
+                                        </button>
+                                        <button
+                                            id="apply-activity-assignment-rules-btn"
+                                            class="primary-btn"
+                                            title="액티비티 할당 룰셋을 모든 산출항목에 일괄 적용합니다."
+                                        >
+                                            룰셋 일괄적용
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="ruleset-description">
+                                    <p>
+                                        <strong>산출항목(CostItem)</strong>에
+                                        <strong>액티비티(Activity)</strong>를 자동으로
+                                        할당하는 룰셋입니다.
+                                    </p>
+                                    <p>조건문에서 다단계 속성 접근이 가능합니다:</p>
+                                    <ul>
+                                        <li>
+                                            <code>{property}</code> - CostItem 자체 속성
+                                            (예: {quantity})
+                                        </li>
+                                        <li>
+                                            <code>QM.{property}</code> - QuantityMember
+                                            속성 (예: QM.{name})
+                                        </li>
+                                        <li>
+                                            <code>MM.{property}</code> - MemberMark 속성
+                                            (예: MM.{mark})
+                                        </li>
+                                        <li>
+                                            <code>RE.{property}</code> - RawElement (BIM
+                                            원본) 속성 (예: RE.{Category})
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="activity-assignment-ruleset-table-container"
+                                >
+                                    <p>
+                                        CostItem 속성 기반으로 액티비티를 자동 할당하는
+                                        규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
                             <div
                                 id="space-classification-ruleset"
                                 class="ruleset-content"
@@ -901,6 +1014,12 @@
                                     >
                                         공간분류
                                     </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="ruleset-helper"
+                                    >
+                                        룰셋 작성 도우미
+                                    </button>
                                 </div>
                                 <div
                                     class="detail-tab-content active"
@@ -1022,6 +1141,18 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="ruleset-helper"
+                                >
+                                    <div class="control-box" style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+                                        <h4>📋 룰셋 작성 도우미</h4>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 15px;">부재를 선택하면 룰셋 작성에 활용할 수 있는 속성 목록이 표시됩니다.</p>
+                                        <div id="qm-ruleset-properties-content" style="flex: 1; overflow-y: auto; overflow-x: hidden;">
+                                            <p style="color: #999; text-align: center; padding: 20px;">부재를 선택해주세요</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1058,27 +1189,58 @@
                                 </div>
                             </div>
                             <div class="details-panel">
-                                <div class="control-box">
-                                    <h3>연관된 부재의 속성</h3>
-                                    <div id="ci-linked-member-info-header">
-                                        <p>
-                                            산출항목을 선택하면 정보가
-                                            표시됩니다.
-                                        </p>
+                                <div class="details-panel-tabs">
+                                    <button
+                                        class="detail-tab-button active"
+                                        data-tab="linked-properties"
+                                    >
+                                        연관된 부재의 속성
+                                    </button>
+                                    <button
+                                        class="detail-tab-button"
+                                        data-tab="ruleset-helper"
+                                    >
+                                        룰셋 작성 도우미
+                                    </button>
+                                </div>
+                                <div
+                                    class="detail-tab-content active"
+                                    data-tab="linked-properties"
+                                >
+                                    <div class="control-box">
+                                        <h3>연관된 부재의 속성</h3>
+                                        <div id="ci-linked-member-info-header">
+                                            <p>
+                                                산출항목을 선택하면 정보가
+                                                표시됩니다.
+                                            </p>
+                                        </div>
+                                        <div id="ci-linked-properties-wrapper">
+                                            <div
+                                                id="ci-linked-member-properties-container"
+                                                class="properties-sub-container"
+                                            ></div>
+                                            <div
+                                                id="ci-linked-mark-properties-container"
+                                                class="properties-sub-container"
+                                            ></div>
+                                            <div
+                                                id="ci-linked-raw-element-properties-container"
+                                                class="properties-sub-container"
+                                            ></div>
+                                        </div>
                                     </div>
-                                    <div id="ci-linked-properties-wrapper">
-                                        <div
-                                            id="ci-linked-member-properties-container"
-                                            class="properties-sub-container"
-                                        ></div>
-                                        <div
-                                            id="ci-linked-mark-properties-container"
-                                            class="properties-sub-container"
-                                        ></div>
-                                        <div
-                                            id="ci-linked-raw-element-properties-container"
-                                            class="properties-sub-container"
-                                        ></div>
+                                </div>
+                                <div
+                                    class="detail-tab-content"
+                                    data-tab="ruleset-helper"
+                                >
+                                    <div class="control-box" style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+                                        <h4>📋 룰셋 작성 도우미</h4>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 15px;">산출항목을 선택하면 룰셋 작성에 활용할 수 있는 속성 목록이 표시됩니다.</p>
+                                        <div id="ci-ruleset-properties-content" style="flex: 1; overflow-y: auto; overflow-x: hidden;">
+                                            <p style="color: #999; text-align: center; padding: 20px;">산출항목을 선택해주세요</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1556,6 +1718,58 @@
                                             중간 목록에서 항목을 선택하세요.
                                         </p>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="gantt-chart" class="tab-content">
+                    <div class="gantt-container" style="display: flex; flex-direction: column; height: calc(100vh - 120px); overflow: hidden;">
+                        <div class="gantt-header" style="flex-shrink: 0;">
+                            <h2>공정표 (간트차트)</h2>
+                            <div class="gantt-controls" style="display: flex; align-items: center; gap: 15px; margin-top: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <label for="project-start-date">프로젝트 시작일:</label>
+                                    <input type="date" id="project-start-date" style="padding: 5px;">
+                                    <button id="refresh-gantt-btn" class="btn-save">간트차트 새로고침</button>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <label for="cost-cutoff-date">내역집계 기준일:</label>
+                                    <input type="date" id="cost-cutoff-date" style="padding: 5px;">
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; margin-left: auto;">
+                                    <label for="gantt-view-mode">표시 모드:</label>
+                                    <select id="gantt-view-mode" style="padding: 5px;">
+                                        <option value="Day">일</option>
+                                        <option value="Week" selected>주</option>
+                                        <option value="Month">월</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="gantt-chart-container" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; margin-top: 20px;">
+                            <p style="padding: 20px; text-align: center; color: #999;">로딩 중...</p>
+                        </div>
+                        <!-- 하단 탭 영역 -->
+                        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 20px; border-top: 2px solid #ddd; padding-top: 20px; overflow: hidden;">
+                            <!-- 탭 헤더 -->
+                            <div style="display: flex; border-bottom: 2px solid #ddd; margin-bottom: 15px; flex-shrink: 0;">
+                                <button class="gantt-bottom-tab-btn active" data-tab="detail" style="padding: 12px 24px; border: none; background: #1976d2; color: white; cursor: pointer; font-size: 14px; font-weight: bold; border-radius: 4px 4px 0 0; margin-right: 2px;">
+                                    상세 정보
+                                </button>
+                                <button class="gantt-bottom-tab-btn" data-tab="boq" style="padding: 12px 24px; border: none; background: #f5f5f5; color: #666; cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; margin-right: 2px;">
+                                    내역집계표
+                                </button>
+                            </div>
+                            <!-- 탭 내용 -->
+                            <div style="flex: 1; min-height: 0; overflow: hidden;">
+                                <!-- 상세 정보 탭 -->
+                                <div id="gantt-detail-container" class="gantt-bottom-tab-content active" data-tab="detail" style="height: 100%; overflow-y: auto; overflow-x: hidden;">
+                                </div>
+                                <!-- 내역집계표 탭 -->
+                                <div id="gantt-boq-container" class="gantt-bottom-tab-content" data-tab="boq" style="display: none; height: 100%; overflow-y: auto; overflow-x: hidden;">
+                                    <p style="padding: 20px; text-align: center; color: #999;">기준일을 선택하면 해당 일자까지의 내역집계표가 표시됩니다.</p>
                                 </div>
                             </div>
                         </div>
@@ -2059,6 +2273,185 @@
                         </div>
                     </div>
                 </div>
+                <!-- ▼▼▼ [추가] 액티비티 관리 탭 ▼▼▼ -->
+                <div id="activity-management" class="tab-content">
+                    <nav class="inner-tab-nav">
+                        <button class="inner-tab-button active" data-inner-tab="activity-list">
+                            📋 액티비티 목록
+                        </button>
+                        <button class="inner-tab-button" data-inner-tab="activity-dependency">
+                            🔗 선후행 관계
+                        </button>
+                        <button class="inner-tab-button" data-inner-tab="calendar-management">
+                            📆 캘린더 관리
+                        </button>
+                    </nav>
+
+                    <div class="inner-tab-content-container">
+                        <!-- 액티비티 목록 -->
+                        <div id="activity-list" class="inner-tab-content active">
+                            <div class="activity-list-section panel-box">
+                                <div class="panel-header">
+                                    <h3>액티비티 목록</h3>
+                                    <button id="add-activity-btn" class="primary-button">
+                                        ➕ 새 액티비티 추가
+                                    </button>
+                                </div>
+                                <div class="panel-content">
+                                    <div id="activity-table-container" class="table-container">
+                                        <p>프로젝트를 선택하면 액티비티 목록이 표시됩니다.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 선후행 관계 -->
+                        <div id="activity-dependency" class="inner-tab-content">
+                            <div class="dependency-section panel-box">
+                                <div class="panel-header">
+                                    <h3>선후행 관계 관리</h3>
+                                    <button id="add-dependency-btn" class="primary-button">
+                                        ➕ 관계 추가
+                                    </button>
+                                </div>
+                                <div class="panel-content">
+                                    <div id="dependency-table-container" class="table-container">
+                                        <p>프로젝트를 선택하면 선후행 관계 목록이 표시됩니다.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 캘린더 관리 -->
+                        <div id="calendar-management" class="inner-tab-content">
+                            <div style="display: flex; gap: 20px; height: 100%;">
+                                <!-- 왼쪽: 캘린더 리스트 -->
+                                <div class="calendar-list-panel" style="flex: 0 0 300px; display: flex; flex-direction: column;">
+                                    <div class="panel-box" style="display: flex; flex-direction: column; height: 100%;">
+                                        <div class="panel-header">
+                                            <h3>캘린더 목록</h3>
+                                            <button id="add-calendar-btn" class="primary-button">
+                                                ➕ 새 캘린더
+                                            </button>
+                                        </div>
+                                        <div class="panel-content" style="flex: 1; overflow-y: auto;">
+                                            <div id="calendars-list-container">
+                                                <p style="text-align: center; color: #999; padding: 20px;">프로젝트를 선택하면 캘린더 목록이 표시됩니다.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 오른쪽: 캘린더 상세 -->
+                                <div class="calendar-detail-panel" style="flex: 1; display: flex; flex-direction: column;">
+                                    <div class="panel-box" style="display: flex; flex-direction: column; height: 100%;">
+                                        <div class="panel-header">
+                                            <h3 id="calendar-detail-title">캘린더 상세</h3>
+                                            <div style="display: flex; gap: 10px;">
+                                                <button id="set-main-calendar-btn" class="secondary-button" style="display: none;">
+                                                    ⭐ 메인으로 설정
+                                                </button>
+                                                <button id="save-calendar-btn" class="primary-button" style="display: none;">
+                                                    💾 저장
+                                                </button>
+                                                <button id="delete-calendar-btn" class="danger-button" style="display: none; background: #dc3545;">
+                                                    🗑️ 삭제
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="panel-content" style="flex: 1; overflow-y: auto;">
+                                            <div id="calendar-detail-container">
+                                                <p style="text-align: center; color: #999; padding: 20px;">캘린더를 선택하거나 새로 만들어주세요.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ▲▲▲ [추가] 액티비티 관리 탭 끝 ▲▲▲ -->
+
+                <!-- ▼▼▼ [추가] 액티비티 할당 탭 (산출 탭 하위) ▼▼▼ -->
+                <div id="activity-assignment" class="tab-content">
+                    <!-- Inner Tab 네비게이션 -->
+                    <div class="inner-tab-nav">
+                        <button class="inner-tab-button active" data-inner-tab="activity-assign">
+                            액티비티 할당
+                        </button>
+                        <button class="inner-tab-button" data-inner-tab="activity-objects">
+                            액티비티 객체 목록
+                        </button>
+                    </div>
+
+                    <!-- Inner Tab 1: 액티비티 할당 -->
+                    <div id="activity-assign" class="inner-tab-content active">
+                        <div class="activity-assignment-section panel-box">
+                            <div class="panel-header">
+                                <h3>산출항목별 액티비티 할당</h3>
+                                <div class="panel-header-buttons">
+                                    <button
+                                        class="btn btn-primary"
+                                        id="apply-activity-rules-from-assignment-tab"
+                                        title="액티비티 할당 룰셋을 모든 산출항목에 일괄 적용합니다."
+                                    >
+                                        룰셋 일괄 적용
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="panel-content">
+                                <div style="display: flex; gap: 20px; height: 100%;">
+                                    <!-- 왼쪽: 테이블 영역 -->
+                                    <div style="flex: 1; display: flex; flex-direction: column;">
+                                        <div class="activity-assignment-filter">
+                                            <label>
+                                                <input type="checkbox" id="filter-unassigned-items" />
+                                                미할당 항목만 표시
+                                            </label>
+                                            <label>
+                                                액티비티 필터:
+                                                <select id="activity-filter-assign-select">
+                                                    <option value="">전체</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                        <div id="activity-assign-table-container" class="table-container" style="flex: 1;">
+                                            <p>프로젝트를 선택하고 산출항목을 생성하면 액티비티 할당 목록이 표시됩니다.</p>
+                                        </div>
+                                    </div>
+                                    <!-- 오른쪽: 속성 패널 -->
+                                    <div id="activity-item-properties-panel" style="width: 400px; border-left: 1px solid #ddd; padding-left: 20px; overflow-y: auto; max-height: 700px;">
+                                        <h4>산출항목 속성</h4>
+                                        <p style="color: #999;">항목을 선택하면 룰셋에 적용할 수 있는 속성 목록이 표시됩니다.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inner Tab 2: 액티비티 객체 목록 -->
+                    <div id="activity-objects" class="inner-tab-content">
+                        <div class="activity-objects-section panel-box">
+                            <div class="panel-header">
+                                <h3>액티비티 객체 목록 (할당된 작업)</h3>
+                            </div>
+                            <div class="panel-content">
+                                <div class="activity-objects-filter">
+                                    <label>
+                                        액티비티 필터:
+                                        <select id="activity-filter-objects-select">
+                                            <option value="">전체</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div id="activity-objects-table-container" class="table-container">
+                                    <p>액티비티가 할당된 산출항목이 없습니다.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ▲▲▲ [추가] 액티비티 할당 탭 끝 ▲▲▲ -->
                 <div id="schematic-estimation-sd" class="tab-content">
                     <div class="sd-container">
                         <div class="sd-top-panel">
@@ -2210,15 +2603,20 @@
         <script src="{% static 'connections/ruleset_cost_code_assignment_handlers.js' %}"></script>
         <script src="{% static 'connections/ruleset_space_classification_handlers.js' %}"></script>
         <script src="{% static 'connections/ruleset_space_assignment_handlers.js' %}"></script>
+        <script src="{% static 'connections/ruleset_activity_assignment_handlers.js' %}?v=1"></script>
         <script src="{% static 'connections/cost_code_management_handlers.js' %}"></script>
         <script src="{% static 'connections/member_mark_management_handlers.js' %}"></script>
         <script src="{% static 'connections/tag_management_handlers.js' %}"></script>
-        <script src="{% static 'connections/csrf_token.js' %}"></script>
+        <script src="{% static 'connections/csrf_token.js' %}?v=2"></script>
+        <script src="{% static 'connections/activity_management_handlers.js' %}?v=6"></script>
+        <script src="{% static 'connections/calendar_management_handlers.js' %}?v=2"></script>
+        <script src="{% static 'connections/activity_assignment_handlers.js' %}?v=9"></script>
+        <script src="{% static 'connections/gantt_chart_handlers.js' %}?v=23"></script>
         <script src="{% static 'connections/data_management_handlers.js' %}"></script>
         <script src="{% static 'connections/space_management_handlers.js' %}"></script>
         <script src="{% static 'connections/project_management_handlers.js' %}?v=2"></script>
-        <script src="{% static 'connections/navigation.js' %}?v=2"></script>
-        <script src="{% static 'connections/three_d_viewer.js' %}?v=33"></script>
+        <script src="{% static 'connections/three_d_viewer.js' %}?v=50"></script>
+        <script src="{% static 'connections/navigation.js' %}?v=3"></script>
         <script src="{% static 'connections/ai_model_management.js' %}?v=2"></script>
         <script src="{% static 'connections/unit_price_management.js' %}"></script>
         <script src="{% static 'connections/schematic_estimation_handlers.js' %}"></script>
