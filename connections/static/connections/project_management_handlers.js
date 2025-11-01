@@ -135,6 +135,22 @@ function handleProjectChange(e) {
             `[DEBUG][handleProjectChange] Calling loadDataForActiveTab() for active tab: ${activeTab}`
         ); // 디버깅
         loadDataForActiveTab();
+
+        // --- 3D 뷰어용 수량산출부재 및 산출항목 데이터 로드 ---
+        // 3D 뷰포트가 항상 왼쪽에 표시되므로 프로젝트 선택 시 항상 관련 데이터 로드
+        if (typeof loadQuantityMembers === 'function') {
+            console.log('[DEBUG][handleProjectChange] Loading quantity members for 3D viewer...');
+            loadQuantityMembers();
+        }
+        if (typeof loadCostItems === 'function') {
+            console.log('[DEBUG][handleProjectChange] Loading cost items for 3D viewer...');
+            loadCostItems();
+        }
+        if (typeof loadActivities === 'function') {
+            console.log('[DEBUG][handleProjectChange] Loading activities for 3D viewer...');
+            loadActivities();
+        }
+        // --- 3D 뷰어용 데이터 로드 끝 ---
     } else {
         // --- 프로젝트 선택 해제 시 UI 초기화 ---
         console.log(

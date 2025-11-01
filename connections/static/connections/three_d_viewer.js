@@ -4,12 +4,36 @@
 
 (function() {
     let scene, camera, renderer, controls;
+    let dataMgmtScene = null; // ▼▼▼ [수정] 데이터 관리 탭의 독립 scene ▼▼▼
+    let dataMgmtCamera = null; // ▼▼▼ [수정] 데이터 관리 탭의 독립 camera ▼▼▼
+    let dataMgmtRenderer = null; // ▼▼▼ [추가] 데이터 관리 탭의 독립 렌더러 ▼▼▼
+    let dataMgmtControls = null; // ▼▼▼ [추가] 데이터 관리 탭의 독립 컨트롤 ▼▼▼
     let geometryLoaded = false;
     let raycaster, mouse;
     let selectedObject = null;
     let selectedObjects = []; // ▼▼▼ [추가] 복수 선택을 위한 배열 ▼▼▼
     let originalMaterials = new Map(); // Store original materials for deselection
     let hoveredObject = null; // ▼▼▼ [추가] 호버된 객체 ▼▼▼
+
+    // ▼▼▼ [추가] 데이터 관리 뷰어 전용 변수들 ▼▼▼
+    let dataMgmtRaycaster = null;
+    let dataMgmtMouse = null;
+    let dataMgmtSelectedObjects = [];
+    let dataMgmtOriginalMaterials = new Map();
+    let dataMgmtHoveredObject = null;
+    let dataMgmtIsDragging = false;
+    let dataMgmtDragStart = null;
+    let dataMgmtDragCurrent = null;
+    let dataMgmtSelectionBox = null;
+    let dataMgmtPointerDownTime = 0;
+    let dataMgmtPreviewHighlightedObjects = [];
+    let dataMgmtHiddenObjectIds = new Set();
+    let dataMgmtIsShiftRightRotating = false;
+    let dataMgmtIsRightClickHeld = false;
+    let dataMgmtLastRotateX = 0;
+    let dataMgmtLastRotateY = 0;
+    let dataMgmtKeys = { w: false, a: false, s: false, d: false, q: false, e: false };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // For cycling through overlapping objects
     let lastClickPosition = null;
@@ -171,9 +195,10 @@
         container.appendChild(selectionBox);
 
         // Add pointer event listeners for box selection
+        // pointerdown은 canvas에서, move/up은 document에서 처리 (캔버스 밖에서도 작동)
         canvas.addEventListener('pointerdown', onPointerDown, false);
-        canvas.addEventListener('pointermove', onPointerMove, false);
-        canvas.addEventListener('pointerup', onPointerUp, false);
+        document.addEventListener('pointermove', onPointerMove, false);
+        document.addEventListener('pointerup', onPointerUp, false);
         canvas.addEventListener('pointerleave', onPointerLeave, false);  // Clear hover when leaving canvas
 
         // ▼▼▼ [추가] WASD 키보드 이벤트 (플라이 모드용) ▼▼▼
@@ -243,9 +268,41 @@
             controls.update();
         }
 
+        // ▼▼▼ [수정] 데이터 관리 탭 컨트롤도 업데이트 ▼▼▼
+        if (dataMgmtControls && dataMgmtControls.enabled) {
+            dataMgmtControls.update();
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 데이터 관리 뷰어 WASD 플라이 모드 ▼▼▼
+        if (dataMgmtIsRightClickHeld && dataMgmtCamera) {
+            const moveSpeed = 10 * delta;
+            const forward = new THREE.Vector3();
+            const right = new THREE.Vector3();
+            const up = new THREE.Vector3(0, 1, 0);
+
+            dataMgmtCamera.getWorldDirection(forward);
+            right.crossVectors(forward, dataMgmtCamera.up).normalize();
+            forward.normalize();
+
+            if (dataMgmtKeys.w) dataMgmtCamera.position.addScaledVector(forward, moveSpeed);
+            if (dataMgmtKeys.s) dataMgmtCamera.position.addScaledVector(forward, -moveSpeed);
+            if (dataMgmtKeys.a) dataMgmtCamera.position.addScaledVector(right, -moveSpeed);
+            if (dataMgmtKeys.d) dataMgmtCamera.position.addScaledVector(right, moveSpeed);
+            if (dataMgmtKeys.q) dataMgmtCamera.position.addScaledVector(up, -moveSpeed);
+            if (dataMgmtKeys.e) dataMgmtCamera.position.addScaledVector(up, moveSpeed);
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [수정] 각각 독립적으로 렌더링 ▼▼▼
         if (renderer && scene && camera) {
             renderer.render(scene, camera);
         }
+
+        if (dataMgmtRenderer && dataMgmtScene && dataMgmtCamera) {
+            dataMgmtRenderer.render(dataMgmtScene, dataMgmtCamera);
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
 
     function onWindowResize() {
@@ -418,6 +475,13 @@
 
         // Update visibility control buttons
         updateVisibilityControlButtons();
+
+        // ▼▼▼ [추가] 데이터 관리 뷰어에 geometry 동기화 ▼▼▼
+        if (typeof window.syncGeometryToDataMgmt === 'function') {
+            console.log('[3D Viewer] Syncing geometry to data management viewer...');
+            window.syncGeometryToDataMgmt();
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
         // ▲▲▲ [수정] 여기까지 ▲▲▲
     };  // ▼▼▼ [수정] 전역 함수이므로 세미콜론 추가 ▼▼▼
 
@@ -639,10 +703,120 @@
     window.setupThreeDViewerListeners = function() {
         console.log("[3D Viewer] Setting up listeners for 3D Viewer tab.");
 
+        // ▼▼▼ 초기 스플릿바 위치 설정 (topSection을 67%로) ▼▼▼
+        const initialTopSection = document.getElementById('viewer-top-section');
+        if (initialTopSection) {
+            const totalHeight = window.innerHeight;
+            const headerHeight = document.querySelector('.app-header')?.offsetHeight || 60;
+            const navHeight = document.querySelector('.main-nav')?.offsetHeight || 50;
+            const availableHeight = totalHeight - headerHeight - navHeight;
+            const topSectionHeight = Math.floor(availableHeight * 0.67); // 67%
+
+            initialTopSection.style.flex = `0 0 ${topSectionHeight}px`;
+            console.log(`[3D Viewer] Initial top section height set to ${topSectionHeight}px (67% of ${availableHeight}px available)`);
+        }
+        // ▲▲▲ 초기 설정 끝 ▲▲▲
+
+        const returnBtn = document.getElementById('return-to-previous-tab-btn');
         const loadBtn = document.getElementById('load-geometry-btn');
         const clearBtn = document.getElementById('clear-scene-btn');
         const splitBtn = document.getElementById('split-object-btn');
         const deleteAllSplitsBtn = document.getElementById('delete-all-splits-btn');
+
+        // Return to previous tab button
+        if (returnBtn) {
+            returnBtn.onclick = function() {
+                console.log("[3D Viewer] Return to previous tab clicked. Previous tab:", window.previousTab);
+
+                if (window.previousTab) {
+                    // Try multiple selectors to find the tab button
+                    let prevTabBtn = null;
+
+                    // 1. Try sub-nav-button with data-tab attribute (most common)
+                    prevTabBtn = document.querySelector(`.sub-nav-button[data-tab="${window.previousTab}"]`);
+                    if (prevTabBtn) {
+                        console.log("[3D Viewer] Found sub-nav button with data-tab:", window.previousTab);
+                    }
+
+                    // 2. Try sub-nav-button with data-sub-tab attribute
+                    if (!prevTabBtn) {
+                        prevTabBtn = document.querySelector(`.sub-nav-button[data-sub-tab="${window.previousTab}"]`);
+                        if (prevTabBtn) {
+                            console.log("[3D Viewer] Found sub-nav button with data-sub-tab:", window.previousTab);
+                        }
+                    }
+
+                    // 3. Try main tab button
+                    if (!prevTabBtn) {
+                        prevTabBtn = document.querySelector(`.main-nav .nav-button[data-primary-tab="${window.previousTab}"]`);
+                        if (prevTabBtn) {
+                            console.log("[3D Viewer] Found main nav button:", window.previousTab);
+                        }
+                    }
+
+                    // 4. Click the found button
+                    if (prevTabBtn) {
+                        // If it's a sub-nav button, first activate its parent main tab
+                        if (prevTabBtn.classList.contains('sub-nav-button')) {
+                            const parentNav = prevTabBtn.closest('.secondary-nav');
+                            if (parentNav) {
+                                const parentId = parentNav.id; // e.g., "secondary-nav-takeoff"
+                                const primaryTabId = parentId.replace('secondary-nav-', ''); // e.g., "takeoff"
+                                const primaryTabBtn = document.querySelector(`.main-nav .nav-button[data-primary-tab="${primaryTabId}"]`);
+
+                                if (primaryTabBtn && !primaryTabBtn.classList.contains('active')) {
+                                    console.log("[3D Viewer] Activating parent tab first:", primaryTabId);
+                                    primaryTabBtn.click();
+
+                                    // Wait for parent tab to activate, then click sub-tab
+                                    setTimeout(() => {
+                                        console.log("[3D Viewer] Now clicking sub-tab:", window.previousTab);
+                                        prevTabBtn.click();
+
+                                        // Clear previous tab after returning
+                                        window.previousTab = null;
+                                        returnBtn.style.display = 'none';
+                                    }, 100);
+                                } else {
+                                    // Parent already active, just click sub-tab
+                                    prevTabBtn.click();
+                                    window.previousTab = null;
+                                    returnBtn.style.display = 'none';
+                                }
+                            } else {
+                                // No parent nav found, just click the button
+                                prevTabBtn.click();
+                                window.previousTab = null;
+                                returnBtn.style.display = 'none';
+                            }
+                        } else {
+                            // It's a main tab button, click directly
+                            prevTabBtn.click();
+                            window.previousTab = null;
+                            returnBtn.style.display = 'none';
+                        }
+                    } else {
+                        console.error("[3D Viewer] Previous tab button not found:", window.previousTab);
+                        console.log("[3D Viewer] Available sub-nav buttons:",
+                            Array.from(document.querySelectorAll('.sub-nav-button')).map(b => b.dataset.tab || b.dataset.subTab));
+                    }
+                } else {
+                    console.warn("[3D Viewer] No previous tab to return to");
+                }
+            };
+        }
+
+        // Show/hide return button based on previousTab state
+        window.updateReturnButton = function() {
+            if (returnBtn) {
+                if (window.previousTab && window.activeTab === 'three-d-viewer') {
+                    returnBtn.style.display = 'inline-block';
+                    console.log("[3D Viewer] Return button shown");
+                } else {
+                    returnBtn.style.display = 'none';
+                }
+            }
+        };
 
         // Use onclick to avoid duplicate event listeners
         if (loadBtn) {
@@ -971,50 +1145,64 @@
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // ▼▼▼ [추가] 내역집계표 접기/펼치기 ▼▼▼
+        // ▼▼▼ 새로운 구조: topSection, middleSection, boqSection ▼▼▼
+        const topSection = document.getElementById('viewer-top-section');
+        const middleSection = document.getElementById('viewer-middle-section');
+        const boqSection = document.getElementById('viewer-boq-section');
         const boqToggleHeader = document.getElementById('viewer-boq-toggle-header');
         const boqContent = document.getElementById('viewer-boq-content');
         const boqToggleIcon = document.getElementById('viewer-boq-toggle-icon');
-        const boqSection = document.getElementById('viewer-boq-section');
-        const bottomSection = document.querySelector('.three-d-viewer-bottom-section');
 
-        if (boqToggleHeader && boqContent && boqToggleIcon && boqSection) {
+        // BOQ 토글 기능
+        if (boqToggleHeader && boqContent && boqToggleIcon && boqSection && middleSection) {
             boqToggleHeader.addEventListener('click', function() {
                 if (boqContent.style.display === 'none') {
                     // 펼치기
                     boqContent.style.display = 'block';
                     boqToggleIcon.textContent = '▲';
-                    // Section이 공간을 차지하도록 설정 (최대 450px)
-                    boqSection.style.flex = '0 0 450px';
+
+                    // middleSection과 boqSection의 크기를 적절히 분배
+                    const currentMiddleHeight = middleSection.offsetHeight;
+                    const currentBoqHeight = boqSection.offsetHeight;
+                    const total = currentMiddleHeight + currentBoqHeight;
+
+                    const newMiddleHeight = Math.floor(total * 0.45); // 45%
+                    const newBoqHeight = Math.floor(total * 0.55); // 55%
+
+                    middleSection.style.flex = `0 0 ${newMiddleHeight}px`;
+                    boqSection.style.flex = `0 0 ${newBoqHeight}px`;
+
+                    console.log(`[BOQ Toggle] Expanded - Middle: ${newMiddleHeight}px, BOQ: ${newBoqHeight}px`);
                 } else {
                     // 접기
                     boqContent.style.display = 'none';
                     boqToggleIcon.textContent = '▼';
-                    // Section이 헤더만 차지하도록 설정
-                    boqSection.style.flex = '0 0 auto';
+
+                    // middleSection은 flex로, boqSection은 최소 높이로
+                    middleSection.style.flex = '1 1 250px';
+                    boqSection.style.flex = '0 0 50px';
+
+                    console.log(`[BOQ Toggle] Collapsed - BOQ set to 50px`);
                 }
 
-                // ▼▼▼ [추가] 3D 뷰어 캔버스 크기 조정 ▼▼▼
-                setTimeout(() => {
-                    resizeViewer();
-                }, 100); // DOM 업데이트 후 실행
-                // ▲▲▲ [추가] 여기까지 ▲▲▲
+                setTimeout(() => { resizeViewer(); }, 100);
             });
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 첫 번째 스플릿바 드래그 기능 (3D 뷰포트 ↔ 공정표) ▼▼▼
+        // ▼▼▼ 첫 번째 스플릿바: topSection ↔ middleSection ▼▼▼
         const resizeHandleTop = document.getElementById('viewer-resize-handle-top');
-        const topSection = document.querySelector('.three-d-viewer-top-section');
 
-        if (resizeHandleTop && topSection) {
+        if (resizeHandleTop && topSection && middleSection) {
             let isResizingTop = false;
             let startY = 0;
-            let startHeight = 0;
+            let startTopHeight = 0;
+            let startMiddleHeight = 0;
 
             resizeHandleTop.addEventListener('mousedown', function(e) {
                 isResizingTop = true;
                 startY = e.clientY;
-                startHeight = topSection.offsetHeight;
+                startTopHeight = topSection.offsetHeight;
+                startMiddleHeight = middleSection.offsetHeight;
                 document.body.style.cursor = 'ns-resize';
                 document.body.style.userSelect = 'none';
                 e.preventDefault();
@@ -1024,17 +1212,25 @@
                 if (!isResizingTop) return;
 
                 const delta = e.clientY - startY;
-                let newHeight = startHeight + delta;
 
-                // 최소/최대 높이 제한
-                const minHeight = 300;
-                const maxHeight = window.innerHeight - 400;
-                newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+                // 최소 높이 제한
+                const minTopHeight = 300;
+                const minMiddleHeight = 150;
 
-                // top-section 높이 변경
-                topSection.style.flex = `0 0 ${newHeight}px`;
+                // topSection과 middleSection의 합은 일정하게 유지
+                const totalAvailable = startTopHeight + startMiddleHeight;
 
-                // 3D 뷰어 크기 조정
+                let newTopHeight = startTopHeight + delta;
+                const maxTopHeight = totalAvailable - minMiddleHeight;
+                newTopHeight = Math.max(minTopHeight, Math.min(maxTopHeight, newTopHeight));
+
+                let newMiddleHeight = totalAvailable - newTopHeight;
+                newMiddleHeight = Math.max(minMiddleHeight, newMiddleHeight);
+
+                // 높이 적용
+                topSection.style.flex = `0 0 ${newTopHeight}px`;
+                middleSection.style.flex = `0 0 ${newMiddleHeight}px`;
+
                 resizeViewer();
             });
 
@@ -1046,28 +1242,25 @@
                 }
             });
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 두 번째 스플릿바 드래그 기능 (공정표 ↔ 내역집계표) ▼▼▼
+        // ▼▼▼ 두 번째 스플릿바: middleSection ↔ boqSection ▼▼▼
         const resizeHandleBottom = document.getElementById('viewer-resize-handle-bottom');
-        // bottomSection과 boqSection은 이미 위에서 선언되었으므로 재사용
 
-        if (resizeHandleBottom && bottomSection && boqSection) {
+        if (resizeHandleBottom && middleSection && boqSection) {
             let isResizingBottom = false;
             let startY = 0;
-            let startBottomHeight = 0;
+            let startMiddleHeight = 0;
             let startBoqHeight = 0;
 
             resizeHandleBottom.addEventListener('mousedown', function(e) {
                 // BOQ가 펼쳐져 있을 때만 동작
-                const boqContent = document.getElementById('viewer-boq-content');
                 if (!boqContent || boqContent.style.display === 'none') {
                     return;
                 }
 
                 isResizingBottom = true;
                 startY = e.clientY;
-                startBottomHeight = bottomSection.offsetHeight;
+                startMiddleHeight = middleSection.offsetHeight;
                 startBoqHeight = boqSection.offsetHeight;
                 document.body.style.cursor = 'ns-resize';
                 document.body.style.userSelect = 'none';
@@ -1079,23 +1272,24 @@
 
                 const delta = e.clientY - startY;
 
-                // 공정표 영역 높이 조정
-                let newBottomHeight = startBottomHeight + delta;
-                const minBottomHeight = 150;
-                const maxBottomHeight = window.innerHeight - 500;
-                newBottomHeight = Math.max(minBottomHeight, Math.min(maxBottomHeight, newBottomHeight));
+                // 최소 높이 제한
+                const minMiddleHeight = 150;
+                const minBoqHeight = 50;
 
-                // 내역집계표 영역 높이 조정 (반대 방향)
-                let newBoqHeight = startBoqHeight - delta;
-                const minBoqHeight = 200;
-                const maxBoqHeight = 600;
-                newBoqHeight = Math.max(minBoqHeight, Math.min(maxBoqHeight, newBoqHeight));
+                // middleSection과 boqSection의 합은 일정하게 유지
+                const totalAvailable = startMiddleHeight + startBoqHeight;
+
+                let newMiddleHeight = startMiddleHeight + delta;
+                const maxMiddleHeight = totalAvailable - minBoqHeight;
+                newMiddleHeight = Math.max(minMiddleHeight, Math.min(maxMiddleHeight, newMiddleHeight));
+
+                let newBoqHeight = totalAvailable - newMiddleHeight;
+                newBoqHeight = Math.max(minBoqHeight, newBoqHeight);
 
                 // 높이 적용
-                bottomSection.style.flex = `0 0 ${newBottomHeight}px`;
+                middleSection.style.flex = `0 0 ${newMiddleHeight}px`;
                 boqSection.style.flex = `0 0 ${newBoqHeight}px`;
 
-                // 3D 뷰어 크기 조정
                 resizeViewer();
             });
 
@@ -1107,7 +1301,7 @@
                 }
             });
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ 스플릿바 드래그 기능 끝 ▲▲▲
 
         // Setup properties panel tab listeners
         setupPropertiesPanelTabs();
@@ -2339,6 +2533,8 @@
         object.material = highlightMaterial;
         object.material.needsUpdate = true;
 
+        // 실시간 동기화 제거 - 탭 전환 시에만 동기화
+
         // ▼▼▼ [수정] 분할 객체와 BIM 원본 모두 처리 ▼▼▼
         const objectId = object.userData.bimObjectId || object.userData.splitId || object.userData.rawElementId;
         console.log("[3D Viewer] Object selected:", objectId);
@@ -2379,7 +2575,13 @@
         // Display quantity members
         displayQuantityMembers(object);
 
-        // Display cost items
+        // Display cost items in tab
+        displayCostItemsInTab(object);
+
+        // Display activities in tab
+        displayActivitiesInTab(object);
+
+        // Display cost items in table (existing functionality)
         displayCostItems(object);
 
         // Display volume information if available (for split objects)
@@ -2431,6 +2633,7 @@
         if (originalMaterials.has(selectedObject)) {
             selectedObject.material = originalMaterials.get(selectedObject);
             selectedObject.material.needsUpdate = true;
+            originalMaterials.delete(selectedObject); // IMPORTANT: Remove from map after restoration
         }
 
         console.log("[3D Viewer] Object deselected");
@@ -2511,6 +2714,8 @@
             // Display properties for first object
             displayObjectProperties(selectedObject);
             displayQuantityMembers(selectedObject);
+            displayCostItemsInTab(selectedObject);
+            displayActivitiesInTab(selectedObject);
             displayCostItems(selectedObject);
         }
 
@@ -2531,6 +2736,7 @@
             if (originalMaterials.has(object)) {
                 object.material = originalMaterials.get(object);
                 object.material.needsUpdate = true;
+                originalMaterials.delete(object); // IMPORTANT: Remove from map after restoration
             }
         });
 
@@ -2539,6 +2745,7 @@
             if (originalMaterials.has(selectedObject)) {
                 selectedObject.material = originalMaterials.get(selectedObject);
                 selectedObject.material.needsUpdate = true;
+                originalMaterials.delete(selectedObject); // IMPORTANT: Remove from map after restoration
             }
         }
 
@@ -2574,6 +2781,7 @@
             if (originalMaterials.has(object)) {
                 object.material = originalMaterials.get(object);
                 object.material.needsUpdate = true;
+                originalMaterials.delete(object); // IMPORTANT: Remove from map after restoration
             }
             selectedObjects.splice(index, 1);
             console.log(`[3D Viewer] Removed object from selection, ${selectedObjects.length} remaining`);
@@ -2606,11 +2814,15 @@
             selectedObject = selectedObjects[0];
             displayObjectProperties(selectedObject);
             displayQuantityMembers(selectedObject);
+            displayCostItemsInTab(selectedObject);
+            displayActivitiesInTab(selectedObject);
             displayCostItems(selectedObject);
         } else {
             selectedObject = null;
             clearPropertiesPanel();
             clearQuantityMembersPanel();
+            clearCostItemsTabPanel();
+            clearActivitiesTabPanel();
             clearCostItemsPanel();
         }
 
@@ -2668,11 +2880,15 @@
             selectedObject = selectedObjects[0];
             displayObjectProperties(selectedObject);
             displayQuantityMembers(selectedObject);
+            displayCostItemsInTab(selectedObject);
+            displayActivitiesInTab(selectedObject);
             displayCostItems(selectedObject);
         } else {
             selectedObject = null;
             clearPropertiesPanel();
             clearQuantityMembersPanel();
+            clearCostItemsTabPanel();
+            clearActivitiesTabPanel();
             clearCostItemsPanel();
         }
 
@@ -2840,7 +3056,11 @@
     // ▼▼▼ [수정] 전역으로 노출하여 websocket.js에서 접근 가능하도록 ▼▼▼
     function displayQuantityMembers(object) {
         const listContainer = document.getElementById('three-d-quantity-members-list');
-        if (!listContainer) return;
+        if (!listContainer) {
+            console.error('[3D Viewer] three-d-quantity-members-list element not found!');
+            return;
+        }
+        console.log('[3D Viewer] displayQuantityMembers called for object:', object.userData);
 
         // ▼▼▼ [수정] 분할 객체인 경우 split_element_id로 조회 ▼▼▼
         let quantityMembers = [];
@@ -3053,6 +3273,307 @@
         if (detailsContainer) {
             detailsContainer.innerHTML = '<p class="no-selection">리스트에서 수량산출부재를 선택하세요</p>';
         }
+    }
+
+    // Display cost items in tab for selected BIM object
+    function displayCostItemsInTab(object) {
+        const listContainer = document.getElementById('three-d-cost-items-list');
+        if (!listContainer) {
+            console.error('[3D Viewer] three-d-cost-items-list element not found!');
+            return;
+        }
+        console.log('[3D Viewer] displayCostItemsInTab called for object:', object.userData);
+
+        // Find cost items related to this object through quantity members
+        let costItems = [];
+
+        if (object.userData.splitElementId) {
+            // Split object case
+            const quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+            quantityMembers.forEach(qm => {
+                const items = findCostItemsByQuantityMemberId(qm.id);
+                costItems = costItems.concat(items);
+            });
+        } else {
+            // Original BIM object case
+            const bimObjectId = object.userData.bimObjectId || object.userData.rawElementId;
+            if (!bimObjectId) {
+                listContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+                return;
+            }
+            const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
+            quantityMembers.forEach(qm => {
+                const items = findCostItemsByQuantityMemberId(qm.id);
+                costItems = costItems.concat(items);
+            });
+        }
+
+        if (costItems.length === 0) {
+            listContainer.innerHTML = '<p class="no-selection">연관된 산출항목이 없습니다</p>';
+            return;
+        }
+
+        console.log('[3D Viewer] Found cost items:', costItems);
+
+        let html = '';
+        costItems.forEach((item) => {
+            html += `<div class="quantity-member-item" data-ci-id="${item.id}">`;
+            html += `<div class="quantity-member-item-name">${item.cost_code_name || 'Unnamed Item'}</div>`;
+            html += `<div class="quantity-member-item-info">`;
+            html += `ID: ${item.id}`;
+            if (item.quantity !== undefined) {
+                html += ` | 수량: ${item.quantity}`;
+            }
+            html += `</div>`;
+            html += `</div>`;
+        });
+
+        listContainer.innerHTML = html;
+
+        // Add click listeners
+        const items = listContainer.querySelectorAll('.quantity-member-item');
+        items.forEach(item => {
+            item.addEventListener('click', function() {
+                items.forEach(i => i.classList.remove('selected'));
+                this.classList.add('selected');
+                const ciId = this.getAttribute('data-ci-id');
+                const ci = costItems.find(c => c.id.toString() === ciId.toString());
+                if (ci) {
+                    displayCostItemDetails(ci);
+                }
+            });
+        });
+    }
+
+    // Display cost item details
+    function displayCostItemDetails(costItem) {
+        const detailsContainer = document.getElementById('three-d-cost-item-details');
+        if (!detailsContainer) return;
+
+        let html = '';
+        html += '<div class="property-group">';
+        html += '<div class="property-row"><span class="property-label">ID:</span><span class="property-value">' + (costItem.id || 'N/A') + '</span></div>';
+        html += '<div class="property-row"><span class="property-label">이름:</span><span class="property-value">' + (costItem.name || 'N/A') + '</span></div>';
+        if (costItem.cost_code_name) {
+            html += '<div class="property-row"><span class="property-label">공사코드:</span><span class="property-value">' + costItem.cost_code_name + '</span></div>';
+        }
+        if (costItem.quantity !== undefined) {
+            html += '<div class="property-row"><span class="property-label">수량:</span><span class="property-value">' + costItem.quantity + '</span></div>';
+        }
+        if (costItem.unit) {
+            html += '<div class="property-row"><span class="property-label">단위:</span><span class="property-value">' + costItem.unit + '</span></div>';
+        }
+        html += '</div>';
+
+        detailsContainer.innerHTML = html;
+    }
+
+    // Display activities in tab for selected BIM object
+    function displayActivitiesInTab(object) {
+        const listContainer = document.getElementById('three-d-activities-list');
+        if (!listContainer) {
+            console.error('[3D Viewer] three-d-activities-list element not found!');
+            return;
+        }
+        console.log('[3D Viewer] displayActivitiesInTab called for object:', object.userData);
+
+        // Find activities related to this object through quantity members and cost items
+        let activities = new Map(); // Use Map to avoid duplicates
+
+        if (object.userData.splitElementId) {
+            // Split object case
+            const quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+            quantityMembers.forEach(qm => {
+                // Activities from quantity member
+                if (qm.activity_id) {
+                    const activity = findActivityById(qm.activity_id);
+                    if (activity) {
+                        activities.set(activity.id, { ...activity, source: 'QuantityMember' });
+                    }
+                }
+                // Activities from cost items
+                const items = findCostItemsByQuantityMemberId(qm.id);
+                items.forEach(item => {
+                    if (item.activities && Array.isArray(item.activities)) {
+                        item.activities.forEach(activityId => {
+                            const activity = findActivityById(activityId);
+                            if (activity) {
+                                activities.set(activity.id, { ...activity, source: 'CostItem' });
+                            }
+                        });
+                    }
+                });
+            });
+        } else {
+            // Original BIM object case
+            const bimObjectId = object.userData.bimObjectId || object.userData.rawElementId;
+            if (!bimObjectId) {
+                listContainer.innerHTML = '<p class="no-selection">객체 ID를 찾을 수 없습니다</p>';
+                return;
+            }
+            const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
+            quantityMembers.forEach(qm => {
+                // Activities from quantity member
+                if (qm.activity_id) {
+                    const activity = findActivityById(qm.activity_id);
+                    if (activity) {
+                        activities.set(activity.id, { ...activity, source: 'QuantityMember' });
+                    }
+                }
+                // Activities from cost items
+                const items = findCostItemsByQuantityMemberId(qm.id);
+                items.forEach(item => {
+                    if (item.activities && Array.isArray(item.activities)) {
+                        item.activities.forEach(activityId => {
+                            const activity = findActivityById(activityId);
+                            if (activity) {
+                                activities.set(activity.id, { ...activity, source: 'CostItem' });
+                            }
+                        });
+                    }
+                });
+            });
+        }
+
+        const activityList = Array.from(activities.values());
+
+        if (activityList.length === 0) {
+            listContainer.innerHTML = '<p class="no-selection">연관된 액티비티가 없습니다</p>';
+            return;
+        }
+
+        console.log('[3D Viewer] Found activities:', activityList);
+
+        let html = '';
+        activityList.forEach((activity) => {
+            html += `<div class="quantity-member-item" data-activity-id="${activity.id}">`;
+            html += `<div class="quantity-member-item-name">${activity.code} - ${activity.name || 'Unnamed Activity'}</div>`;
+            html += `<div class="quantity-member-item-info">`;
+            html += `출처: ${activity.source}`;
+            if (activity.duration_per_unit) {
+                html += ` | 단위당 소요일수: ${activity.duration_per_unit}`;
+            }
+            html += `</div>`;
+            html += `</div>`;
+        });
+
+        listContainer.innerHTML = html;
+
+        // Add click listeners
+        const items = listContainer.querySelectorAll('.quantity-member-item');
+        items.forEach(item => {
+            item.addEventListener('click', function() {
+                items.forEach(i => i.classList.remove('selected'));
+                this.classList.add('selected');
+                const activityId = this.getAttribute('data-activity-id');
+                const activity = activityList.find(a => a.id.toString() === activityId.toString());
+                if (activity) {
+                    displayActivityDetails(activity);
+                }
+            });
+        });
+    }
+
+    // Display activity details
+    function displayActivityDetails(activity) {
+        const detailsContainer = document.getElementById('three-d-activity-details');
+        if (!detailsContainer) return;
+
+        let html = '';
+        html += '<div class="property-group">';
+        html += '<div class="property-row"><span class="property-label">ID:</span><span class="property-value">' + (activity.id || 'N/A') + '</span></div>';
+        html += '<div class="property-row"><span class="property-label">공정코드:</span><span class="property-value">' + (activity.code || 'N/A') + '</span></div>';
+        html += '<div class="property-row"><span class="property-label">공정명:</span><span class="property-value">' + (activity.name || 'N/A') + '</span></div>';
+
+        if (activity.description) {
+            html += '<div class="property-row"><span class="property-label">설명:</span><span class="property-value">' + activity.description + '</span></div>';
+        }
+
+        if (activity.wbs_code) {
+            html += '<div class="property-row"><span class="property-label">WBS 코드:</span><span class="property-value">' + activity.wbs_code + '</span></div>';
+        }
+
+        if (activity.duration_per_unit) {
+            html += '<div class="property-row"><span class="property-label">단위당 소요일수:</span><span class="property-value">' + activity.duration_per_unit + '</span></div>';
+        }
+
+        if (activity.estimated_cost) {
+            html += '<div class="property-row"><span class="property-label">예상 비용:</span><span class="property-value">' + Number(activity.estimated_cost).toLocaleString() + '</span></div>';
+        }
+
+        if (activity.responsible_person) {
+            html += '<div class="property-row"><span class="property-label">담당자:</span><span class="property-value">' + activity.responsible_person + '</span></div>';
+        }
+
+        if (activity.contractor) {
+            html += '<div class="property-row"><span class="property-label">시공사:</span><span class="property-value">' + activity.contractor + '</span></div>';
+        }
+
+        if (activity.location) {
+            html += '<div class="property-row"><span class="property-label">작업 위치:</span><span class="property-value">' + activity.location + '</span></div>';
+        }
+
+        html += '</div>';
+
+        detailsContainer.innerHTML = html;
+    }
+
+    // Find activity by ID
+    function findActivityById(activityId) {
+        if (!window.loadedActivities || !Array.isArray(window.loadedActivities)) {
+            console.warn('[3D Viewer] loadedActivities not found in global scope');
+            return null;
+        }
+
+        const activity = window.loadedActivities.find(a => a.id.toString() === activityId.toString());
+        return activity || null;
+    }
+
+    // Find cost items by quantity member ID
+    function findCostItemsByQuantityMemberId(qmId) {
+        if (!window.loadedCostItems || !Array.isArray(window.loadedCostItems)) {
+            console.warn('[3D Viewer] loadedCostItems not found in global scope');
+            return [];
+        }
+
+        const results = window.loadedCostItems.filter(item => {
+            return item.quantity_member_id && item.quantity_member_id.toString() === qmId.toString();
+        });
+
+        return results;
+    }
+
+    // Clear cost items tab panel
+    function clearCostItemsTabPanel() {
+        const listContainer = document.getElementById('three-d-cost-items-list');
+        const detailsContainer = document.getElementById('three-d-cost-item-details');
+
+        if (listContainer) {
+            listContainer.innerHTML = '<p class="no-selection">객체를 선택하세요</p>';
+        }
+
+        if (detailsContainer) {
+            detailsContainer.innerHTML = '<p class="no-selection">리스트에서 산출항목을 선택하세요</p>';
+        }
+    }
+
+    // Clear activities tab panel
+    function clearActivitiesTabPanel() {
+        const listContainer = document.getElementById('three-d-activities-list');
+        const detailsContainer = document.getElementById('three-d-activity-details');
+
+        if (listContainer) {
+            listContainer.innerHTML = '<p class="no-selection">객체를 선택하세요</p>';
+        }
+
+        if (detailsContainer) {
+            detailsContainer.innerHTML = '<p class="no-selection">리스트에서 액티비티를 선택하세요</p>';
+        }
+    }
+
+    // Expose loadActivities for other modules
+    if (typeof window.loadActivities !== 'function') {
+        console.warn('[3D Viewer] window.loadActivities not available yet');
     }
 
     // Display cost items for selected BIM object
@@ -3897,6 +4418,13 @@
             saveSplitToDatabase(bottomMesh, splitInfo);
             saveSplitToDatabase(topMesh, splitInfo);
 
+            // ▼▼▼ [추가] Sync geometry to data mgmt viewer after split ▼▼▼
+            if (typeof window.syncGeometryToDataMgmt === 'function') {
+                console.log('[3D Viewer] Syncing split geometry to data management viewer...');
+                window.syncGeometryToDataMgmt();
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             // Exit split mode
             exitSplitMode();
 
@@ -4658,14 +5186,21 @@
     /**
      * Enter sketch split mode
      */
-    function enterSketchMode() {
-        if (!selectedObject) {
+    window.enterSketchMode = function() {
+        // Check if any object is selected (either selectedObject or selectedObjects array)
+        if (!selectedObject && (!selectedObjects || selectedObjects.length === 0)) {
             showToast('객체를 먼저 선택하세요', 'warning');
             return;
         }
 
+        // If selectedObject is not set but selectedObjects has items, use the first one
+        if (!selectedObject && selectedObjects && selectedObjects.length > 0) {
+            selectedObject = selectedObjects[0];
+            console.log('[3D Viewer] Using first selected object from selectedObjects array:', selectedObject.uuid);
+        }
+
         sketchMode = true;
-        console.log('[3D Viewer] Entered sketch mode');
+        console.log('[3D Viewer] Entered sketch mode with object:', selectedObject.uuid);
 
         // Show sketch controls, hide sketch split button
         const sketchControlsPanel = document.getElementById('sketch-controls-panel');
@@ -4677,7 +5212,7 @@
         if (splitBtn) splitBtn.style.display = 'none';
 
         showToast('작업면을 선택하세요', 'info');
-    }
+    };
 
     /**
      * Exit sketch split mode
@@ -5990,6 +6525,13 @@
             };
             saveSplitToDatabase(remainderMesh, sketchInfo);
             saveSplitToDatabase(extractedMesh, sketchInfo);
+
+            // ▼▼▼ [추가] Sync geometry to data mgmt viewer after split ▼▼▼
+            if (typeof window.syncGeometryToDataMgmt === 'function') {
+                console.log('[3D Viewer] Syncing split geometry to data management viewer...');
+                window.syncGeometryToDataMgmt();
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
 
             // Exit sketch mode
             exitSketchMode();
@@ -7562,6 +8104,1695 @@
         // Update renderer size
         renderer.setSize(width, height);
     }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [수정] 데이터 관리 탭의 독립 3D 뷰어 초기화 ▼▼▼
+    window.initDataMgmtThreeDViewer = function() {
+        console.log("[Data Mgmt 3D Viewer] Initializing independent 3D viewer for data management tab...");
+
+        // Check if already initialized
+        if (dataMgmtScene && dataMgmtCamera && dataMgmtRenderer && dataMgmtControls) {
+            console.log("[Data Mgmt 3D Viewer] Already initialized, resizing viewer...");
+            resizeDataMgmtViewer();
+            return;
+        }
+
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        if (!canvas) {
+            console.error("[Data Mgmt 3D Viewer] Canvas not found!");
+            return;
+        }
+
+        // Get canvas size
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+
+        // Create independent scene
+        dataMgmtScene = new THREE.Scene();
+        dataMgmtScene.background = new THREE.Color(0xcccccc);
+
+        // Create independent camera
+        dataMgmtCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        dataMgmtCamera.position.set(10, 10, 10);
+        dataMgmtCamera.lookAt(0, 0, 0);
+
+        // Sync camera state from main viewer if available
+        if (camera) {
+            dataMgmtCamera.position.copy(camera.position);
+            dataMgmtCamera.rotation.copy(camera.rotation);
+            dataMgmtCamera.updateProjectionMatrix();
+        }
+
+        // Create renderer
+        dataMgmtRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        dataMgmtRenderer.setSize(width, height);
+        dataMgmtRenderer.setPixelRatio(window.devicePixelRatio);
+        dataMgmtRenderer.shadowMap.enabled = true;
+        dataMgmtRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Create controls
+        dataMgmtControls = new THREE.OrbitControls(dataMgmtCamera, dataMgmtRenderer.domElement);
+        dataMgmtControls.enableDamping = true;
+        dataMgmtControls.dampingFactor = 0.25;
+        dataMgmtControls.screenSpacePanning = false;
+        dataMgmtControls.minDistance = 1;
+        dataMgmtControls.maxDistance = 500;
+        dataMgmtControls.enableZoom = true;
+
+        // Sync controls target from main viewer if available
+        if (controls) {
+            dataMgmtControls.target.copy(controls.target);
+        }
+
+        // Same mouse button configuration as main viewer
+        dataMgmtControls.mouseButtons = {
+            LEFT: null,
+            MIDDLE: THREE.MOUSE.PAN,
+            RIGHT: null
+        };
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        dataMgmtScene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 20, 10);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+        dataMgmtScene.add(directionalLight);
+
+        // Add helpers
+        const axesHelper = new THREE.AxesHelper(5);
+        dataMgmtScene.add(axesHelper);
+
+        const gridHelper = new THREE.GridHelper(20, 20);
+        dataMgmtScene.add(gridHelper);
+
+        // Copy geometry from main scene if available
+        if (scene && geometryLoaded && typeof window.syncGeometryToDataMgmt === 'function') {
+            window.syncGeometryToDataMgmt();
+        }
+
+        // Disable context menu on canvas
+        canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        }, false);
+
+        // Setup controls and event listeners
+        setupDataMgmtViewerControls();
+
+        console.log("[Data Mgmt 3D Viewer] Initialization complete");
+    };
+
+    // ▼▼▼ [추가] 데이터 관리 뷰어 컨트롤 설정 ▼▼▼
+    function setupDataMgmtViewerControls() {
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        if (!canvas || !dataMgmtScene || !dataMgmtCamera) {
+            console.error("[Data Mgmt Controls] Cannot setup controls: viewer not initialized");
+            return;
+        }
+
+        console.log("[Data Mgmt Controls] Setting up viewer controls...");
+
+        // Initialize raycaster and mouse
+        dataMgmtRaycaster = new THREE.Raycaster();
+        dataMgmtMouse = new THREE.Vector2();
+
+        // Create selection box UI element
+        const container = canvas.parentElement;
+        dataMgmtSelectionBox = document.createElement('div');
+        dataMgmtSelectionBox.style.position = 'absolute';
+        dataMgmtSelectionBox.style.border = '2px dashed #4CAF50';
+        dataMgmtSelectionBox.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+        dataMgmtSelectionBox.style.pointerEvents = 'none';
+        dataMgmtSelectionBox.style.display = 'none';
+        dataMgmtSelectionBox.style.zIndex = '1000';
+        container.appendChild(dataMgmtSelectionBox);
+
+        // Setup button event listeners
+        setupDataMgmtButtons();
+
+        // Setup mouse/keyboard event listeners
+        setupDataMgmtInteraction(canvas);
+
+        console.log("[Data Mgmt Controls] Controls setup complete");
+    }
+
+    function setupDataMgmtButtons() {
+        // Load Geometry button
+        const loadBtn = document.getElementById('data-mgmt-load-geometry-btn');
+        if (loadBtn) {
+            loadBtn.onclick = function() {
+                console.log("[Data Mgmt] Load Geometry clicked");
+                // Use the same load function but render to data mgmt scene
+                if (typeof window.loadPlaceholderGeometry === 'function') {
+                    window.loadPlaceholderGeometry();
+                    // Geometry will be synced automatically
+                }
+            };
+        }
+
+        // Clear Scene button
+        const clearBtn = document.getElementById('data-mgmt-clear-scene-btn');
+        if (clearBtn) {
+            clearBtn.onclick = function() {
+                console.log("[Data Mgmt] Clear Scene clicked");
+                clearDataMgmtScene();
+            };
+        }
+
+        // Delete All Splits button
+        const deleteAllSplitsBtn = document.getElementById('data-mgmt-delete-all-splits-btn');
+        if (deleteAllSplitsBtn) {
+            deleteAllSplitsBtn.onclick = function() {
+                console.log("[Data Mgmt] Delete All Splits clicked");
+                if (typeof window.deleteAllSplitElements === 'function') {
+                    window.deleteAllSplitElements();
+                }
+            };
+        }
+
+        // Visibility control buttons
+        const isolateBtn = document.getElementById('data-mgmt-isolate-selection-btn');
+        if (isolateBtn) {
+            isolateBtn.onclick = function() {
+                console.log("[Data Mgmt] Isolate Selection clicked");
+                isolateDataMgmtSelection();
+            };
+        }
+
+        const hideBtn = document.getElementById('data-mgmt-hide-selection-btn');
+        if (hideBtn) {
+            hideBtn.onclick = function() {
+                console.log("[Data Mgmt] Hide Selection clicked");
+                hideDataMgmtSelection();
+            };
+        }
+
+        const showAllBtn = document.getElementById('data-mgmt-show-all-btn');
+        if (showAllBtn) {
+            showAllBtn.onclick = function() {
+                console.log("[Data Mgmt] Show All clicked");
+                showAllDataMgmtObjects();
+            };
+        }
+
+        // Sketch Split button
+        const sketchBtn = document.getElementById('data-mgmt-sketch-split-btn');
+        if (sketchBtn) {
+            sketchBtn.onclick = function() {
+                console.log("[Data Mgmt] Sketch Split clicked");
+
+                if (dataMgmtSelectedObjects.length === 0) {
+                    console.warn("[Data Mgmt] No object selected for sketch split");
+                    if (typeof showToast === 'function') {
+                        showToast('객체를 먼저 선택하세요', 'warning');
+                    }
+                    return;
+                }
+
+                console.log("[Data Mgmt] Syncing camera and selection, then switching to 3D Viewer tab");
+
+                // 0. Save current tab for return navigation
+                window.previousTab = window.activeTab;
+                console.log("[Data Mgmt] Saved previous tab:", window.previousTab);
+
+                // 1. Sync camera state FIRST (before selection sync)
+                if (typeof window.syncCameraStateToMain === 'function') {
+                    window.syncCameraStateToMain();
+                    console.log("[Data Mgmt] Camera state synced to main viewer");
+                }
+
+                // 2. Sync selection from data mgmt to main viewer
+                if (typeof window.syncSelectionFromDataMgmt === 'function') {
+                    window.syncSelectionFromDataMgmt();
+                    console.log("[Data Mgmt] Selection synced to main viewer");
+                }
+
+                // 3. Switch to 3D Viewer tab
+                const threeDViewerTab = document.querySelector('.main-nav .nav-button[data-primary-tab="three-d-viewer"]');
+                if (threeDViewerTab) {
+                    console.log("[Data Mgmt] Switching to 3D Viewer tab");
+                    threeDViewerTab.click();
+
+                    // 4. After tab switch, activate sketch mode (wait for tab to be active)
+                    setTimeout(function() {
+                        console.log("[Data Mgmt] Activating Sketch Mode in main viewer");
+
+                        // Show return button
+                        if (typeof window.updateReturnButton === 'function') {
+                            window.updateReturnButton();
+                        }
+
+                        if (typeof window.enterSketchMode === 'function') {
+                            window.enterSketchMode();
+                        }
+                    }, 200);
+                } else {
+                    console.error("[Data Mgmt] 3D Viewer tab button not found");
+                }
+            };
+        }
+
+        console.log("[Data Mgmt Controls] Button handlers attached");
+    }
+
+    function setupDataMgmtInteraction(canvas) {
+        // Box selection and object interaction
+        canvas.addEventListener('pointerdown', onDataMgmtPointerDown, false);
+        canvas.addEventListener('pointermove', onDataMgmtPointerMove, false);
+        canvas.addEventListener('pointerup', onDataMgmtPointerUp, false);
+        canvas.addEventListener('pointerleave', onDataMgmtPointerLeave, false);
+
+        // Keyboard for fly mode
+        window.addEventListener('keydown', onDataMgmtKeyDown, false);
+        window.addEventListener('keyup', onDataMgmtKeyUp, false);
+
+        console.log("[Data Mgmt Controls] Interaction handlers attached");
+    }
+
+    // ▼▼▼ Event handlers for data mgmt viewer ▼▼▼
+    function onDataMgmtPointerDown(event) {
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        if (!dataMgmtCamera || !canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+
+        dataMgmtPointerDownTime = Date.now();
+        dataMgmtDragStart = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+
+        // Left click: Start box selection
+        if (event.button === 0) {
+            dataMgmtIsDragging = true;
+        }
+        // Right click: Start fly mode
+        else if (event.button === 2) {
+            dataMgmtLastRotateX = event.clientX;
+            dataMgmtLastRotateY = event.clientY;
+
+            if (event.shiftKey && dataMgmtSelectedObjects.length > 0) {
+                // Shift + Right click: Orbit around selection
+                dataMgmtIsShiftRightRotating = true;
+                dataMgmtControls.enabled = false; // Disable OrbitControls
+
+                // Add document-level event listeners for tracking outside viewport
+                document.addEventListener('pointermove', onDataMgmtDocumentPointerMove, false);
+                document.addEventListener('pointerup', onDataMgmtDocumentPointerUp, false);
+            } else {
+                // Right click: Fly mode
+                dataMgmtIsRightClickHeld = true;
+                dataMgmtControls.enabled = false; // Disable OrbitControls during fly mode
+
+                // Add document-level event listeners for tracking outside viewport
+                document.addEventListener('pointermove', onDataMgmtDocumentPointerMove, false);
+                document.addEventListener('pointerup', onDataMgmtDocumentPointerUp, false);
+            }
+        }
+    }
+
+    function onDataMgmtPointerMove(event) {
+        if (!dataMgmtCamera) return;
+
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        // Shift + Right click rotation
+        if (dataMgmtIsShiftRightRotating && dataMgmtSelectedObjects.length > 0) {
+            const deltaX = event.clientX - dataMgmtLastRotateX;
+            const deltaY = event.clientY - dataMgmtLastRotateY;
+
+            // Calculate center of selected objects
+            const center = new THREE.Vector3();
+            dataMgmtSelectedObjects.forEach(obj => {
+                center.add(obj.position);
+            });
+            center.divideScalar(dataMgmtSelectedObjects.length);
+
+            // Rotate camera around center
+            const rotationSpeed = 0.005;
+            const offset = dataMgmtCamera.position.clone().sub(center);
+
+            const spherical = new THREE.Spherical();
+            spherical.setFromVector3(offset);
+            spherical.theta -= deltaX * rotationSpeed;
+            spherical.phi -= deltaY * rotationSpeed;
+            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+
+            offset.setFromSpherical(spherical);
+            dataMgmtCamera.position.copy(center).add(offset);
+            dataMgmtCamera.lookAt(center);
+
+            dataMgmtLastRotateX = event.clientX;
+            dataMgmtLastRotateY = event.clientY;
+            return;
+        }
+
+        // Right click fly mode rotation (same as main viewer)
+        if (dataMgmtIsRightClickHeld) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const deltaX = event.clientX - dataMgmtLastRotateX;
+            const deltaY = event.clientY - dataMgmtLastRotateY;
+            dataMgmtLastRotateX = event.clientX;
+            dataMgmtLastRotateY = event.clientY;
+
+            // First-person view rotation using quaternions (same as main viewer)
+            const rotateSpeed = 0.002;
+
+            // Horizontal rotation (Y-axis)
+            const eulerY = new THREE.Euler(0, -deltaX * rotateSpeed, 0, 'YXZ');
+            dataMgmtCamera.quaternion.premultiply(new THREE.Quaternion().setFromEuler(eulerY));
+
+            // Vertical rotation (X-axis, camera local)
+            const eulerX = new THREE.Euler(-deltaY * rotateSpeed, 0, 0, 'YXZ');
+            dataMgmtCamera.quaternion.multiply(new THREE.Quaternion().setFromEuler(eulerX));
+
+            // Update controls target to point forward
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(dataMgmtCamera.quaternion);
+            dataMgmtControls.target.copy(dataMgmtCamera.position).add(forward.multiplyScalar(10));
+
+            return;
+        }
+
+        // Update box selection
+        if (dataMgmtIsDragging && dataMgmtDragStart) {
+            dataMgmtDragCurrent = {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            };
+
+            // Draw selection box with Window/Crossing mode styling
+            const minX = Math.min(dataMgmtDragStart.x, dataMgmtDragCurrent.x);
+            const minY = Math.min(dataMgmtDragStart.y, dataMgmtDragCurrent.y);
+            const width = Math.abs(dataMgmtDragCurrent.x - dataMgmtDragStart.x);
+            const height = Math.abs(dataMgmtDragCurrent.y - dataMgmtDragStart.y);
+
+            // Determine drag direction for styling
+            const isLeftToRight = dataMgmtDragCurrent.x >= dataMgmtDragStart.x;
+
+            if (dataMgmtSelectionBox) {
+                dataMgmtSelectionBox.style.left = minX + 'px';
+                dataMgmtSelectionBox.style.top = minY + 'px';
+                dataMgmtSelectionBox.style.width = width + 'px';
+                dataMgmtSelectionBox.style.height = height + 'px';
+                dataMgmtSelectionBox.style.display = 'block';
+
+                // Apply mode-specific styling
+                if (isLeftToRight) {
+                    // Window mode: solid blue
+                    dataMgmtSelectionBox.style.border = '2px solid #2196F3';
+                    dataMgmtSelectionBox.style.backgroundColor = 'rgba(33, 150, 243, 0.1)';
+                } else {
+                    // Crossing mode: dashed green
+                    dataMgmtSelectionBox.style.border = '2px dashed #4CAF50';
+                    dataMgmtSelectionBox.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+                }
+            }
+
+            // Real-time preview highlighting
+            updateDataMgmtBoxSelectionPreview(isLeftToRight);
+        }
+
+        // ▼▼▼ [추가] 호버 하이라이트 (클릭 선택과 완전히 동일한 로직) ▼▼▼
+        if (!dataMgmtIsDragging && !dataMgmtIsRightClickHeld && !dataMgmtIsShiftRightRotating) {
+            // Calculate normalized mouse coordinates
+            dataMgmtMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            dataMgmtMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            // Ensure camera matrices are up to date
+            dataMgmtCamera.updateProjectionMatrix();
+            dataMgmtCamera.updateMatrixWorld();
+
+            // Update raycaster with same settings as click selection
+            dataMgmtRaycaster.setFromCamera(dataMgmtMouse, dataMgmtCamera);
+            dataMgmtRaycaster.params.Points.threshold = 0.5;
+            dataMgmtRaycaster.params.Line.threshold = 0.5;
+
+            // Get all BIM meshes (same as click selection)
+            const bimMeshes = [];
+            dataMgmtScene.traverse(function(object) {
+                if (object instanceof THREE.Mesh && object.userData &&
+                    (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                    object.visible) {
+                    bimMeshes.push(object);
+                    // Update world matrix for accurate raycasting
+                    object.updateMatrixWorld(true);
+                }
+            });
+
+            // Check for intersections (recursive: false, same as click)
+            const intersects = dataMgmtRaycaster.intersectObjects(bimMeshes, false);
+
+            // Filter to get first valid object
+            let newHoveredObject = null;
+            for (let intersect of intersects) {
+                let obj = intersect.object;
+
+                // Get parent if it's a LineSegments
+                if (obj instanceof THREE.LineSegments && obj.parent) {
+                    obj = obj.parent;
+                }
+
+                // Verify it's a valid mesh
+                if (obj instanceof THREE.Mesh && obj.userData &&
+                    (obj.userData.bimObjectId || obj.userData.isSplitPart || obj.userData.isSplitElement)) {
+
+                    // Check if object is in front of camera
+                    const worldPos = new THREE.Vector3();
+                    obj.getWorldPosition(worldPos);
+                    const screenPos = worldPos.clone().project(dataMgmtCamera);
+
+                    if (screenPos.z < 1 && screenPos.z > -1) {
+                        newHoveredObject = obj;
+                        break;
+                    }
+                }
+            }
+
+            // Update hover state
+            if (newHoveredObject !== dataMgmtHoveredObject) {
+                // Clear old hover
+                if (dataMgmtHoveredObject && !dataMgmtSelectedObjects.includes(dataMgmtHoveredObject)) {
+                    if (dataMgmtOriginalMaterials.has(dataMgmtHoveredObject)) {
+                        dataMgmtHoveredObject.material = dataMgmtOriginalMaterials.get(dataMgmtHoveredObject);
+                        dataMgmtHoveredObject.material.needsUpdate = true;
+                        // IMPORTANT: Delete from map after hover restoration
+                        dataMgmtOriginalMaterials.delete(dataMgmtHoveredObject);
+                    }
+                }
+
+                // Apply new hover
+                dataMgmtHoveredObject = newHoveredObject;
+                if (dataMgmtHoveredObject && !dataMgmtSelectedObjects.includes(dataMgmtHoveredObject)) {
+                    if (!dataMgmtOriginalMaterials.has(dataMgmtHoveredObject)) {
+                        dataMgmtOriginalMaterials.set(dataMgmtHoveredObject, dataMgmtHoveredObject.material);
+                    }
+
+                    // Hover highlight - light blue
+                    const hoverMaterial = new THREE.MeshStandardMaterial({
+                        color: 0x4dd0e1,
+                        emissive: 0x00bcd4,
+                        emissiveIntensity: 0.3,
+                        metalness: 0.0,
+                        roughness: 1.0,
+                        flatShading: true,
+                        transparent: true,
+                        opacity: 0.6,
+                        side: THREE.DoubleSide
+                    });
+
+                    dataMgmtHoveredObject.material = hoverMaterial;
+                    dataMgmtHoveredObject.material.needsUpdate = true;
+                }
+            }
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+    }
+
+    function onDataMgmtPointerUp(event) {
+        const clickDuration = Date.now() - dataMgmtPointerDownTime;
+
+        // Right click: End fly mode or orbit mode
+        if (event.button === 2) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            console.log('[Data Mgmt] Right-click released');
+
+            // Update controls target when ending fly mode
+            if (dataMgmtIsRightClickHeld) {
+                const forward = new THREE.Vector3(0, 0, -1);
+                forward.applyQuaternion(dataMgmtCamera.quaternion);
+                dataMgmtControls.target.copy(dataMgmtCamera.position).add(forward.multiplyScalar(10));
+            }
+
+            dataMgmtIsRightClickHeld = false;
+            dataMgmtIsShiftRightRotating = false;
+            if (dataMgmtControls) {
+                dataMgmtControls.enabled = true; // Re-enable OrbitControls
+            }
+
+            // Remove document-level event listeners
+            document.removeEventListener('pointermove', onDataMgmtDocumentPointerMove, false);
+            document.removeEventListener('pointerup', onDataMgmtDocumentPointerUp, false);
+
+            return;
+        }
+
+        // Middle click (wheel): Ignore
+        if (event.button === 1) {
+            console.log('[Data Mgmt] Middle click ignored');
+            return;
+        }
+
+        // Left click selection logic (button 0 only)
+        if (event.button !== 0 || !dataMgmtDragStart) return;
+
+        if (dataMgmtIsDragging && clickDuration > 100) {
+            // Box selection mode
+            performDataMgmtBoxSelection(event.ctrlKey || event.metaKey);
+        } else {
+            // Click selection mode
+            performDataMgmtClickSelection(event);
+        }
+
+        // Clean up preview highlights
+        dataMgmtPreviewHighlightedObjects.forEach(obj => {
+            if (!dataMgmtSelectedObjects.includes(obj)) {
+                if (dataMgmtOriginalMaterials.has(obj)) {
+                    obj.material = dataMgmtOriginalMaterials.get(obj);
+                    obj.material.needsUpdate = true;
+                }
+            }
+        });
+        dataMgmtPreviewHighlightedObjects = [];
+
+        // Reset dragging state
+        dataMgmtIsDragging = false;
+        dataMgmtDragStart = null;
+        dataMgmtDragCurrent = null;
+        if (dataMgmtSelectionBox) {
+            dataMgmtSelectionBox.style.display = 'none';
+        }
+    }
+
+    function onDataMgmtPointerLeave(event) {
+        // Clear hover when leaving canvas
+        if (dataMgmtHoveredObject && !dataMgmtSelectedObjects.includes(dataMgmtHoveredObject)) {
+            if (dataMgmtOriginalMaterials.has(dataMgmtHoveredObject)) {
+                dataMgmtHoveredObject.material = dataMgmtOriginalMaterials.get(dataMgmtHoveredObject);
+                dataMgmtHoveredObject.material.needsUpdate = true;
+                // IMPORTANT: Delete from map after hover restoration
+                dataMgmtOriginalMaterials.delete(dataMgmtHoveredObject);
+            }
+        }
+        dataMgmtHoveredObject = null;
+    }
+
+    function onDataMgmtKeyDown(event) {
+        const key = event.key.toLowerCase();
+        if (dataMgmtKeys.hasOwnProperty(key)) {
+            dataMgmtKeys[key] = true;
+        }
+    }
+
+    function onDataMgmtKeyUp(event) {
+        const key = event.key.toLowerCase();
+        if (dataMgmtKeys.hasOwnProperty(key)) {
+            dataMgmtKeys[key] = false;
+        }
+    }
+
+    // ▼▼▼ [추가] Document-level event handlers for tracking mouse outside viewport ▼▼▼
+    function onDataMgmtDocumentPointerMove(event) {
+        if (!dataMgmtCamera) return;
+
+        // Shift + Right click rotation (around selection)
+        if (dataMgmtIsShiftRightRotating && dataMgmtSelectedObjects.length > 0) {
+            const deltaX = event.clientX - dataMgmtLastRotateX;
+            const deltaY = event.clientY - dataMgmtLastRotateY;
+
+            // Calculate center of selected objects
+            const center = new THREE.Vector3();
+            dataMgmtSelectedObjects.forEach(obj => {
+                center.add(obj.position);
+            });
+            center.divideScalar(dataMgmtSelectedObjects.length);
+
+            // Rotate camera around center
+            const rotationSpeed = 0.005;
+            const offset = dataMgmtCamera.position.clone().sub(center);
+
+            const spherical = new THREE.Spherical();
+            spherical.setFromVector3(offset);
+            spherical.theta -= deltaX * rotationSpeed;
+            spherical.phi -= deltaY * rotationSpeed;
+            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+
+            offset.setFromSpherical(spherical);
+            dataMgmtCamera.position.copy(center).add(offset);
+            dataMgmtCamera.lookAt(center);
+
+            dataMgmtLastRotateX = event.clientX;
+            dataMgmtLastRotateY = event.clientY;
+            return;
+        }
+
+        // Right click fly mode rotation
+        if (dataMgmtIsRightClickHeld) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const deltaX = event.clientX - dataMgmtLastRotateX;
+            const deltaY = event.clientY - dataMgmtLastRotateY;
+            dataMgmtLastRotateX = event.clientX;
+            dataMgmtLastRotateY = event.clientY;
+
+            // First-person view rotation using quaternions
+            const rotateSpeed = 0.002;
+
+            // Horizontal rotation (Y-axis)
+            const eulerY = new THREE.Euler(0, -deltaX * rotateSpeed, 0, 'YXZ');
+            dataMgmtCamera.quaternion.premultiply(new THREE.Quaternion().setFromEuler(eulerY));
+
+            // Vertical rotation (X-axis, camera local)
+            const eulerX = new THREE.Euler(-deltaY * rotateSpeed, 0, 0, 'YXZ');
+            dataMgmtCamera.quaternion.multiply(new THREE.Quaternion().setFromEuler(eulerX));
+
+            // Update controls target to point forward
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(dataMgmtCamera.quaternion);
+            dataMgmtControls.target.copy(dataMgmtCamera.position).add(forward.multiplyScalar(10));
+        }
+    }
+
+    function onDataMgmtDocumentPointerUp(event) {
+        // Right click: End fly mode or orbit mode
+        if (event.button === 2) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            console.log('[Data Mgmt] Right-click released (document level)');
+
+            // Update controls target when ending fly mode
+            if (dataMgmtIsRightClickHeld) {
+                const forward = new THREE.Vector3(0, 0, -1);
+                forward.applyQuaternion(dataMgmtCamera.quaternion);
+                dataMgmtControls.target.copy(dataMgmtCamera.position).add(forward.multiplyScalar(10));
+            }
+
+            dataMgmtIsRightClickHeld = false;
+            dataMgmtIsShiftRightRotating = false;
+            if (dataMgmtControls) {
+                dataMgmtControls.enabled = true; // Re-enable OrbitControls
+            }
+
+            // Remove document-level event listeners
+            document.removeEventListener('pointermove', onDataMgmtDocumentPointerMove, false);
+            document.removeEventListener('pointerup', onDataMgmtDocumentPointerUp, false);
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    function performDataMgmtClickSelection(event) {
+        if (!dataMgmtScene || !dataMgmtCamera || !dataMgmtRaycaster) return;
+
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        console.log('[Data Mgmt] Click selection started, current selection count:', dataMgmtSelectedObjects.length);
+
+        // Calculate mouse position in normalized device coordinates
+        dataMgmtMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        dataMgmtMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        console.log('[Data Mgmt] Mouse NDC:', dataMgmtMouse.x.toFixed(3), dataMgmtMouse.y.toFixed(3));
+        console.log('[Data Mgmt] Camera position:', dataMgmtCamera.position.x.toFixed(2), dataMgmtCamera.position.y.toFixed(2), dataMgmtCamera.position.z.toFixed(2));
+        console.log('[Data Mgmt] Canvas size:', rect.width.toFixed(0), 'x', rect.height.toFixed(0));
+
+        // Ensure camera projection matrix is up to date
+        dataMgmtCamera.updateProjectionMatrix();
+        dataMgmtCamera.updateMatrixWorld();
+
+        // Update raycaster with improved threshold for better selection
+        dataMgmtRaycaster.setFromCamera(dataMgmtMouse, dataMgmtCamera);
+        dataMgmtRaycaster.params.Points.threshold = 0.5;
+        dataMgmtRaycaster.params.Line.threshold = 0.5;
+
+        // Get all BIM meshes (only visible ones)
+        const bimMeshes = [];
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                object.visible) {
+                bimMeshes.push(object);
+                // Update object's world matrix for accurate raycasting
+                object.updateMatrixWorld(true);
+            }
+        });
+
+        console.log('[Data Mgmt] Total visible BIM meshes:', bimMeshes.length);
+
+        // Find intersecting objects (recursive: false since we already have meshes)
+        const intersects = dataMgmtRaycaster.intersectObjects(bimMeshes, false);
+        console.log('[Data Mgmt] Raycaster intersects:', intersects.length);
+
+        if (intersects.length > 0) {
+            console.log('[Data Mgmt] First intersect distance:', intersects[0].distance.toFixed(2));
+        }
+
+        // Filter to get first valid object
+        let clickedObject = null;
+        for (let intersect of intersects) {
+            let obj = intersect.object;
+
+            // Get parent if it's a LineSegments
+            if (obj instanceof THREE.LineSegments && obj.parent) {
+                obj = obj.parent;
+            }
+
+            // Verify it's a valid mesh
+            if (obj instanceof THREE.Mesh && obj.userData &&
+                (obj.userData.bimObjectId || obj.userData.isSplitPart || obj.userData.isSplitElement)) {
+
+                // Check if object is in front of camera (not behind)
+                const worldPos = new THREE.Vector3();
+                obj.getWorldPosition(worldPos);
+                const screenPos = worldPos.clone().project(dataMgmtCamera);
+
+                if (screenPos.z < 1 && screenPos.z > -1) {  // In viewport
+                    clickedObject = obj;
+                    console.log('[Data Mgmt] Valid object clicked:', obj.userData.bimObjectId || obj.userData.isSplitElement);
+                    break;
+                }
+            }
+        }
+
+        if (clickedObject) {
+            // Clear previous selection if not holding Ctrl
+            if (!event.ctrlKey && !event.metaKey) {
+                console.log('[Data Mgmt] Clearing previous selection (no Ctrl key)');
+                console.log('[Data Mgmt] Previous selection count:', dataMgmtSelectedObjects.length);
+
+                // Store previous selection for verification
+                const previousSelectionIds = dataMgmtSelectedObjects.map(obj => getDataMgmtObjectId(obj));
+                console.log('[Data Mgmt] Previous selection IDs:', previousSelectionIds);
+
+                dataMgmtSelectedObjects.forEach(obj => {
+                    restoreDataMgmtMaterial(obj);
+                    const objId = getDataMgmtObjectId(obj);
+                    console.log('[Data Mgmt] Restored material for:', objId, 'Material color:', obj.material.color.getHexString());
+                });
+                dataMgmtSelectedObjects = [];
+
+                console.log('[Data Mgmt] Cleared all previous selections');
+            }
+
+            // Toggle selection
+            const index = dataMgmtSelectedObjects.indexOf(clickedObject);
+            if (index > -1) {
+                // Deselect
+                const objId = getDataMgmtObjectId(clickedObject);
+                console.log('[Data Mgmt] Deselecting object:', objId);
+                dataMgmtSelectedObjects.splice(index, 1);
+                restoreDataMgmtMaterial(clickedObject);
+                console.log('[Data Mgmt] After deselect - Material color:', clickedObject.material.color.getHexString());
+            } else {
+                // Select
+                const objId = getDataMgmtObjectId(clickedObject);
+                console.log('[Data Mgmt] Selecting new object:', objId);
+                console.log('[Data Mgmt] Current material before highlight:', clickedObject.material.color.getHexString());
+                dataMgmtSelectedObjects.push(clickedObject);
+                highlightDataMgmtObject(clickedObject);
+                console.log('[Data Mgmt] After highlight - Material color:', clickedObject.material.color.getHexString());
+            }
+
+            console.log(`[Data Mgmt] Click selection complete: ${dataMgmtSelectedObjects.length} objects selected`);
+            console.log(`[Data Mgmt] Selected object IDs:`, dataMgmtSelectedObjects.map(obj => getDataMgmtObjectId(obj)));
+
+            // 실시간 동기화 제거 - 탭 전환 시에만 동기화
+        } else {
+            // Clicked on empty space - ALWAYS clear selection
+            console.log('[Data Mgmt] Clicked on empty space - clearing all selections');
+            const previousCount = dataMgmtSelectedObjects.length;
+            dataMgmtSelectedObjects.forEach(obj => {
+                restoreDataMgmtMaterial(obj);
+                const objId = getDataMgmtObjectId(obj);
+                console.log('[Data Mgmt] Cleared selection for:', objId);
+            });
+            dataMgmtSelectedObjects = [];
+            console.log(`[Data Mgmt] Cleared ${previousCount} selected objects`);
+
+            // 실시간 동기화 제거 - 탭 전환 시에만 동기화
+        }
+
+        updateDataMgmtVisibilityButtons();
+        console.log('[Data Mgmt] Final selection count:', dataMgmtSelectedObjects.length);
+    }
+
+    // ▼▼▼ [추가] 박스 선택 실시간 미리보기 ▼▼▼
+    function updateDataMgmtBoxSelectionPreview(isWindowMode) {
+        if (!dataMgmtScene || !dataMgmtCamera || !dataMgmtDragStart || !dataMgmtDragCurrent) return;
+
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        // Selection box bounds
+        const selMinX = Math.min(dataMgmtDragStart.x, dataMgmtDragCurrent.x);
+        const selMaxX = Math.max(dataMgmtDragStart.x, dataMgmtDragCurrent.x);
+        const selMinY = Math.min(dataMgmtDragStart.y, dataMgmtDragCurrent.y);
+        const selMaxY = Math.max(dataMgmtDragStart.y, dataMgmtDragCurrent.y);
+
+        // Clear previous preview highlights
+        dataMgmtPreviewHighlightedObjects.forEach(obj => {
+            if (!dataMgmtSelectedObjects.includes(obj)) {
+                if (dataMgmtOriginalMaterials.has(obj)) {
+                    obj.material = dataMgmtOriginalMaterials.get(obj);
+                    obj.material.needsUpdate = true;
+                }
+            }
+        });
+        dataMgmtPreviewHighlightedObjects = [];
+
+        // Get all visible BIM meshes
+        const bimMeshes = [];
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                object.visible) {
+                bimMeshes.push(object);
+            }
+        });
+
+        // Find objects that would be selected (using same logic as performDataMgmtBoxSelection)
+        bimMeshes.forEach(mesh => {
+            if (dataMgmtSelectedObjects.includes(mesh)) return;
+
+            if (!mesh.geometry.boundingBox) {
+                mesh.geometry.computeBoundingBox();
+            }
+
+            const bbox = mesh.geometry.boundingBox;
+            if (!bbox) return;
+
+            // Use fewer sample points for preview (for performance)
+            const bboxMinX = bbox.min.x, bboxMinY = bbox.min.y, bboxMinZ = bbox.min.z;
+            const bboxMaxX = bbox.max.x, bboxMaxY = bbox.max.y, bboxMaxZ = bbox.max.z;
+            const bboxMidX = (bboxMinX + bboxMaxX) / 2;
+            const bboxMidY = (bboxMinY + bboxMaxY) / 2;
+            const bboxMidZ = (bboxMinZ + bboxMaxZ) / 2;
+
+            const samplePoints = [
+                // 8 corners
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMaxZ),
+                // Center point
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMidZ)
+            ];
+
+            let pointsInBox = 0;
+            let cornersInBox = 0;
+            let allBehindCamera = true;
+
+            samplePoints.forEach((point, index) => {
+                const worldPoint = point.clone().applyMatrix4(mesh.matrixWorld);
+                const screenPoint = worldPoint.project(dataMgmtCamera);
+
+                if (screenPoint.z < 1 && screenPoint.z > -1) {
+                    allBehindCamera = false;
+
+                    const screenX = (screenPoint.x + 1) / 2 * rect.width;
+                    const screenY = (-screenPoint.y + 1) / 2 * rect.height;
+
+                    if (screenX >= selMinX && screenX <= selMaxX &&
+                        screenY >= selMinY && screenY <= selMaxY) {
+                        pointsInBox++;
+                        if (index < 8) cornersInBox++;
+                    }
+                }
+            });
+
+            // Determine if object should be highlighted
+            let shouldHighlight = false;
+            if (!allBehindCamera) {
+                if (isWindowMode) {
+                    shouldHighlight = (cornersInBox === 8);
+                } else {
+                    shouldHighlight = (pointsInBox > 0);
+                }
+            }
+
+            if (shouldHighlight) {
+                if (!dataMgmtOriginalMaterials.has(mesh)) {
+                    dataMgmtOriginalMaterials.set(mesh, mesh.material);
+                }
+
+                // Preview highlight - cyan
+                const previewMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x4dd0e1,
+                    emissive: 0x00bcd4,
+                    emissiveIntensity: 0.3,
+                    metalness: 0.0,
+                    roughness: 1.0,
+                    flatShading: true,
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+
+                mesh.material = previewMaterial;
+                mesh.material.needsUpdate = true;
+                dataMgmtPreviewHighlightedObjects.push(mesh);
+            }
+        });
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    function performDataMgmtBoxSelection(isAdditive) {
+        if (!dataMgmtDragStart || !dataMgmtDragCurrent) return;
+
+        // Determine drag direction (Window vs Crossing mode)
+        const isWindowMode = dataMgmtDragCurrent.x >= dataMgmtDragStart.x;
+        console.log('[Data Mgmt] Performing box selection, mode:', isWindowMode ? 'Window' : 'Crossing', 'additive:', isAdditive);
+
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        const rect = canvas.getBoundingClientRect();
+
+        // Get selection box bounds
+        const selMinX = Math.min(dataMgmtDragStart.x, dataMgmtDragCurrent.x);
+        const selMaxX = Math.max(dataMgmtDragStart.x, dataMgmtDragCurrent.x);
+        const selMinY = Math.min(dataMgmtDragStart.y, dataMgmtDragCurrent.y);
+        const selMaxY = Math.max(dataMgmtDragStart.y, dataMgmtDragCurrent.y);
+
+        // Get all visible BIM meshes
+        const bimMeshes = [];
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement) &&
+                object.visible) {
+                bimMeshes.push(object);
+            }
+        });
+
+        // Find objects that fall within selection box
+        const objectsInBox = [];
+        bimMeshes.forEach(mesh => {
+            // Compute bounding box if not already computed
+            if (!mesh.geometry.boundingBox) {
+                mesh.geometry.computeBoundingBox();
+            }
+
+            const bbox = mesh.geometry.boundingBox;
+            if (!bbox) return;
+
+            // Create 50 sample points for accurate selection
+            const bboxMinX = bbox.min.x, bboxMinY = bbox.min.y, bboxMinZ = bbox.min.z;
+            const bboxMaxX = bbox.max.x, bboxMaxY = bbox.max.y, bboxMaxZ = bbox.max.z;
+            const bboxMidX = (bboxMinX + bboxMaxX) / 2;
+            const bboxMidY = (bboxMinY + bboxMaxY) / 2;
+            const bboxMidZ = (bboxMinZ + bboxMaxZ) / 2;
+            const bboxQ1X = bboxMinX + (bboxMaxX - bboxMinX) * 0.25;
+            const bboxQ3X = bboxMinX + (bboxMaxX - bboxMinX) * 0.75;
+            const bboxQ1Y = bboxMinY + (bboxMaxY - bboxMinY) * 0.25;
+            const bboxQ3Y = bboxMinY + (bboxMaxY - bboxMinY) * 0.75;
+            const bboxQ1Z = bboxMinZ + (bboxMaxZ - bboxMinZ) * 0.25;
+            const bboxQ3Z = bboxMinZ + (bboxMaxZ - bboxMinZ) * 0.75;
+
+            const samplePoints = [
+                // 8 corners
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMaxZ),
+                // 12 edge midpoints
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxMidZ),
+                // 6 face centers
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMinZ),
+                new THREE.Vector3(bboxMidX, bboxMidY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMidY, bboxMidZ),
+                new THREE.Vector3(bboxMaxX, bboxMidY, bboxMidZ),
+                new THREE.Vector3(bboxMidX, bboxMinY, bboxMidZ),
+                new THREE.Vector3(bboxMidX, bboxMaxY, bboxMidZ),
+                // 24 quarter points on edges
+                new THREE.Vector3(bboxQ1X, bboxMinY, bboxMinZ), new THREE.Vector3(bboxQ3X, bboxMinY, bboxMinZ),
+                new THREE.Vector3(bboxQ1X, bboxMaxY, bboxMinZ), new THREE.Vector3(bboxQ3X, bboxMaxY, bboxMinZ),
+                new THREE.Vector3(bboxQ1X, bboxMinY, bboxMaxZ), new THREE.Vector3(bboxQ3X, bboxMinY, bboxMaxZ),
+                new THREE.Vector3(bboxQ1X, bboxMaxY, bboxMaxZ), new THREE.Vector3(bboxQ3X, bboxMaxY, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxQ1Y, bboxMinZ), new THREE.Vector3(bboxMinX, bboxQ3Y, bboxMinZ),
+                new THREE.Vector3(bboxMaxX, bboxQ1Y, bboxMinZ), new THREE.Vector3(bboxMaxX, bboxQ3Y, bboxMinZ),
+                new THREE.Vector3(bboxMinX, bboxQ1Y, bboxMaxZ), new THREE.Vector3(bboxMinX, bboxQ3Y, bboxMaxZ),
+                new THREE.Vector3(bboxMaxX, bboxQ1Y, bboxMaxZ), new THREE.Vector3(bboxMaxX, bboxQ3Y, bboxMaxZ),
+                new THREE.Vector3(bboxMinX, bboxMinY, bboxQ1Z), new THREE.Vector3(bboxMinX, bboxMinY, bboxQ3Z),
+                new THREE.Vector3(bboxMaxX, bboxMinY, bboxQ1Z), new THREE.Vector3(bboxMaxX, bboxMinY, bboxQ3Z),
+                new THREE.Vector3(bboxMinX, bboxMaxY, bboxQ1Z), new THREE.Vector3(bboxMinX, bboxMaxY, bboxQ3Z),
+                new THREE.Vector3(bboxMaxX, bboxMaxY, bboxQ1Z), new THREE.Vector3(bboxMaxX, bboxMaxY, bboxQ3Z)
+            ];
+
+            // Check sample points
+            let pointsInBox = 0;
+            let cornersInBox = 0;
+            let allBehindCamera = true;
+
+            samplePoints.forEach((point, index) => {
+                const worldPoint = point.clone().applyMatrix4(mesh.matrixWorld);
+                const screenPoint = worldPoint.project(dataMgmtCamera);
+
+                // Check if in front of camera
+                if (screenPoint.z < 1 && screenPoint.z > -1) {
+                    allBehindCamera = false;
+
+                    // Convert to screen coordinates
+                    const screenX = (screenPoint.x + 1) / 2 * rect.width;
+                    const screenY = (-screenPoint.y + 1) / 2 * rect.height;
+
+                    // Check if point is in selection box
+                    if (screenX >= selMinX && screenX <= selMaxX &&
+                        screenY >= selMinY && screenY <= selMaxY) {
+                        pointsInBox++;
+                        if (index < 8) cornersInBox++;  // First 8 points are corners
+                    }
+                }
+            });
+
+            // Determine if object should be selected
+            let shouldSelect = false;
+            if (!allBehindCamera) {
+                if (isWindowMode) {
+                    // Window mode: all 8 corners must be in box
+                    shouldSelect = (cornersInBox === 8);
+                } else {
+                    // Crossing mode: any sample point in box
+                    shouldSelect = (pointsInBox > 0);
+                }
+            }
+
+            if (shouldSelect) {
+                objectsInBox.push(mesh);
+            }
+        });
+
+        // Update selection
+        if (!isAdditive) {
+            // Clear previous selection
+            dataMgmtSelectedObjects.forEach(obj => restoreDataMgmtMaterial(obj));
+            dataMgmtSelectedObjects = [];
+        }
+
+        // Add selected objects
+        objectsInBox.forEach(mesh => {
+            if (!dataMgmtSelectedObjects.includes(mesh)) {
+                dataMgmtSelectedObjects.push(mesh);
+                highlightDataMgmtObject(mesh);
+            }
+        });
+
+        console.log('[Data Mgmt] Box selection complete:', dataMgmtSelectedObjects.length, 'objects selected');
+        updateDataMgmtVisibilityButtons();
+    }
+
+    function highlightDataMgmtObject(mesh) {
+        if (!dataMgmtOriginalMaterials.has(mesh)) {
+            dataMgmtOriginalMaterials.set(mesh, mesh.material);
+        }
+
+        // Use MeshStandardMaterial for consistent highlighting (same as main viewer)
+        const highlightMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff9800,           // Orange
+            emissive: 0xff5722,        // Orange glow
+            emissiveIntensity: 0.5,
+            metalness: 0.0,
+            roughness: 1.0,
+            flatShading: true,
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide
+        });
+
+        mesh.material = highlightMaterial;
+        mesh.material.needsUpdate = true;
+    }
+
+    function restoreDataMgmtMaterial(mesh) {
+        if (dataMgmtOriginalMaterials.has(mesh)) {
+            mesh.material = dataMgmtOriginalMaterials.get(mesh);
+            mesh.material.needsUpdate = true;
+            // IMPORTANT: Remove from map after restoration to allow future highlighting
+            dataMgmtOriginalMaterials.delete(mesh);
+        }
+    }
+
+    function clearDataMgmtScene() {
+        if (!dataMgmtScene) return;
+
+        // Remove all meshes
+        const objectsToRemove = [];
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh) {
+                objectsToRemove.push(object);
+            }
+        });
+
+        objectsToRemove.forEach(function(object) {
+            if (object.geometry) object.geometry.dispose();
+            if (object.material) {
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(mat => mat.dispose());
+                } else {
+                    object.material.dispose();
+                }
+            }
+            dataMgmtScene.remove(object);
+        });
+
+        dataMgmtOriginalMaterials.clear();
+        dataMgmtSelectedObjects = [];
+        dataMgmtHiddenObjectIds.clear();
+
+        console.log("[Data Mgmt] Scene cleared");
+    }
+
+    // ▼▼▼ [추가] 유틸리티 함수: 객체 ID 가져오기 ▼▼▼
+    function getDataMgmtObjectId(object) {
+        if (!object || !object.userData) return null;
+        // Priority: splitElementId > bimObjectId
+        return object.userData.splitElementId || object.userData.bimObjectId;
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    function isolateDataMgmtSelection() {
+        if (dataMgmtSelectedObjects.length === 0) {
+            console.warn('[Data Mgmt] No objects selected');
+            return;
+        }
+
+        // Collect selected object IDs
+        const selectedIds = new Set();
+        dataMgmtSelectedObjects.forEach(obj => {
+            const id = getDataMgmtObjectId(obj);
+            if (id) selectedIds.add(id);
+        });
+
+        console.log('[Data Mgmt] Isolating objects:', Array.from(selectedIds));
+
+        // Hide all objects except selected
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh) {
+                const objectId = getDataMgmtObjectId(object);
+                if (objectId) {
+                    if (!selectedIds.has(objectId)) {
+                        object.visible = false;
+                        dataMgmtHiddenObjectIds.add(objectId);
+                    } else {
+                        object.visible = true;
+                        dataMgmtHiddenObjectIds.delete(objectId);
+                    }
+                }
+            }
+        });
+
+        console.log('[Data Mgmt] Hidden', dataMgmtHiddenObjectIds.size, 'objects');
+        updateDataMgmtVisibilityButtons();
+    }
+
+    function hideDataMgmtSelection() {
+        if (dataMgmtSelectedObjects.length === 0) {
+            console.warn('[Data Mgmt] No objects selected');
+            return;
+        }
+
+        // Collect selected IDs and hide
+        const selectedIds = new Set();
+        let hiddenCount = 0;
+
+        dataMgmtSelectedObjects.forEach(obj => {
+            const id = getDataMgmtObjectId(obj);
+            if (id) {
+                obj.visible = false;
+                dataMgmtHiddenObjectIds.add(id);
+                selectedIds.add(id);
+                hiddenCount++;
+            }
+        });
+
+        console.log('[Data Mgmt] Hiding objects:', Array.from(selectedIds));
+
+        // Also hide all objects with same ID in scene
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh) {
+                const objectId = getDataMgmtObjectId(object);
+                if (objectId && selectedIds.has(objectId)) {
+                    object.visible = false;
+                }
+            }
+        });
+
+        // Deselect all
+        dataMgmtSelectedObjects.forEach(obj => restoreDataMgmtMaterial(obj));
+        dataMgmtSelectedObjects = [];
+
+        console.log('[Data Mgmt] Objects hidden. Total hidden:', dataMgmtHiddenObjectIds.size);
+        updateDataMgmtVisibilityButtons();
+    }
+
+    function showAllDataMgmtObjects() {
+        console.log('[Data Mgmt] Showing all objects');
+        console.log('[Data Mgmt] Current hiddenObjectIds size:', dataMgmtHiddenObjectIds.size);
+
+        let restoredCount = 0;
+        let totalMeshes = 0;
+
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh) {
+                totalMeshes++;
+                const objectId = getDataMgmtObjectId(object);
+                if (objectId) {
+                    const wasHidden = !object.visible;
+                    if (wasHidden) {
+                        object.visible = true;
+                        restoredCount++;
+                        console.log('[Data Mgmt] Restored object:', objectId);
+                    }
+                }
+            }
+        });
+
+        dataMgmtHiddenObjectIds.clear();
+
+        console.log('[Data Mgmt] Total meshes:', totalMeshes);
+        console.log('[Data Mgmt] Restored count:', restoredCount);
+        console.log('[Data Mgmt] Final hiddenObjectIds size:', dataMgmtHiddenObjectIds.size);
+
+        updateDataMgmtVisibilityButtons();
+    }
+
+    function updateDataMgmtVisibilityButtons() {
+        const isolateBtn = document.getElementById('data-mgmt-isolate-selection-btn');
+        const hideBtn = document.getElementById('data-mgmt-hide-selection-btn');
+        const showAllBtn = document.getElementById('data-mgmt-show-all-btn');
+        const sketchBtn = document.getElementById('data-mgmt-sketch-split-btn');
+
+        const hasSelection = dataMgmtSelectedObjects.length > 0;
+        const hasHidden = dataMgmtHiddenObjectIds.size > 0;
+
+        if (isolateBtn) isolateBtn.disabled = !hasSelection;
+        if (hideBtn) hideBtn.disabled = !hasSelection;
+        if (showAllBtn) showAllBtn.disabled = !hasHidden;
+        if (sketchBtn) sketchBtn.disabled = !hasSelection;
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    function resizeDataMgmtViewer() {
+        const canvas = document.getElementById('data-mgmt-three-d-canvas');
+        if (!canvas || !dataMgmtRenderer || !dataMgmtCamera) return;
+
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+
+        console.log('[Data Mgmt 3D Viewer] Resizing viewer:', { width, height });
+
+        // Update camera aspect ratio
+        dataMgmtCamera.aspect = width / height;
+        dataMgmtCamera.updateProjectionMatrix();
+
+        // Update renderer size
+        dataMgmtRenderer.setSize(width, height);
+    }
+
+    // ▼▼▼ [추가] 카메라 상태 동기화 함수들 (전역 노출) ▼▼▼
+    window.syncCameraStateToDataMgmt = function() {
+        if (!camera || !dataMgmtCamera || !controls || !dataMgmtControls) {
+            console.log("[Data Mgmt 3D Viewer] Cannot sync: one or more viewers not initialized");
+            return;
+        }
+
+        console.log("[Data Mgmt 3D Viewer] Syncing camera state from main viewer...");
+
+        // Copy camera position and rotation
+        dataMgmtCamera.position.copy(camera.position);
+        dataMgmtCamera.rotation.copy(camera.rotation);
+        dataMgmtCamera.updateProjectionMatrix();
+
+        // Copy controls target
+        dataMgmtControls.target.copy(controls.target);
+        dataMgmtControls.update();
+    };
+
+    window.syncCameraStateFromDataMgmt = function() {
+        if (!camera || !dataMgmtCamera || !controls || !dataMgmtControls) {
+            console.log("[3D Viewer] Cannot sync: one or more viewers not initialized");
+            return;
+        }
+
+        console.log("[3D Viewer] Syncing camera state from data mgmt viewer...");
+
+        // Copy camera position and rotation
+        camera.position.copy(dataMgmtCamera.position);
+        camera.rotation.copy(dataMgmtCamera.rotation);
+        camera.quaternion.copy(dataMgmtCamera.quaternion); // Also copy quaternion for precise rotation
+        camera.updateProjectionMatrix();
+
+        // Copy controls target
+        controls.target.copy(dataMgmtControls.target);
+        controls.update();
+    };
+
+    // Alias for clarity
+    window.syncCameraStateToMain = window.syncCameraStateFromDataMgmt;
+
+    window.syncGeometryToDataMgmt = function() {
+        if (!scene || !dataMgmtScene) {
+            console.log("[Data Mgmt 3D Viewer] Cannot sync geometry: scenes not initialized");
+            return;
+        }
+
+        console.log("[Data Mgmt 3D Viewer] Syncing geometry from main scene...");
+
+        // Remove all existing geometry (except lights and helpers)
+        const objectsToRemove = [];
+        dataMgmtScene.children.forEach(child => {
+            if (child.type === 'Mesh' || child.type === 'Group') {
+                objectsToRemove.push(child);
+            }
+        });
+        objectsToRemove.forEach(obj => dataMgmtScene.remove(obj));
+
+        // Clone all mesh objects from main scene
+        scene.children.forEach(child => {
+            if (child.type === 'Mesh' || child.type === 'Group') {
+                const clonedObject = child.clone();
+                dataMgmtScene.add(clonedObject);
+            }
+        });
+
+        // Sync visibility state
+        syncVisibilityToDataMgmt();
+
+        console.log("[Data Mgmt 3D Viewer] Geometry sync complete");
+    };
+
+    // ▼▼▼ [추가] 선택 상태 동기화 ▼▼▼
+    let isSyncingSelection = false; // 무한 루프 방지 플래그
+
+    window.syncSelectionToDataMgmt = function() {
+        if (!scene || !dataMgmtScene) return;
+        if (isSyncingSelection) {
+            console.log("[Data Mgmt] Skipping sync - already syncing");
+            return;
+        }
+
+        isSyncingSelection = true;
+        console.log("[Data Mgmt] Syncing selection from main viewer...");
+
+        // Get selected object IDs from main viewer FIRST (both selectedObject and selectedObjects)
+        const selectedIds = new Set();
+
+        // Check selectedObjects array
+        selectedObjects.forEach(obj => {
+            const id = getObjectId(obj);
+            if (id) {
+                selectedIds.add(id);
+                console.log("[Data Mgmt] Found selected object in array:", id);
+            }
+        });
+
+        // Also check selectedObject (single selection)
+        if (selectedObject) {
+            const id = getObjectId(selectedObject);
+            if (id) {
+                selectedIds.add(id);
+                console.log("[Data Mgmt] Found selected object (single):", id);
+            }
+        }
+
+        console.log("[Data Mgmt] Total selected IDs to sync:", selectedIds.size);
+
+        // Clear ALL previous selections and restore materials
+        dataMgmtSelectedObjects.forEach(obj => {
+            restoreDataMgmtMaterial(obj);
+            console.log("[Data Mgmt] Restored material for previously selected:", getDataMgmtObjectId(obj));
+        });
+        dataMgmtSelectedObjects = [];
+
+        // Also restore materials for any objects that shouldn't be selected
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement)) {
+                const objectId = getDataMgmtObjectId(object);
+
+                // If this object is NOT in the new selection, restore its material
+                if (objectId && !selectedIds.has(objectId)) {
+                    restoreDataMgmtMaterial(object);
+                }
+            }
+        });
+
+        // Select corresponding objects in data mgmt viewer
+        if (selectedIds.size > 0) {
+            dataMgmtScene.traverse(function(object) {
+                if (object instanceof THREE.Mesh) {
+                    const objectId = getDataMgmtObjectId(object);
+                    if (objectId && selectedIds.has(objectId)) {
+                        dataMgmtSelectedObjects.push(object);
+                        highlightDataMgmtObject(object);
+                        console.log("[Data Mgmt] Highlighted object:", objectId);
+                    }
+                }
+            });
+        }
+
+        updateDataMgmtVisibilityButtons();
+        console.log("[Data Mgmt] Selection synced:", dataMgmtSelectedObjects.length, "objects");
+
+        isSyncingSelection = false; // 플래그 리셋
+    };
+
+    window.syncSelectionFromDataMgmt = function() {
+        if (!scene || !dataMgmtScene) return;
+        if (isSyncingSelection) {
+            console.log("[3D Viewer] Skipping sync - already syncing");
+            return;
+        }
+
+        isSyncingSelection = true;
+        console.log("[3D Viewer] Syncing selection from data mgmt viewer...");
+
+        // Get selected object IDs from data mgmt viewer FIRST
+        const selectedIds = new Set();
+        dataMgmtSelectedObjects.forEach(obj => {
+            const id = getDataMgmtObjectId(obj);
+            if (id) selectedIds.add(id);
+        });
+
+        // Clear ALL previous selections and restore materials
+        selectedObjects.forEach(obj => {
+            if (originalMaterials.has(obj)) {
+                obj.material = originalMaterials.get(obj);
+                obj.material.needsUpdate = true;
+                originalMaterials.delete(obj);
+            }
+            console.log("[3D Viewer] Restored material for previously selected:", getObjectId(obj));
+        });
+
+        if (selectedObject && !selectedObjects.includes(selectedObject)) {
+            if (originalMaterials.has(selectedObject)) {
+                selectedObject.material = originalMaterials.get(selectedObject);
+                selectedObject.material.needsUpdate = true;
+                originalMaterials.delete(selectedObject);
+            }
+        }
+
+        selectedObjects = [];
+        selectedObject = null;
+
+        // Also restore materials for any objects that shouldn't be selected
+        scene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData &&
+                (object.userData.bimObjectId || object.userData.isSplitPart || object.userData.isSplitElement)) {
+                const objectId = getObjectId(object);
+
+                // If this object is NOT in the new selection, restore its material
+                if (objectId && !selectedIds.has(objectId)) {
+                    if (originalMaterials.has(object)) {
+                        object.material = originalMaterials.get(object);
+                        object.material.needsUpdate = true;
+                        originalMaterials.delete(object);
+                    }
+                }
+            }
+        });
+
+        // Select corresponding objects in main viewer
+        if (selectedIds.size > 0) {
+            scene.traverse(function(object) {
+                if (object instanceof THREE.Mesh) {
+                    const objectId = getObjectId(object);
+                    if (objectId && selectedIds.has(objectId)) {
+                        selectedObjects.push(object);
+
+                        // Apply highlight material (same as main viewer selection)
+                        if (!originalMaterials.has(object)) {
+                            originalMaterials.set(object, object.material);
+                        }
+
+                        const highlightMaterial = new THREE.MeshStandardMaterial({
+                            color: 0xff8800,           // Orange
+                            emissive: 0xff6600,        // Orange glow
+                            emissiveIntensity: 0.5,
+                            metalness: 0.0,
+                            roughness: 1.0,
+                            flatShading: true,
+                            transparent: true,
+                            opacity: 0.7,
+                            side: THREE.DoubleSide
+                        });
+
+                        object.material = highlightMaterial;
+                        object.material.needsUpdate = true;
+                        console.log("[3D Viewer] Highlighted object:", objectId);
+                    }
+                }
+            });
+
+            // Set selectedObject to first item for compatibility with single selection logic
+            if (selectedObjects.length > 0) {
+                selectedObject = selectedObjects[0];
+                console.log("[3D Viewer] Set selectedObject to first selected item:", getObjectId(selectedObject));
+            }
+        }
+
+        updateVisibilityControlButtons();
+        console.log("[3D Viewer] Selection synced:", selectedObjects.length, "objects");
+
+        isSyncingSelection = false; // 플래그 리셋
+    };
+
+    // ▼▼▼ [추가] 가시성 상태 동기화 ▼▼▼
+    window.syncVisibilityToDataMgmt = function() {
+        if (!scene || !dataMgmtScene) return;
+
+        console.log("[Data Mgmt] Syncing visibility from main viewer...");
+        console.log("[Data Mgmt] Main viewer hidden IDs:", Array.from(hiddenObjectIds));
+
+        // Clear data mgmt hidden state
+        dataMgmtHiddenObjectIds.clear();
+
+        // Apply visibility from main viewer
+        dataMgmtScene.traverse(function(object) {
+            if (object instanceof THREE.Mesh) {
+                const objectId = getDataMgmtObjectId(object);
+                if (objectId) {
+                    if (hiddenObjectIds.has(objectId)) {
+                        object.visible = false;
+                        dataMgmtHiddenObjectIds.add(objectId);
+                    } else {
+                        object.visible = true;
+                    }
+                }
+            }
+        });
+
+        updateDataMgmtVisibilityButtons();
+        console.log("[Data Mgmt] Visibility synced. Hidden:", dataMgmtHiddenObjectIds.size);
+    };
+
+    window.syncVisibilityFromDataMgmt = function() {
+        if (!scene || !dataMgmtScene) return;
+
+        console.log("[3D Viewer] Syncing visibility from data mgmt viewer...");
+        console.log("[3D Viewer] Data mgmt hidden IDs:", Array.from(dataMgmtHiddenObjectIds));
+
+        // Clear main viewer hidden state
+        hiddenObjectIds.clear();
+
+        // Apply visibility from data mgmt viewer
+        scene.traverse(function(object) {
+            if (object instanceof THREE.Mesh) {
+                const objectId = getObjectId(object);
+                if (objectId) {
+                    if (dataMgmtHiddenObjectIds.has(objectId)) {
+                        object.visible = false;
+                        hiddenObjectIds.add(objectId);
+                    } else {
+                        object.visible = true;
+                    }
+                }
+            }
+        });
+
+        updateVisibilityControlButtons();
+        console.log("[3D Viewer] Visibility synced. Hidden:", hiddenObjectIds.size);
+    };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [추가] 데이터 관리 탭의 스플릿바 리사이즈 로직 ▼▼▼
+    window.setupDataMgmtViewerSplitBar = function() {
+        const resizeHandle = document.getElementById('data-mgmt-viewer-resize-handle');
+        const topSection = document.querySelector('.details-panel-top');
+        const viewerSection = document.querySelector('.details-panel-viewer');
+
+        if (!resizeHandle || !topSection || !viewerSection) {
+            console.warn("[Data Mgmt Split Bar] Elements not found");
+            return;
+        }
+
+        let isResizing = false;
+        let startY = 0;
+        let startTopHeight = 0;
+        let startViewerHeight = 0;
+
+        resizeHandle.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startY = e.clientY;
+            startTopHeight = topSection.offsetHeight;
+            startViewerHeight = viewerSection.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+
+            const delta = e.clientY - startY;
+            const minHeight = 200;
+
+            const totalAvailable = startTopHeight + startViewerHeight;
+
+            let newTopHeight = startTopHeight + delta;
+            const maxTopHeight = totalAvailable - minHeight;
+            newTopHeight = Math.max(minHeight, Math.min(maxTopHeight, newTopHeight));
+
+            let newViewerHeight = totalAvailable - newTopHeight;
+            newViewerHeight = Math.max(minHeight, newViewerHeight);
+
+            topSection.style.flex = `0 0 ${newTopHeight}px`;
+            viewerSection.style.flex = `0 0 ${newViewerHeight}px`;
+
+            resizeDataMgmtViewer();
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+
+        console.log("[Data Mgmt Split Bar] Split bar setup complete");
+    };
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 })();

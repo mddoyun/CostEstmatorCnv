@@ -36,6 +36,7 @@
     window.loadedCostItems = [];
     window.loadedUnitPriceTypes = [];
     window.loadedUnitPrices = [];
+    window.loadedActivities = [];
     // 룰셋 데이터
     window.loadedClassificationRules = [];
     window.loadedPropertyMappingRules = [];

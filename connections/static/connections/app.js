@@ -641,6 +641,18 @@ async function runBatchAutoUpdate() {
 
     console.log("[DEBUG] --- 일괄 자동 업데이트 시작 ---");
 
+    // [추가] 프로그레스바 초기화
+    const progressBar = document.getElementById('data-fetch-progress');
+    const progressStatus = document.getElementById('progress-status-text');
+    const TOTAL_STEPS = 6;
+
+    if (progressBar && progressStatus) {
+        progressBar.max = TOTAL_STEPS;
+        progressBar.value = 0;
+        progressStatus.textContent = `0/${TOTAL_STEPS}`;
+        console.log("[DEBUG] Progress bar initialized: 0/6");
+    }
+
     // Promise를 사용하여 데이터 가져오기 완료를 기다리는 로직
     const waitForDataFetch = () =>
         new Promise((resolve, reject) => {
@@ -675,6 +687,10 @@ async function runBatchAutoUpdate() {
     try {
         // 1. 데이터 가져오기 (완료될 때까지 대기)
         await waitForDataFetch();
+        if (progressBar && progressStatus) {
+            progressBar.value = 1;
+            progressStatus.textContent = `1/${TOTAL_STEPS} 완료`;
+        }
         showToast("✅ (1/6) 데이터 가져오기 완료.", "success");
         await new Promise((resolve) => setTimeout(resolve, 1000)); // 다음 단계 전 잠시 대기
 
@@ -682,6 +698,10 @@ async function runBatchAutoUpdate() {
         console.log("[DEBUG] (2/6) 분류 할당 룰셋 적용 시작...");
         showToast("2/6: 분류 할당 룰셋을 적용합니다...", "info");
         await applyClassificationRules(true); // skipConfirmation = true
+        if (progressBar && progressStatus) {
+            progressBar.value = 2;
+            progressStatus.textContent = `2/${TOTAL_STEPS} 완료`;
+        }
         showToast("✅ (2/6) 분류 할당 룰셋 적용 완료.", "success");
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -689,6 +709,10 @@ async function runBatchAutoUpdate() {
         console.log("[DEBUG] (3/6) 수량산출부재 자동 생성 시작...");
         showToast("3/6: 수량산출부재를 자동 생성합니다...", "info");
         await createAutoQuantityMembers(true); // skipConfirmation = true
+        if (progressBar && progressStatus) {
+            progressBar.value = 3;
+            progressStatus.textContent = `3/${TOTAL_STEPS} 완료`;
+        }
         showToast("✅ (3/6) 수량산출부재 자동 생성 완료.", "success");
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -699,6 +723,10 @@ async function runBatchAutoUpdate() {
             "info"
         );
         await applyAssignmentRules(true); // skipConfirmation = true
+        if (progressBar && progressStatus) {
+            progressBar.value = 4;
+            progressStatus.textContent = `4/${TOTAL_STEPS} 완료`;
+        }
         showToast("✅ (4/6) 할당 룰셋 일괄 적용 완료.", "success");
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -706,6 +734,10 @@ async function runBatchAutoUpdate() {
         console.log("[DEBUG] (5/6) 산출항목 자동 생성 시작...");
         showToast("5/6: 산출항목을 자동 생성합니다...", "info");
         await createAutoCostItems(true); // skipConfirmation = true
+        if (progressBar && progressStatus) {
+            progressBar.value = 5;
+            progressStatus.textContent = `5/${TOTAL_STEPS} 완료`;
+        }
         showToast("✅ (5/6) 산출항목 자동 생성 완료.", "success");
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -713,22 +745,21 @@ async function runBatchAutoUpdate() {
         console.log("[DEBUG] (6/6) 집계표 생성 준비...");
         showToast("6/6: 최종 집계표를 생성합니다...", "info");
 
-        // 상세견적(DD) 탭으로 강제 전환
-        // ▼▼▼ [수정] 셀렉터 변경 ▼▼▼
-        const ddTabButton = document.querySelector(
-            '.main-nav .nav-button[data-primary-tab="detailed-estimation-dd"]'
+        // [수정] 탭 전환 로직 제거 - 현재 탭 유지
+        // 상세견적(DD) 탭으로 자동 전환하지 않고 현재 탭에 머무름
+        console.log(
+            "[DEBUG] Skipping tab switch - staying on current tab for report generation..."
         );
-        // ▲▲▲ 수정 끝 ▲▲▲
-        if (ddTabButton && !ddTabButton.classList.contains("active")) {
-            console.log(
-                "[DEBUG] Switching to Detailed Estimation (DD) tab for report generation..."
-            );
-            ddTabButton.click(); // 탭 클릭 이벤트 실행 (내부적으로 loadDataForActiveTab 호출됨)
-            await new Promise((resolve) => setTimeout(resolve, 1500)); // 데이터 로드 시간 대기
+
+        // [추가] BOQ 필드 정보 로드 (DD 탭으로 이동하지 않으므로 수동으로 로드 필요)
+        console.log("[DEBUG] Loading BOQ grouping fields before generating report...");
+        if (typeof loadBoqGroupingFields === 'function') {
+            await loadBoqGroupingFields();
+            console.log("[DEBUG] BOQ grouping fields loaded successfully.");
         } else {
-            // 이미 해당 탭이면 짧은 지연 시간만 줌
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            console.error("[ERROR] loadBoqGroupingFields function not found!");
         }
+        await new Promise((resolve) => setTimeout(resolve, 500)); // 짧은 지연만 적용
 
         const boqGroupingControls = document.getElementById(
             "boq-grouping-controls"
@@ -776,6 +807,10 @@ async function runBatchAutoUpdate() {
 
         // 집계표 생성 함수 호출 (함수 이름은 그대로 사용)
         generateBoqReport();
+        if (progressBar && progressStatus) {
+            progressBar.value = 6;
+            progressStatus.textContent = `6/${TOTAL_STEPS} 완료`;
+        }
         showToast("✅ (6/6) 상세견적(DD) 집계표 생성 완료.", "success");
         // ▲▲▲ [수정] 여기까지 입니다 ▲▲▲
 
@@ -784,6 +819,11 @@ async function runBatchAutoUpdate() {
     } catch (error) {
         console.error("[ERROR] 일괄 자동 업데이트 중 오류 발생:", error);
         showToast(`오류 발생: ${error.message}`, "error", 5000);
+        // 에러 발생 시 프로그레스바 리셋
+        if (progressBar && progressStatus) {
+            progressBar.value = 0;
+            progressStatus.textContent = '';
+        }
     } finally {
         // 프로세스 종료 후 항상 프로젝트 선택 가능하도록 복원
         const projectSelector = document.getElementById("project-selector");

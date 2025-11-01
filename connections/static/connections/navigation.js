@@ -16,6 +16,33 @@ window.handleMainNavClick = function handleMainNavClick(e) {
         return;
     }
 
+    // ▼▼▼ [추가] 탭 전환 전 상태 저장 (카메라, 선택, 가시성) ▼▼▼
+    const previousTab = window.activeTab;
+    if (previousTab === 'three-d-viewer') {
+        // 3D 뷰어 탭에서 나갈 때 모든 상태를 데이터 관리 뷰어로 동기화
+        if (typeof window.syncCameraStateToDataMgmt === 'function') {
+            window.syncCameraStateToDataMgmt();
+        }
+        if (typeof window.syncSelectionToDataMgmt === 'function') {
+            window.syncSelectionToDataMgmt();
+        }
+        if (typeof window.syncVisibilityToDataMgmt === 'function') {
+            window.syncVisibilityToDataMgmt();
+        }
+    } else if (previousTab === 'data-management') {
+        // 데이터 관리 탭에서 나갈 때 모든 상태를 메인 뷰어로 동기화
+        if (typeof window.syncCameraStateFromDataMgmt === 'function') {
+            window.syncCameraStateFromDataMgmt();
+        }
+        if (typeof window.syncSelectionFromDataMgmt === 'function') {
+            window.syncSelectionFromDataMgmt();
+        }
+        if (typeof window.syncVisibilityFromDataMgmt === 'function') {
+            window.syncVisibilityFromDataMgmt();
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // --- UI 상태 변경 ---
     document
         .querySelectorAll('.main-nav .nav-button.active')
@@ -165,6 +192,33 @@ window.handleSubNavClick = function handleSubNavClick(e) {
             `[WARN][handleSubNavClick] Could not find parent .secondary-nav for clicked button.`
         );
     }
+
+    // ▼▼▼ [추가] 탭 전환 전 상태 동기화 ▼▼▼
+    const previousTab = activeTab;
+    if (previousTab === 'data-management') {
+        // 데이터 관리 탭에서 나갈 때 모든 상태를 메인 뷰어로 동기화
+        if (typeof window.syncCameraStateFromDataMgmt === 'function') {
+            window.syncCameraStateFromDataMgmt();
+        }
+        if (typeof window.syncSelectionFromDataMgmt === 'function') {
+            window.syncSelectionFromDataMgmt();
+        }
+        if (typeof window.syncVisibilityFromDataMgmt === 'function') {
+            window.syncVisibilityFromDataMgmt();
+        }
+    } else if (previousTab === 'three-d-viewer' && targetTabId === 'data-management') {
+        // 3D 뷰어에서 데이터 관리 탭으로 갈 때 상태를 데이터 관리 뷰어로 동기화
+        if (typeof window.syncCameraStateToDataMgmt === 'function') {
+            window.syncCameraStateToDataMgmt();
+        }
+        if (typeof window.syncSelectionToDataMgmt === 'function') {
+            window.syncSelectionToDataMgmt();
+        }
+        if (typeof window.syncVisibilityToDataMgmt === 'function') {
+            window.syncVisibilityToDataMgmt();
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     activeTab = targetTabId; // 전역 activeTab 변수 업데이트
     console.log(
@@ -407,6 +461,26 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
                 'data-management-data-table-container',
                 'data-management'
             ); // 테이블 초기 렌더링 (데이터 로드 전)
+
+            // ▼▼▼ [추가] 데이터 관리 탭의 3D 뷰어 초기화 및 상태 동기화 ▼▼▼
+            if (typeof window.initDataMgmtThreeDViewer === 'function') {
+                setTimeout(() => {
+                    window.initDataMgmtThreeDViewer();
+                    window.setupDataMgmtViewerSplitBar();
+
+                    // 초기화 후 메인 뷰어의 모든 상태를 가져오기
+                    if (typeof window.syncCameraStateToDataMgmt === 'function') {
+                        window.syncCameraStateToDataMgmt();
+                    }
+                    if (typeof window.syncSelectionToDataMgmt === 'function') {
+                        window.syncSelectionToDataMgmt();
+                    }
+                    if (typeof window.syncVisibilityToDataMgmt === 'function') {
+                        window.syncVisibilityToDataMgmt();
+                    }
+                }, 100); // DOM이 완전히 렌더링될 때까지 짧은 지연
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
             break;
         case 'quantity-members':
             console.log(
@@ -543,6 +617,21 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             ); // 디버깅
             // 3D 뷰어는 기존 allRevitData를 사용하므로 데이터 클리어하지 않음
             // 뷰어 초기화는 handleMainNavClick에서 이미 처리됨 (initThreeDViewer 호출)
+
+            // ▼▼▼ [추가] 데이터 관리 뷰어의 모든 상태를 가져오기 ▼▼▼
+            setTimeout(() => {
+                if (typeof window.syncCameraStateFromDataMgmt === 'function') {
+                    window.syncCameraStateFromDataMgmt();
+                }
+                if (typeof window.syncSelectionFromDataMgmt === 'function') {
+                    window.syncSelectionFromDataMgmt();
+                }
+                if (typeof window.syncVisibilityFromDataMgmt === 'function') {
+                    window.syncVisibilityFromDataMgmt();
+                }
+            }, 200); // 3D 뷰어 초기화 완료 후
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             // Load quantity members for the 3D viewer quantity members panel
             if (typeof loadQuantityMembers === 'function') {
                 loadQuantityMembers();

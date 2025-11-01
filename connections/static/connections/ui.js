@@ -517,48 +517,60 @@ function updateTagLists(tags) {
     }
 }
 
-const toastQueue = [];
-let activeToasts = 0;
-const MAX_ACTIVE_TOASTS = 3;
+// [수정] 토스트를 상단 상태바로 통합
+const statusQueue = [];
+let statusTimeout = null;
+let previousStatusMessage = '준비됨';
+let previousStatusClass = '';
 
-function processToastQueue() {
-    // 1. 표시할 공간이 없거나, 대기열에 알림이 없으면 함수를 종료합니다.
-    if (activeToasts >= MAX_ACTIVE_TOASTS || toastQueue.length === 0) {
+function processStatusQueue() {
+    if (statusQueue.length === 0) {
         return;
     }
 
-    // 2. 대기열에서 다음 알림 데이터를 가져오고, 활성 알림 수를 1 증가시킵니다.
-    const toastData = toastQueue.shift();
-    activeToasts++;
+    const statusData = statusQueue.shift();
+    const statusEl = document.getElementById('status');
 
-    const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = `toast-message ${toastData.type}`;
-    toast.textContent = toastData.message;
-    container.appendChild(toast);
+    if (!statusEl) {
+        console.warn('[showToast] Status element not found');
+        return;
+    }
 
-    // 3. 잠시 후 'show' 클래스를 추가하여 화면에 나타나는 애니메이션을 실행합니다.
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 100);
+    // 이전 타임아웃 취소
+    if (statusTimeout) {
+        clearTimeout(statusTimeout);
+        statusTimeout = null;
+    }
 
-    // 4. 지정된 시간(duration)이 지나면 알림을 사라지게 합니다.
-    setTimeout(() => {
-        toast.classList.remove('show');
+    // 현재 상태를 이전 상태로 저장 (WebSocket이 업데이트한 내용 유지)
+    if (statusQueue.length === 0 || !statusTimeout) {
+        previousStatusMessage = statusEl.textContent;
+        previousStatusClass = statusEl.className;
+    }
 
-        // 5. [핵심 수정] 'transitionend' 이벤트 대신 고정된 시간(500ms)을 기다립니다.
-        // 이 시간은 style.css의 .toast-message { transition: all 0.5s; } 와 일치해야 합니다.
-        setTimeout(() => {
-            toast.remove(); // DOM에서 알림 요소를 완전히 제거합니다.
-            activeToasts--; // 활성 알림 수를 1 감소시킵니다.
-            processToastQueue(); // 이제 공간이 생겼으므로, 대기열에 다음 알림이 있는지 확인하고 처리합니다.
-        }, 500); // CSS 애니메이션 지속 시간
-    }, toastData.duration);
+    // 상태 메시지 표시
+    statusEl.textContent = statusData.message;
+
+    // type에 따라 클래스 추가
+    statusEl.className = 'status-' + statusData.type;
+
+    // 지정된 시간 후 다음 메시지 표시 또는 이전 상태로 복원
+    statusTimeout = setTimeout(() => {
+        if (statusQueue.length > 0) {
+            processStatusQueue();
+        } else {
+            // 큐가 비어있으면 이전 메시지로 복원 (WebSocket 메시지 유지)
+            statusEl.textContent = previousStatusMessage;
+            statusEl.className = previousStatusClass;
+        }
+        statusTimeout = null;
+    }, statusData.duration);
 }
 
 function showToast(message, type = 'info', duration = 3000) {
-    toastQueue.push({ message, type, duration });
-    processToastQueue();
+    // [수정] 상단 상태바에 메시지 표시
+    statusQueue.push({ message, type, duration });
+    processStatusQueue();
 }
 
 function renderClassificationRulesetTable(rules, editingRuleId = null) {

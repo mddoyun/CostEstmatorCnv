@@ -896,3 +896,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 });
+
+// Expose loadActivities globally for 3D viewer
+window.loadActivities = loadActivities;

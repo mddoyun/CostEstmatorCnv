@@ -100,6 +100,14 @@ urlpatterns = [
     path('api/rules/space-assignment/<uuid:project_id>/export/', views.export_space_assignment_rules, name='export_space_assignment_rules'),
     path('api/rules/space-assignment/<uuid:project_id>/import/', views.import_space_assignment_rules, name='import_space_assignment_rules'),
 
+    # ▼▼▼ [추가] 액티비티 할당 룰셋 API ▼▼▼
+    path('api/rules/activity-assignment/<uuid:project_id>/', views.activity_assignment_rules_api, name='activity_assignment_rules_api'),
+    path('api/rules/activity-assignment/<uuid:project_id>/<uuid:rule_id>/', views.activity_assignment_rules_api, name='activity_assignment_rule_detail_api'),
+    path('api/rules/activity-assignment/apply/<uuid:project_id>/', views.apply_activity_assignment_rules_view, name='apply_activity_assignment_rules'),
+    path('api/rules/activity-assignment/<uuid:project_id>/export/', views.export_activity_assignment_rules, name='export_activity_assignment_rules'),
+    path('api/rules/activity-assignment/<uuid:project_id>/import/', views.import_activity_assignment_rules, name='import_activity_assignment_rules'),
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
     # --- 프로젝트 가져오기/내보내기 ---
     path('export-project/<uuid:project_id>/', views.export_project, name='export_project'),
     path('import-project/', views.import_project, name='import_project'),
@@ -108,6 +116,7 @@ urlpatterns = [
     path('api/unit-price-types/<uuid:project_id>/', views.unit_price_types_api, name='unit_price_types_api'),
     path('api/unit-price-types/<uuid:project_id>/<uuid:type_id>/', views.unit_price_types_api, name='unit_price_type_detail_api'),
 
+    path('api/all-unit-prices/<uuid:project_id>/', views.all_unit_prices_api, name='all_unit_prices_api'),
     path('api/unit-prices/<uuid:project_id>/<uuid:cost_code_id>/', views.unit_prices_api, name='unit_prices_api'),
     path('api/unit-prices/<uuid:project_id>/<uuid:cost_code_id>/<uuid:price_id>/', views.unit_prices_api, name='unit_price_detail_api'),
 
@@ -129,5 +138,17 @@ urlpatterns = [
 
     # ▼▼▼ [추가] 분할 객체 관리 API ▼▼▼
     path('api/projects/<uuid:project_id>/split-elements/delete-all/', views.delete_all_split_elements, name='delete_all_split_elements'),
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    # ▼▼▼ [추가] 액티비티 관리 API ▼▼▼
+    path('api/activities/<uuid:project_id>/', views.activities_api, name='activities_api'),
+    path('api/activities/detail/<uuid:activity_id>/', views.activities_api, name='activity_detail_api'),
+    path('api/activity-dependencies/<uuid:project_id>/', views.activity_dependencies_api, name='activity_dependencies_api'),
+    path('api/activity-dependencies/detail/<uuid:dependency_id>/', views.activity_dependencies_api, name='activity_dependency_detail_api'),
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    # ▼▼▼ [추가] 작업 캘린더 API ▼▼▼
+    path('api/projects/<uuid:project_id>/work-calendars/', views.work_calendars_api, name='work_calendars_api'),
+    path('api/projects/<uuid:project_id>/work-calendars/<uuid:calendar_id>/', views.work_calendars_api, name='work_calendar_detail_api'),
     # ▲▲▲ [추가] 여기까지 ▲▲▲
 ]

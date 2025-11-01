@@ -2621,6 +2621,267 @@
         <script src="{% static 'connections/unit_price_management.js' %}"></script>
         <script src="{% static 'connections/schematic_estimation_handlers.js' %}"></script>
         <script src="{% static 'connections/websocket.js' %}"></script>
+
+        <!-- Left-Right Split Layout with Draggable Splitter -->
+        <script>
+        (function() {
+            console.log('[Layout] Creating left-right split with 3D viewport on left...');
+
+            const appContainer = document.querySelector('.app-container');
+            const header = document.querySelector('.app-header');
+            const mainNav = document.querySelector('.main-nav');
+            const secondaryNavContainer = document.querySelector('.secondary-nav-container');
+            const mainContent = document.querySelector('.main-content');
+            const threeDViewerTab = document.getElementById('three-d-viewer');
+
+            if (!appContainer || !threeDViewerTab) {
+                console.error('[Layout] Required elements not found');
+                return;
+            }
+
+            // Create split layout wrapper
+            const splitWrapper = document.createElement('div');
+            splitWrapper.id = 'split-wrapper';
+            splitWrapper.style.cssText = 'display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden;';
+
+            // Create LEFT panel (3D Viewport)
+            const leftPanel = document.createElement('div');
+            leftPanel.id = 'split-left-panel';
+            leftPanel.style.cssText = 'flex: 0 0 50%; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; background: #f0f0f0;';
+
+            // Create SPLITTER bar
+            const splitter = document.createElement('div');
+            splitter.id = 'split-bar';
+            splitter.style.cssText = 'flex: 0 0 8px; background: #ddd; cursor: ew-resize; display: flex; align-items: center; justify-content: center; border-left: 1px solid #bbb; border-right: 1px solid #bbb; user-select: none;';
+            const splitterHandle = document.createElement('div');
+            splitterHandle.style.cssText = 'width: 4px; height: 60px; background: #999; border-radius: 2px;';
+            splitter.appendChild(splitterHandle);
+
+            // Create RIGHT panel (Navigation + Tabs)
+            const rightPanel = document.createElement('div');
+            rightPanel.id = 'split-right-panel';
+            rightPanel.style.cssText = 'flex: 1; min-width: 300px; display: flex; flex-direction: column; overflow: hidden;';
+
+            // Split left panel into top (viewport) and bottom (properties)
+            const leftTop = document.createElement('div');
+            leftTop.id = 'split-left-top';
+            leftTop.style.cssText = 'flex: 1; min-height: 300px; display: flex; flex-direction: column; overflow: hidden;';
+
+            const leftBottom = document.createElement('div');
+            leftBottom.id = 'split-left-bottom';
+            leftBottom.style.cssText = 'flex: 0 0 450px; min-height: 150px; display: flex; flex-direction: column; overflow: hidden;';
+
+            // Create vertical splitter between top and bottom
+            const verticalSplitter = document.createElement('div');
+            verticalSplitter.id = 'vertical-splitter';
+            verticalSplitter.style.cssText = 'height: 8px; background: linear-gradient(to bottom, #ddd 0%, #bbb 50%, #ddd 100%); cursor: ns-resize; flex-shrink: 0; position: relative; z-index: 10;';
+            verticalSplitter.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 4px; background: rgba(0,0,0,0.2); border-radius: 2px;"></div>';
+
+            // Move 3D canvas container to LEFT TOP
+            const threeDContainer = document.querySelector('.three-d-viewer-container');
+            if (threeDContainer) {
+                leftTop.appendChild(threeDContainer);
+                console.log('[Layout] Moved 3D canvas container to left top');
+            }
+
+            // Move properties panel to LEFT BOTTOM
+            const propertiesPanel = document.querySelector('.three-d-properties-panel');
+            if (propertiesPanel) {
+                leftBottom.appendChild(propertiesPanel);
+                console.log('[Layout] Moved properties panel to left bottom');
+            }
+
+            // Assemble left panel
+            leftPanel.style.cssText = 'flex: 0 0 50%; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; background: #f0f0f0;';
+            leftPanel.appendChild(leftTop);
+            leftPanel.appendChild(verticalSplitter);
+            leftPanel.appendChild(leftBottom);
+
+            // Move navigation and tabs to RIGHT panel
+            if (mainNav) rightPanel.appendChild(mainNav);
+            if (secondaryNavContainer) rightPanel.appendChild(secondaryNavContainer);
+            if (mainContent) rightPanel.appendChild(mainContent);
+
+            // The 3D viewer tab still exists in mainContent and now contains:
+            // - Properties panel
+            // - Schedule controls
+            // - Cost items table
+            // - Gantt chart
+            // - BOQ table
+            console.log('[Layout] 3D viewer tab remains in right panel with all other content');
+
+            // Assemble layout
+            splitWrapper.appendChild(leftPanel);
+            splitWrapper.appendChild(splitter);
+            splitWrapper.appendChild(rightPanel);
+            appContainer.insertBefore(splitWrapper, header.nextSibling);
+
+            // Initialize 3D viewer immediately after layout is created
+            setTimeout(() => {
+                if (typeof window.initThreeDViewer === 'function') {
+                    console.log('[Layout] Initializing 3D viewer on page load...');
+                    window.initThreeDViewer();
+
+                    // Initial resize after viewer is initialized
+                    setTimeout(() => {
+                        resize3DCanvas();
+                    }, 100);
+                } else {
+                    console.warn('[Layout] initThreeDViewer not yet available, will retry...');
+                    // Retry after a short delay if not loaded yet
+                    setTimeout(() => {
+                        if (typeof window.initThreeDViewer === 'function') {
+                            console.log('[Layout] Initializing 3D viewer (retry)...');
+                            window.initThreeDViewer();
+
+                            // Initial resize after viewer is initialized
+                            setTimeout(() => {
+                                resize3DCanvas();
+                            }, 100);
+                        }
+                    }, 500);
+                }
+            }, 100);
+
+            // Make splitter draggable
+            let isDragging = false;
+            let startX = 0;
+            let startLeftWidth = 0;
+            let resizeFrame = null;
+
+            // Function to properly resize 3D canvas
+            function resize3DCanvas() {
+                if (window.camera && window.renderer) {
+                    const canvas = document.getElementById('three-d-canvas');
+                    const viewportTop = document.getElementById('split-left-top');
+                    if (canvas && viewportTop) {
+                        const width = viewportTop.clientWidth;
+                        const height = viewportTop.clientHeight;
+
+                        // Update renderer size (updateStyle: true to also update CSS)
+                        window.renderer.setSize(width, height, true);
+
+                        // Update camera aspect ratio to prevent distortion
+                        window.camera.aspect = width / height;
+                        window.camera.updateProjectionMatrix();
+
+                        // Update OrbitControls if it exists
+                        if (window.controls && window.controls.update) {
+                            window.controls.update();
+                        }
+
+                        console.log(`[Layout] Resized 3D canvas to ${width}x${height}, aspect: ${window.camera.aspect.toFixed(2)}`);
+                    }
+                }
+            }
+
+            splitter.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startLeftWidth = leftPanel.offsetWidth;
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+
+                const delta = e.clientX - startX;
+                const newLeftWidth = startLeftWidth + delta;
+                const totalWidth = splitWrapper.offsetWidth;
+                const minWidth = 300;
+                const maxWidth = totalWidth - minWidth - 8; // 8px for splitter
+
+                if (newLeftWidth >= minWidth && newLeftWidth <= maxWidth) {
+                    const percentage = (newLeftWidth / totalWidth) * 100;
+                    leftPanel.style.flex = `0 0 ${percentage}%`;
+
+                    // Resize in real-time during drag using requestAnimationFrame
+                    if (resizeFrame) {
+                        cancelAnimationFrame(resizeFrame);
+                    }
+                    resizeFrame = requestAnimationFrame(() => {
+                        resize3DCanvas();
+                    });
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+
+                    // Final resize after drag is complete
+                    if (resizeFrame) {
+                        cancelAnimationFrame(resizeFrame);
+                    }
+                    resize3DCanvas();
+                }
+            });
+
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                resize3DCanvas();
+            });
+
+            // --- Vertical splitter drag handler (between 3D viewport and properties) ---
+            let isVerticalDragging = false;
+            let startY = 0;
+            let startTopHeight = 0;
+            let startBottomHeight = 0;
+
+            verticalSplitter.addEventListener('mousedown', (e) => {
+                isVerticalDragging = true;
+                startY = e.clientY;
+                startTopHeight = leftTop.offsetHeight;
+                startBottomHeight = leftBottom.offsetHeight;
+                document.body.style.cursor = 'ns-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isVerticalDragging) return;
+
+                const delta = e.clientY - startY;
+                const newTopHeight = startTopHeight + delta;
+                const newBottomHeight = startBottomHeight - delta;
+                const minHeight = 150;
+
+                if (newTopHeight >= minHeight && newBottomHeight >= minHeight) {
+                    leftTop.style.flex = `0 0 ${newTopHeight}px`;
+                    leftBottom.style.flex = `0 0 ${newBottomHeight}px`;
+
+                    // Resize 3D canvas in real-time during vertical drag
+                    if (resizeFrame) {
+                        cancelAnimationFrame(resizeFrame);
+                    }
+                    resizeFrame = requestAnimationFrame(() => {
+                        resize3DCanvas();
+                    });
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isVerticalDragging) {
+                    isVerticalDragging = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+
+                    // Final resize after vertical drag is complete
+                    if (resizeFrame) {
+                        cancelAnimationFrame(resizeFrame);
+                    }
+                    resize3DCanvas();
+                }
+            });
+
+            console.log('[Layout] Left-right split layout created successfully');
+        })();
+        </script>
+
         <script src="{% static 'connections/app_core.js' %}?v=2"></script>
         <script src="{% static 'connections/boq_detailed_estimation_handlers.js' %}"></script>
         <script src="{% static 'connections/app.js' %}"></script>

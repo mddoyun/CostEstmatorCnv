@@ -2978,10 +2978,17 @@ div[id$='-grouping-controls'] {
     display: flex;
 }
 
+/* Make quantity members, cost items, and activities tabs horizontal layout */
+#quantity-members-tab,
+#cost-items-tab,
+#activities-tab {
+    flex-direction: row;
+}
+
 /* Quantity Members Tab Styles */
 .quantity-members-list-container {
     flex: 0 0 40%;
-    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
     padding: 15px;
     overflow-y: auto;
 }
@@ -3218,4 +3225,50 @@ div[id$='-grouping-controls'] {
 
 #cancel-split-btn:hover {
     background-color: #5a6268;
+}
+
+/* ======================================================
+   Left-Right Split Layout with Draggable Splitter
+   ====================================================== */
+
+/* Left panel top (3D Viewport) styling */
+#split-left-top {
+    position: relative;
+}
+
+#split-left-top .three-d-viewer-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+/* Let Three.js renderer control canvas size - don't override with CSS */
+#split-left-top #three-d-canvas {
+    display: block;
+}
+
+/* Ensure viewer controls are positioned correctly */
+#split-left-top .viewer-controls {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+}
+
+/* Left panel bottom (Properties) styling */
+#split-left-bottom .three-d-properties-panel {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Splitter bar hover effect */
+#split-bar:hover {
+    background: #ccc;
+}
+
+#split-bar:hover div {
+    background: #777;
 }

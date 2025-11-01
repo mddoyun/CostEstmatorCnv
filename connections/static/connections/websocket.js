@@ -224,10 +224,30 @@ window.setupWebSocket = function() {
                     );
                 }
 
-                // ▼▼▼ [수정] 3D 뷰어 탭이 활성화된 경우에만 geometry 자동 로드 ▼▼▼
-                if (typeof loadPlaceholderGeometry === 'function' && activeTab === 'three-d-viewer') {
+                // ▼▼▼ [수정] 3D 뷰포트가 항상 왼쪽에 표시되므로 데이터 로드 시 항상 geometry 자동 로드 ▼▼▼
+                if (typeof loadPlaceholderGeometry === 'function' && allRevitData.length > 0) {
                     console.log("[WebSocket] Auto-loading 3D geometry after data complete...");
-                    loadPlaceholderGeometry();
+                    setTimeout(() => {
+                        loadPlaceholderGeometry();
+
+                        // Load quantity members for 3D viewer properties panel
+                        if (typeof loadQuantityMembers === 'function') {
+                            console.log("[WebSocket] Auto-loading quantity members for 3D viewer...");
+                            loadQuantityMembers();
+                        }
+
+                        // Load cost items for 3D viewer cost items tab
+                        if (typeof loadCostItems === 'function') {
+                            console.log("[WebSocket] Auto-loading cost items for 3D viewer...");
+                            loadCostItems();
+                        }
+
+                        // Load activities for 3D viewer activities tab
+                        if (typeof loadActivities === 'function') {
+                            console.log("[WebSocket] Auto-loading activities for 3D viewer...");
+                            loadActivities();
+                        }
+                    }, 200);
                 }
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
 
