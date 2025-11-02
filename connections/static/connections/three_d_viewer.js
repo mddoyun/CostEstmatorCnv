@@ -2999,13 +2999,13 @@
         html += '<div class="property-section">';
         html += '<h4>System Properties (Cost Estimator)</h4>';
         html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">${getDisplayFieldName('id')}</td><td class="prop-value">${element.id || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${getDisplayFieldName('element_unique_id')}</td><td class="prop-value">${element.element_unique_id || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${getDisplayFieldName('geometry_volume')}</td><td class="prop-value">${element.geometry_volume || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('id')}</td><td class="prop-value">${fullBimObject.id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('element_unique_id')}</td><td class="prop-value">${fullBimObject.element_unique_id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('geometry_volume')}</td><td class="prop-value">${fullBimObject.geometry_volume || 'N/A'}</td></tr>`;
 
         // classification_tags는 배열이므로 특별 처리
-        const tagsDisplay = Array.isArray(element.classification_tags) && element.classification_tags.length > 0
-            ? element.classification_tags.join(', ')
+        const tagsDisplay = Array.isArray(fullBimObject.classification_tags) && fullBimObject.classification_tags.length > 0
+            ? fullBimObject.classification_tags.join(', ')
             : 'N/A';
         html += `<tr><td class="prop-name">${getDisplayFieldName('classification_tags')}</td><td class="prop-value">${tagsDisplay}</td></tr>`;
         html += '</tbody></table>';
