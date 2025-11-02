@@ -2992,27 +2992,48 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+        // System Properties (Cost Estimator 관리 속성)
+        html += '<div class="property-section">';
+        html += '<h4>System Properties (Cost Estimator)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">${getDisplayFieldName('id')}</td><td class="prop-value">${element.id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('element_unique_id')}</td><td class="prop-value">${element.element_unique_id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('geometry_volume')}</td><td class="prop-value">${element.geometry_volume || 'N/A'}</td></tr>`;
+
+        // classification_tags는 배열이므로 특별 처리
+        const tagsDisplay = Array.isArray(element.classification_tags) && element.classification_tags.length > 0
+            ? element.classification_tags.join(', ')
+            : 'N/A';
+        html += `<tr><td class="prop-name">${getDisplayFieldName('classification_tags')}</td><td class="prop-value">${tagsDisplay}</td></tr>`;
+        html += '</tbody></table>';
+        html += '</div>';
+
         // Basic Information
         html += '<div class="property-section">';
         html += '<h4>Basic Information</h4>';
-        html += `<div class="property-row"><span class="property-label">Name:</span><span class="property-value">${rawData.Name || 'N/A'}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">IFC Class:</span><span class="property-value">${rawData.IfcClass || 'N/A'}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">Element ID:</span><span class="property-value">${rawData.ElementId || 'N/A'}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">Unique ID:</span><span class="property-value">${rawData.UniqueId || 'N/A'}</span></div>`;
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">${getDisplayFieldName('Name')}</td><td class="prop-value">${rawData.Name || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('IfcClass')}</td><td class="prop-value">${rawData.IfcClass || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('ElementId')}</td><td class="prop-value">${rawData.ElementId || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('UniqueId')}</td><td class="prop-value">${rawData.UniqueId || 'N/A'}</td></tr>`;
+        html += '</tbody></table>';
         html += '</div>';
 
         // Parameters - with detailed nested rendering
         if (rawData.Parameters && Object.keys(rawData.Parameters).length > 0) {
             html += '<div class="property-section">';
             html += '<h4>Parameters</h4>';
+            html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(rawData.Parameters)) {
                 // Skip Geometry parameter (too large)
                 if (key === 'Geometry') continue;
 
-                html += `<div class="property-row"><span class="property-label">${key}:</span>`;
+                const displayName = getDisplayFieldName(key);
+                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">`;
                 html += renderNestedValue(value, 1);
-                html += '</div>';
+                html += '</td></tr>';
             }
+            html += '</tbody></table>';
             html += '</div>';
         }
 
@@ -3020,25 +3041,30 @@
         if (rawData.TypeParameters && Object.keys(rawData.TypeParameters).length > 0) {
             html += '<div class="property-section">';
             html += '<h4>Type Parameters</h4>';
+            html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(rawData.TypeParameters)) {
-                html += `<div class="property-row"><span class="property-label">${key}:</span>`;
+                const displayName = getDisplayFieldName(`TypeParameters.${key}`);
+                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">`;
                 html += renderNestedValue(value, 1);
-                html += '</div>';
+                html += '</td></tr>';
             }
+            html += '</tbody></table>';
             html += '</div>';
         }
 
         // Relationships
         html += '<div class="property-section">';
         html += '<h4>Relationships</h4>';
-        html += `<div class="property-row"><span class="property-label">Type:</span><span class="property-value">${rawData.RelatingType || 'N/A'}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">Container:</span><span class="property-value">${rawData.SpatialContainer || 'N/A'}</span></div>`;
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">${getDisplayFieldName('RelatingType')}</td><td class="prop-value">${rawData.RelatingType || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${getDisplayFieldName('SpatialContainer')}</td><td class="prop-value">${rawData.SpatialContainer || 'N/A'}</td></tr>`;
         if (rawData.Aggregates) {
-            html += `<div class="property-row"><span class="property-label">Aggregates:</span><span class="property-value">${rawData.Aggregates}</span></div>`;
+            html += `<tr><td class="prop-name">${getDisplayFieldName('Aggregates')}</td><td class="prop-value">${rawData.Aggregates}</td></tr>`;
         }
         if (rawData.Nests) {
-            html += `<div class="property-row"><span class="property-label">Nests:</span><span class="property-value">${rawData.Nests}</span></div>`;
+            html += `<tr><td class="prop-name">${getDisplayFieldName('Nests')}</td><td class="prop-value">${rawData.Nests}</td></tr>`;
         }
+        html += '</tbody></table>';
         html += '</div>';
 
         propertiesContent.innerHTML = html;
