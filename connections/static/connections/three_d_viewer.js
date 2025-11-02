@@ -1898,11 +1898,14 @@
 
         const clickDuration = Date.now() - pointerDownTime;
 
-        if (isDragging && clickDuration > 100) {
-            // Box selection mode
+        // Determine if this is a click or drag based on both distance and time
+        // Click: short duration (<200ms) OR no dragging movement
+        // Drag: isDragging is true AND duration is long enough (>200ms)
+        if (isDragging && clickDuration > 200) {
+            // Box selection mode - user intentionally dragged
             performBoxSelection(event.ctrlKey || event.metaKey);
         } else {
-            // Click selection mode
+            // Click selection mode - quick click or minimal movement
             performClickSelection(event);
         }
 
