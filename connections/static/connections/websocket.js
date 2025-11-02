@@ -469,6 +469,49 @@ window.setupWebSocket = function() {
                     );
                 }
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
+                else if (activeTab === 'quantity-members') {
+                    // 수량산출부재 탭 처리
+                    selectedQmIds.clear();
+                    window.qmFilteredIds.clear();
+
+                    // Revit/Blender에서 선택된 unique_id를 가진 RawElement 찾기
+                    const selectedRawElementIds = new Set();
+                    allRevitData.forEach((item) => {
+                        if (uniqueIds.has(item.element_unique_id)) {
+                            selectedRawElementIds.add(item.id);
+                        }
+                    });
+
+                    // 해당 RawElement와 연결된 수량산출부재 찾기
+                    window.loadedQuantityMembers.forEach(qm => {
+                        const elementId = qm.split_element_id || qm.raw_element_id;
+                        if (elementId && selectedRawElementIds.has(elementId)) {
+                            selectedQmIds.add(qm.id);
+                            window.qmFilteredIds.add(qm.id);
+                        }
+                    });
+
+                    console.log(
+                        `[WebSocket] Applying Quantity Members filter: ${selectedQmIds.size} members from ${selectedRawElementIds.size} elements`
+                    );
+
+                    // 필터 활성화 및 버튼 표시
+                    window.isQmFilterToSelectionActive = true;
+                    const clearBtnSidebar = document.getElementById('qm-clear-selection-filter-btn');
+                    const clearBtnFooter = document.getElementById('qm-clear-selection-filter-btn-footer');
+                    if (clearBtnSidebar) clearBtnSidebar.style.display = 'inline-block';
+                    if (clearBtnFooter) clearBtnFooter.style.display = 'inline-block';
+
+                    // 테이블 다시 렌더링
+                    if (typeof renderActiveQmView === 'function') {
+                        renderActiveQmView();
+                    }
+
+                    showToast(
+                        `${selectedQmIds.size}개의 수량산출부재를 연동 프로그램에서 가져와 필터링합니다.`,
+                        'success'
+                    );
+                }
                 else {
                     // 기본: 데이터 관리 탭 처리
                     const state = viewerStates['data-management'];
