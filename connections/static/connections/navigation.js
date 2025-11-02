@@ -408,10 +408,15 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
         case 'ruleset-management':
             // 룰셋 종류 탭(handleRulesetNavClick -> loadSpecificRuleset)에서 실제 로드가 일어나므로 여기서는 패스
             console.log(
-                `[DEBUG][loadDataForActiveTab] Ruleset tab activated. Specific ruleset will be loaded by its handler.`
-            ); // 디버깅
-            // 혹시 모를 초기 상태 위해 기본 룰셋 로드 호출 (선택적)
-            // loadSpecificRuleset('classification-ruleset');
+                `[DEBUG][loadDataForActiveTab] Ruleset tab activated. Loading active ruleset.`
+            );
+            // 현재 활성화된 룰셋 타입 확인하고 로드
+            const activeRulesetBtn = document.querySelector('.ruleset-nav-button.active');
+            if (activeRulesetBtn) {
+                const rulesetType = activeRulesetBtn.dataset.ruleset;
+                console.log(`[DEBUG][loadDataForActiveTab] Loading active ruleset type: ${rulesetType}`);
+                loadSpecificRuleset(rulesetType);
+            }
             break;
         case 'cost-code-management':
             console.log(`[DEBUG][loadDataForActiveTab] Loading Cost Codes.`); // 디버깅
@@ -869,22 +874,18 @@ window.clearAllTabData = function clearAllTabData() {
     );
     // QM 탭
     clearContainer('qm-table-container');
-    clearContainer('qm-properties-container', '부재를 하나만 선택하세요.');
+    clearContainer('qm-selected-properties-container', '부재를 하나만 선택하세요.');
     clearContainer(
-        'qm-cost-codes-list',
-        '공사코드를 보려면 부재를 선택하세요.'
+        'qm-assigned-cost-codes-container',
+        '부재를 선택하세요.'
     );
     clearSelect('qm-cost-code-assign-select', '-- 공사코드 선택 --');
     clearContainer(
-        'qm-member-mark-details-container',
-        '부재를 하나만 선택하세요.'
+        'qm-assigned-member-mark-container',
+        '부재를 선택하세요.'
     );
     clearSelect('qm-member-mark-assign-select', '-- 일람부호 선택 --');
-    clearContainer(
-        'qm-linked-raw-element-properties-container',
-        '<p>부재를 하나만 선택하면 원본 데이터가 표시됩니다.</p>'
-    );
-    clearContainer('qm-spaces-list', '공간분류를 보려면 부재를 선택하세요.');
+    clearContainer('qm-assigned-spaces-container', '부재를 선택하세요.');
     clearSelect('qm-space-assign-select', '-- 공간분류 선택 --');
     // CI 탭
     clearContainer('ci-table-container');

@@ -49,22 +49,36 @@ def get_serialized_element_chunk(project_id, offset, limit):
              # print(f"[DEBUG][DB Async][get_serialized_element_chunk] Empty chunk returned.") # 너무 빈번하여 주석 처리
              return []
         element_ids_in_chunk = [el['id'] for el in element_chunk_values]
+        # ElementClassificationAssignment 모델 import
+        from connections.models import ElementClassificationAssignment
+
+        # 태그 할당 정보 조회 (assignment_type 포함)
         tags_qs = (
-            RawElement.classification_tags.through.objects
-            .filter(rawelement_id__in=element_ids_in_chunk)
-            .values('rawelement_id')
-            .annotate(tag_name=F('quantityclassificationtag__name'))
-            .values('rawelement_id', 'tag_name')
+            ElementClassificationAssignment.objects
+            .filter(raw_element_id__in=element_ids_in_chunk)
+            .select_related('classification_tag')
+            .values('raw_element_id', 'classification_tag__name', 'assignment_type')
         )
         tags_by_element_id = {}
+        tag_details_by_element_id = {}
         for tag_data in tags_qs:
-            el_id = tag_data['rawelement_id']
+            el_id = tag_data['raw_element_id']
+            tag_name = tag_data['classification_tag__name']
+            assignment_type = tag_data['assignment_type']
+
             if el_id not in tags_by_element_id:
                 tags_by_element_id[el_id] = []
-            tags_by_element_id[el_id].append(tag_data['tag_name'])
+                tag_details_by_element_id[el_id] = []
+            tags_by_element_id[el_id].append(tag_name)
+            tag_details_by_element_id[el_id].append({
+                'name': tag_name,
+                'assignment_type': assignment_type
+            })
+
         for element_data in element_chunk_values:
             element_id = element_data['id']
             element_data['classification_tags'] = tags_by_element_id.get(element_id, [])
+            element_data['classification_tags_details'] = tag_details_by_element_id.get(element_id, [])
             element_data['id'] = str(element_id)
             element_data['project_id'] = str(element_data['project_id'])
             # Convert Decimal to float for JSON serialization
@@ -92,22 +106,36 @@ def serialize_specific_elements(element_ids):
             # 디버깅: 대상 객체 없음
              print(f"[DEBUG][DB Async][serialize_specific_elements] No elements found for the given IDs.")
              return []
+        # ElementClassificationAssignment 모델 import
+        from connections.models import ElementClassificationAssignment
+
+        # 태그 할당 정보 조회 (assignment_type 포함)
         tags_qs = (
-            RawElement.classification_tags.through.objects
-            .filter(rawelement_id__in=element_ids)
-            .values('rawelement_id')
-            .annotate(tag_name=F('quantityclassificationtag__name'))
-            .values('rawelement_id', 'tag_name')
+            ElementClassificationAssignment.objects
+            .filter(raw_element_id__in=element_ids)
+            .select_related('classification_tag')
+            .values('raw_element_id', 'classification_tag__name', 'assignment_type')
         )
         tags_by_element_id = {}
+        tag_details_by_element_id = {}
         for tag_data in tags_qs:
-            el_id = tag_data['rawelement_id']
+            el_id = tag_data['raw_element_id']
+            tag_name = tag_data['classification_tag__name']
+            assignment_type = tag_data['assignment_type']
+
             if el_id not in tags_by_element_id:
                 tags_by_element_id[el_id] = []
-            tags_by_element_id[el_id].append(tag_data['tag_name'])
+                tag_details_by_element_id[el_id] = []
+            tags_by_element_id[el_id].append(tag_name)
+            tag_details_by_element_id[el_id].append({
+                'name': tag_name,
+                'assignment_type': assignment_type
+            })
+
         for element_data in elements_values:
             element_id = element_data['id']
             element_data['classification_tags'] = tags_by_element_id.get(element_id, [])
+            element_data['classification_tags_details'] = tag_details_by_element_id.get(element_id, [])
             element_data['id'] = str(element_id)
             element_data['project_id'] = str(element_data['project_id'])
             element_data['updated_at'] = element_data['updated_at'].isoformat()
@@ -675,16 +703,28 @@ class FrontendConsumer(AsyncWebsocketConsumer):
             return []
     @database_sync_to_async
     def db_assign_tags(self, tag_id, element_ids):
+        """
+        수동으로 태그를 할당합니다 (assignment_type='manual')
+        """
         # 디버깅: DB에서 태그 할당
-        print(f"[DEBUG][DB Async][db_assign_tags] Assigning tag ID '{tag_id}' to {len(element_ids)} elements.")
+        print(f"[DEBUG][DB Async][db_assign_tags] Manually assigning tag ID '{tag_id}' to {len(element_ids)} elements.")
         try:
+            from connections.models import ElementClassificationAssignment
             tag = QuantityClassificationTag.objects.get(id=tag_id)
             elements_to_update = RawElement.objects.filter(id__in=element_ids)
             added_count = 0
             for element in elements_to_update:
-                _, created = element.classification_tags.through.objects.get_or_create(rawelement=element, quantityclassificationtag=tag)
-                if created: added_count += 1
-            print(f"[DEBUG][DB Async][db_assign_tags] Tag assignment complete. {added_count} new assignments.")
+                _, created = ElementClassificationAssignment.objects.get_or_create(
+                    raw_element=element,
+                    classification_tag=tag,
+                    defaults={
+                        'assignment_type': 'manual',
+                        'assigned_by_rule': None
+                    }
+                )
+                if created:
+                    added_count += 1
+            print(f"[DEBUG][DB Async][db_assign_tags] Tag assignment complete. {added_count} new manual assignments.")
         except QuantityClassificationTag.DoesNotExist:
             print(f"[ERROR][DB Async][db_assign_tags] Tag ID '{tag_id}' not found.")
         except Exception as e:

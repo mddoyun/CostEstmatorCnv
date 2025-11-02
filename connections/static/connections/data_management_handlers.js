@@ -12,6 +12,12 @@ function setupDataManagementListeners() {
         .getElementById('select-in-client-btn')
         ?.addEventListener('click', selectInClient);
     document
+        .getElementById('get-from-3d-viewer-btn')
+        ?.addEventListener('click', getSelectionFrom3DViewer);
+    document
+        .getElementById('select-in-3d-viewer-btn')
+        ?.addEventListener('click', selectIn3DViewer);
+    document
         .getElementById('render-table-btn')
         ?.addEventListener('click', () =>
             renderDataTable(
@@ -28,13 +34,13 @@ function setupDataManagementListeners() {
         .getElementById('add-group-level-btn')
         ?.addEventListener('click', () => addGroupingLevel('data-management'));
     document
-        .getElementById('data-management-grouping-controls')
-        ?.addEventListener('change', () =>
+        .getElementById('apply-grouping-btn')
+        ?.addEventListener('click', () =>
             renderDataTable(
                 'data-management-data-table-container',
                 'data-management'
             )
-        ); // 그룹핑 변경 시 렌더
+        ); // 그룹핑 적용 버튼 클릭 시 렌더
     document
         .getElementById('clear-selection-filter-btn')
         ?.addEventListener('click', clearSelectionFilter);
@@ -47,6 +53,12 @@ function setupDataManagementListeners() {
     document
         .getElementById('clear-tags-btn')
         ?.addEventListener('click', clearTagsFromSelection);
+    document
+        .getElementById('apply-filter-btn')
+        ?.addEventListener('click', () => applyTableFilter('data-management'));
+    document
+        .getElementById('clear-filter-btn')
+        ?.addEventListener('click', () => clearTableFilter('data-management'));
     const dmTableContainer = document.getElementById(
         'data-management-data-table-container'
     );
@@ -59,9 +71,30 @@ function setupDataManagementListeners() {
         ); // 행 선택, 그룹 토글
     }
     // 좌측 패널 탭 (필드선택, 분류, BIM속성)
-    document
-        .querySelector('#data-management .left-panel-tabs')
-        ?.addEventListener('click', handleLeftPanelTabClick);
+    const leftPanelTabs = document.querySelector('#data-management .left-panel-tabs');
+    console.log('[DEBUG] Left panel tabs element:', leftPanelTabs);
+    if (leftPanelTabs) {
+        // 이벤트 리스너 등록
+        leftPanelTabs.addEventListener('click', handleDataMgmtLeftPanelTabClick);
+        console.log('[DEBUG] Left panel tabs click listener attached');
+
+        // 버튼에 직접 리스너도 추가해서 테스트
+        const tabButtons = leftPanelTabs.querySelectorAll('.left-panel-tab-button');
+        console.log('[DEBUG] Found tab buttons:', tabButtons.length);
+        tabButtons.forEach((btn, index) => {
+            console.log(`[DEBUG] Tab button ${index}:`, btn.dataset.tab, btn.textContent.trim());
+            btn.addEventListener('click', (e) => {
+                console.log('[DEBUG] Direct button click:', btn.dataset.tab);
+                try {
+                    handleDataMgmtLeftPanelTabClick(e);
+                } catch (error) {
+                    console.error('[ERROR] handleDataMgmtLeftPanelTabClick failed:', error);
+                }
+            });
+        });
+    } else {
+        console.error('[ERROR] Left panel tabs element not found!');
+    }
     console.log('[DEBUG] Data Management listeners setup complete.');
 }
 
@@ -84,7 +117,6 @@ function fetchDataFromClient() {
     const progressStatus = document.getElementById('progress-status-text');
     const progressBar = document.getElementById('data-fetch-progress');
 
-    progressContainer.style.display = 'block';
     progressStatus.textContent = `${currentMode === 'revit' ? 'Revit' : 'Blender'
         }에 데이터 요청 중...`;
     progressBar.value = 0;
@@ -278,8 +310,8 @@ function handleColumnFilter(e, contextPrefix) {
     const v = (input.value || '').toLowerCase();
     state.columnFilters[field] = v;
 
-    // 디바운스로 렌더 호출
-    debouncedRender(contextPrefix)();
+    // 입력만 받고 렌더링하지 않음 (필터 적용 버튼 클릭 시 렌더링)
+    // debouncedRender(contextPrefix)();
 }
 
 function handleTableClick(event, contextPrefix) {
@@ -361,9 +393,8 @@ function addGroupingLevel(contextPrefix) {
     const newLevelDiv = document.createElement('div');
     newLevelDiv.className = 'group-level';
     newLevelDiv.innerHTML = `
-        <label>${newIndex}차:</label>
         <select class="group-by-select"></select>
-        <button class="remove-group-level-btn">-</button>
+        <button class="remove-group-level-btn">✕</button>
     `;
     container.appendChild(newLevelDiv);
     populateFieldSelection(); // 필드 목록 채우기
@@ -372,34 +403,48 @@ function addGroupingLevel(contextPrefix) {
         .querySelector('.remove-group-level-btn')
         .addEventListener('click', function () {
             this.parentElement.remove();
-            renderDataTable(
-                `${contextPrefix}-data-table-container`,
-                contextPrefix
-            );
         });
 }
 
-function handleLeftPanelTabClick(event) {
+function handleDataMgmtLeftPanelTabClick(event) {
+    console.log('[DEBUG] handleDataMgmtLeftPanelTabClick called', event.target);
+
     const clickedButton = event.target.closest('.left-panel-tab-button');
-    if (!clickedButton || clickedButton.classList.contains('active')) {
-        // 버튼이 아니거나 이미 활성화된 탭이면 아무것도 하지 않음
+    console.log('[DEBUG] Clicked button:', clickedButton);
+
+    if (!clickedButton) {
+        console.log('[DEBUG] Not a tab button, ignoring');
+        return;
+    }
+
+    if (clickedButton.classList.contains('active')) {
+        console.log('[DEBUG] Already active tab, ignoring');
         return;
     }
 
     const tabContainer = clickedButton.closest('.left-panel-tab-container');
     const targetTabId = clickedButton.dataset.tab;
 
+    console.log('[DEBUG] Tab clicked:', targetTabId);
+    console.log('[DEBUG] Tab container:', tabContainer);
+
     // 현재 활성화된 탭과 콘텐츠를 비활성화
-    tabContainer
-        .querySelector('.left-panel-tab-button.active')
-        .classList.remove('active');
-    tabContainer
-        .querySelector('.left-panel-tab-content.active')
-        .classList.remove('active');
+    const activeButton = tabContainer.querySelector('.left-panel-tab-button.active');
+    const activeContent = tabContainer.querySelector('.left-panel-tab-content.active');
+
+    if (activeButton) activeButton.classList.remove('active');
+    if (activeContent) activeContent.classList.remove('active');
 
     // 클릭된 버튼과 그에 맞는 콘텐츠를 활성화
     clickedButton.classList.add('active');
-    tabContainer.querySelector(`#${targetTabId}`).classList.add('active');
+    const targetContent = tabContainer.querySelector(`#${targetTabId}`);
+
+    if (targetContent) {
+        targetContent.classList.add('active');
+        console.log('[DEBUG] Tab activated:', targetTabId);
+    } else {
+        console.error('[ERROR] Tab content not found:', targetTabId);
+    }
 }
 
 /**
@@ -534,4 +579,114 @@ function renderRawDataHelperPanel() {
     }
 
     helperContainer.innerHTML = html;
+}
+
+/**
+ * 필터를 적용하여 테이블을 다시 렌더링합니다.
+ * @param {string} contextPrefix - 컨텍스트 접두사 (예: 'data-management')
+ */
+function applyTableFilter(contextPrefix) {
+    const containerId = `${contextPrefix}-data-table-container`;
+    renderDataTable(containerId, contextPrefix);
+    showToast('필터가 적용되었습니다.', 'success');
+}
+
+/**
+ * 모든 필터를 초기화하고 테이블을 다시 렌더링합니다.
+ * @param {string} contextPrefix - 컨텍스트 접두사 (예: 'data-management')
+ */
+function clearTableFilter(contextPrefix) {
+    const state = viewerStates[contextPrefix];
+    if (!state) return;
+
+    // 모든 필터값 초기화
+    state.columnFilters = {};
+
+    // 테이블 컨테이너에서 모든 필터 입력 필드를 찾아서 값 초기화
+    const containerId = `${contextPrefix}-data-table-container`;
+    const container = document.getElementById(containerId);
+    if (container) {
+        const filterInputs = container.querySelectorAll('.column-filter');
+        filterInputs.forEach(input => {
+            input.value = '';
+        });
+    }
+
+    // 테이블 다시 렌더링
+    renderDataTable(containerId, contextPrefix);
+    showToast('필터가 초기화되었습니다.', 'info');
+}
+
+// 3D 뷰포트에서 선택한 객체를 테이블에서 선택
+function getSelectionFrom3DViewer() {
+    console.log('[DEBUG] Getting selection from 3D viewer');
+
+    // 3D 뷰어에서 선택된 객체 가져오기
+    if (typeof window.getSelectedObjectsFrom3DViewer !== 'function') {
+        showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
+        return;
+    }
+
+    const selected3DObjects = window.getSelectedObjectsFrom3DViewer();
+    if (!selected3DObjects || selected3DObjects.length === 0) {
+        showToast('3D 뷰포트에서 선택된 객체가 없습니다.', 'warning');
+        return;
+    }
+
+    console.log(`[DEBUG] Found ${selected3DObjects.length} selected objects in 3D viewer`);
+
+    const state = viewerStates['data-management'];
+    if (!state) return;
+
+    // 기존 선택 및 필터 초기화
+    state.selectedElementIds.clear();
+    state.revitFilteredIds.clear();
+
+    // 3D에서 선택된 객체의 BIM ID 가져오기
+    selected3DObjects.forEach(obj => {
+        const bimObjectId = obj.userData.bimObjectId || obj.userData.rawElementId;
+        if (bimObjectId) {
+            state.selectedElementIds.add(bimObjectId);
+            state.revitFilteredIds.add(bimObjectId); // 필터링용 ID도 저장
+        }
+    });
+
+    console.log(`[DEBUG] Selected ${state.selectedElementIds.size} elements from 3D viewer`);
+
+    // 필터 활성화 및 버튼 표시
+    state.isFilterToSelectionActive = true;
+    document.getElementById('clear-selection-filter-btn').style.display = 'inline-block';
+
+    // 테이블 다시 렌더링
+    renderDataTable('data-management-data-table-container', 'data-management');
+    renderBimPropertiesTable('data-management');
+    renderAssignedTagsTable('data-management');
+
+    showToast(`3D 뷰포트에서 ${state.selectedElementIds.size}개 객체를 선택했습니다.`, 'success');
+}
+
+// 테이블에서 선택한 객체를 3D 뷰포트에서 선택
+function selectIn3DViewer() {
+    console.log('[DEBUG] Selecting objects in 3D viewer');
+
+    const state = viewerStates['data-management'];
+    if (!state) return;
+
+    if (state.selectedElementIds.size === 0) {
+        showToast('테이블에서 먼저 항목을 선택하세요.', 'warning');
+        return;
+    }
+
+    // 3D 뷰어에서 객체 선택 함수 호출
+    if (typeof window.selectObjectsIn3DViewer !== 'function') {
+        showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
+        return;
+    }
+
+    const selectedIds = Array.from(state.selectedElementIds);
+    console.log(`[DEBUG] Selecting ${selectedIds.length} objects in 3D viewer:`, selectedIds);
+
+    window.selectObjectsIn3DViewer(selectedIds);
+
+    showToast(`3D 뷰포트에서 ${selectedIds.length}개 객체를 선택했습니다.`, 'success');
 }

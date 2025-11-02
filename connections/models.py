@@ -226,6 +226,25 @@ class SpaceClassification(models.Model):
         ordering = ['name']
         unique_together = ('project', 'parent', 'name')
 
+    @property
+    def full_path(self):
+        """공간 분류의 전체 계층 경로를 반환합니다. (예: '건물 A > 1층 > 101호')"""
+        path_parts = []
+        current = self
+        # 순환 참조 방지를 위한 방문 추적
+        visited = set()
+
+        while current is not None:
+            # 순환 참조 감지
+            if current.id in visited:
+                break
+            visited.add(current.id)
+
+            path_parts.insert(0, current.name)
+            current = current.parent
+
+        return ' > '.join(path_parts) if path_parts else self.name
+
     def __str__(self):
         # 디버깅: 공간 분류 이름 반환 확인
         # print(f"[DEBUG][SpaceClassification.__str__] Returning space name: {self.name}") # 너무 빈번할 수 있어 주석 처리
@@ -233,6 +252,28 @@ class SpaceClassification(models.Model):
 # -----------------------------------------------------------------------------
 # 3. 메인 데이터 (핵심 흐름)
 # -----------------------------------------------------------------------------
+class ElementClassificationAssignment(models.Model):
+    """RawElement와 QuantityClassificationTag 사이의 할당 관계 (중간 테이블)"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    raw_element = models.ForeignKey('RawElement', on_delete=models.CASCADE, related_name='tag_assignments')
+    classification_tag = models.ForeignKey(QuantityClassificationTag, on_delete=models.CASCADE, related_name='element_assignments')
+
+    # 할당 방식 구분
+    ASSIGNMENT_TYPES = [
+        ('ruleset', '룰셋 기반'),
+        ('manual', '수동'),
+    ]
+    assignment_type = models.CharField(max_length=10, choices=ASSIGNMENT_TYPES, default='manual')
+    assigned_by_rule = models.ForeignKey('ClassificationRule', on_delete=models.SET_NULL, null=True, blank=True, related_name='assignments')
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('raw_element', 'classification_tag')
+        ordering = ['-assigned_at']
+
+    def __str__(self):
+        return f"{self.raw_element.element_unique_id} -> {self.classification_tag.name} ({self.get_assignment_type_display()})"
+
 class RawElement(models.Model):
     """Revit에서 가져온 원본 BIM 객체 데이터"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -247,7 +288,12 @@ class RawElement(models.Model):
         verbose_name="Geometry Volume",
         help_text="Geometry의 체적 (cubic units)"
     )
-    classification_tags = models.ManyToManyField(QuantityClassificationTag, related_name='raw_elements', blank=True)
+    classification_tags = models.ManyToManyField(
+        QuantityClassificationTag,
+        through='ElementClassificationAssignment',
+        related_name='raw_elements',
+        blank=True
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -654,12 +700,14 @@ class QuantityMember(models.Model):
     member_mark = models.ForeignKey(MemberMark, on_delete=models.SET_NULL, related_name='quantity_members', null=True, blank=True)
     name = models.CharField(max_length=255, blank=True)
     properties = models.JSONField(default=dict, blank=True)
+    locked_properties = models.JSONField(default=list, blank=True, help_text="룰셋 적용에서 제외할 속성 이름 목록")
     mapping_expression = models.JSONField(default=dict, blank=True, verbose_name="맵핑식(json)")
     member_mark_expression = models.CharField(max_length=255, blank=True, help_text="개별 부재에 적용될 일람부호(Mark) 값 표현식")
 
     space_classifications = models.ManyToManyField(SpaceClassification, related_name='quantity_members', blank=True)
 
     cost_code_expressions = models.JSONField(default=list, blank=True, help_text="개별 부재에 적용될 공사코드 표현식 목록 (JSON)")
+    locked_cost_code_ids = models.JSONField(default=list, blank=True, help_text="잠금된 공사코드 ID 목록 (UUID strings)")
 
     # ▼▼▼ [추가] 4D 액티비티 연결 ▼▼▼
     activity = models.ForeignKey(
@@ -741,11 +789,10 @@ class ClassificationRule(models.Model):
     project = models.ForeignKey(Project, related_name='classification_rules', on_delete=models.CASCADE)
     target_tag = models.ForeignKey(QuantityClassificationTag, related_name='rules', on_delete=models.CASCADE)
     conditions = models.JSONField(default=list)
-    priority = models.IntegerField(default=0)
     description = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ['priority']
+        ordering = ['id']  # priority 제거, ID 순서로 정렬
 
     def __str__(self):
         # 디버깅: 분류 규칙 정보 반환 확인

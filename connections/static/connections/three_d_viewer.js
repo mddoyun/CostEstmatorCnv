@@ -82,6 +82,11 @@
     let simulationIsPaused = false;
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+    // ▼▼▼ [추가] 수량산출부재 선택 추적 변수 ▼▼▼
+    let selectedQuantityMemberIdsInViewer = new Set();
+    let currentDisplayedQMs = []; // 현재 표시중인 수량산출부재 목록
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     window.initThreeDViewer = function() {
         console.log("[3D Viewer] Initializing 3D Viewer...");
 
@@ -2511,6 +2516,10 @@
 
         selectedObject = object;
 
+        // ▼▼▼ [추가] selectedObjects 배열에도 추가 (3D 뷰포트 연동용) ▼▼▼
+        selectedObjects = [object];
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // ▼▼▼ [추가] 새 객체 선택 시 재시도 카운트 초기화 ▼▼▼
         displayCostItemsRetryCount.delete(object);
         // ▲▲▲ [추가] 여기까지 ▲▲▲
@@ -3122,9 +3131,13 @@
 
         console.log('[3D Viewer] Found quantity members:', quantityMembers);
 
+        // 현재 표시중인 수량산출부재 목록 저장
+        currentDisplayedQMs = quantityMembers;
+
         let html = '';
         quantityMembers.forEach((qm, index) => {
-            html += `<div class="quantity-member-item" data-qm-id="${qm.id}">`;
+            const isSelected = selectedQuantityMemberIdsInViewer.has(qm.id);
+            html += `<div class="quantity-member-item ${isSelected ? 'selected' : ''}" data-qm-id="${qm.id}">`;
             html += `<div class="quantity-member-item-name">${qm.name || 'Unnamed Member'}</div>`;
             html += `<div class="quantity-member-item-info">`;
             html += `ID: ${qm.id}`;
@@ -3141,18 +3154,30 @@
         const items = listContainer.querySelectorAll('.quantity-member-item');
         console.log('[3D Viewer] Setting up click listeners for', items.length, 'quantity member items');
         items.forEach(item => {
-            item.addEventListener('click', function() {
+            item.addEventListener('click', function(e) {
                 console.log('[3D Viewer] Quantity member item clicked');
 
-                // Remove selected class from all items
-                items.forEach(i => i.classList.remove('selected'));
-                // Add selected class to clicked item
-                this.classList.add('selected');
-
-                // Display details
                 const qmId = this.getAttribute('data-qm-id');
+
+                // Ctrl/Cmd 클릭: 다중 선택
+                if (e.ctrlKey || e.metaKey) {
+                    if (this.classList.contains('selected')) {
+                        this.classList.remove('selected');
+                        selectedQuantityMemberIdsInViewer.delete(qmId);
+                    } else {
+                        this.classList.add('selected');
+                        selectedQuantityMemberIdsInViewer.add(qmId);
+                    }
+                } else {
+                    // 일반 클릭: 단일 선택
+                    items.forEach(i => i.classList.remove('selected'));
+                    selectedQuantityMemberIdsInViewer.clear();
+                    this.classList.add('selected');
+                    selectedQuantityMemberIdsInViewer.add(qmId);
+                }
+
+                // Display details (첫 번째 선택 항목 표시)
                 console.log('[3D Viewer] Looking for quantity member with ID:', qmId);
-                // Compare as string since ID might be a number or string
                 const qm = quantityMembers.find(m => m.id.toString() === qmId.toString());
                 console.log('[3D Viewer] Found quantity member:', qm);
                 if (qm) {
@@ -3243,45 +3268,162 @@
 
         let html = '';
 
-        // Basic Information
+        // 기본 속성 (QM. 접두어 사용) - '산출'-'수량산출부재' 탭과 동일한 형태
         html += '<div class="property-section">';
-        html += '<h4>기본 정보</h4>';
-        html += `<div class="property-row"><span class="property-label">이름:</span><span class="property-value">${qm.name || 'N/A'}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">ID:</span><span class="property-value">${qm.id}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">분류:</span><span class="property-value">${qm.tag_name || 'N/A'}</span></div>`;
-        html += `<div class="property-row"><span class="property-label">일람부호:</span><span class="property-value">${qm.member_mark_name || 'N/A'}</span></div>`;
+        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성</h4>';
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${qm.id || 'N/A'}</td></tr>`;
+        if (qm.name) {
+            html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${qm.name}</td></tr>`;
+        }
+        if (qm.tag_name || qm.classification_tag_name) {
+            html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${qm.tag_name || qm.classification_tag_name || 'N/A'}</td></tr>`;
+        }
+        html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${qm.is_active !== undefined ? (qm.is_active ? 'true' : 'false') : 'N/A'}</td></tr>`;
+
+        // RawElement ID 추가
+        if (qm.raw_element_id) {
+            html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${qm.raw_element_id}</td></tr>`;
+        }
+        html += '</tbody></table>';
         html += '</div>';
 
-        // Properties
+        // 부재 속성 (QM.properties.XXX) - '산출'-'수량산출부재' 탭과 동일한 형태
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성</h4>';
+
         if (qm.properties && Object.keys(qm.properties).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4>속성</h4>';
+            const lockedProps = qm.locked_properties || [];
+            html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(qm.properties)) {
-                html += `<div class="property-row"><span class="property-label">${key}:</span>`;
-                html += renderNestedValue(value, 1);
-                html += '</div>';
+                if (value !== null && value !== undefined) {
+                    const isLocked = lockedProps.includes(key);
+                    const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
+
+                    html += `<tr>`;
+                    html += `<td class="prop-name">QM.properties.${key}`;
+                    if (isLocked) {
+                        html += ` <span style="color: #f57c00; font-size: 12px;">🔒</span>`;
+                    }
+                    html += `</td>`;
+                    html += `<td class="prop-value">${displayValue}</td>`;
+                    html += `</tr>`;
+                }
             }
+            html += '</tbody></table>';
+        } else {
+            html += '<p style="color: #999; font-style: italic; margin: 10px 0;">속성이 없습니다.</p>';
+        }
+        html += '</div>';
+
+        // 일람부호 (MM.XXX)
+        if (qm.member_mark_mark || (qm.member_mark_properties && Object.keys(qm.member_mark_properties).length > 0)) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호</h4>';
+            html += '<table class="properties-table"><tbody>';
+            if (qm.member_mark_mark) {
+                html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${qm.member_mark_mark}</td></tr>`;
+            }
+            if (qm.member_mark_properties) {
+                for (const [key, value] of Object.entries(qm.member_mark_properties)) {
+                    if (value !== null && value !== undefined) {
+                        html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
+                    }
+                }
+            }
+            html += '</tbody></table>';
             html += '</div>';
         }
 
-        // Cost Codes
+        // 공간분류 (Space.XXX)
+        if (qm.space_name) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #388e3c; border-bottom: 2px solid #388e3c; padding-bottom: 5px;">📍 공간분류</h4>';
+            html += '<table class="properties-table"><tbody>';
+            html += `<tr><td class="prop-name">Space.name</td><td class="prop-value">${qm.space_name}</td></tr>`;
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // BIM 원본 요소 (BIM 원본데이터 탭과 동일한 형식으로 모든 속성 표시)
+        if (qm.raw_element && Object.keys(qm.raw_element).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 원본</h4>';
+            html += '<table class="properties-table"><tbody>';
+
+            const rawData = qm.raw_element;
+
+            // Basic Information (BIM.Attributes.*)
+            const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description', 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
+            basicAttrs.forEach(attr => {
+                if (rawData[attr] !== undefined && rawData[attr] !== null) {
+                    const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(attr) : `BIM.Attributes.${attr}`;
+                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${rawData[attr]}</td></tr>`;
+                }
+            });
+
+            // Parameters (BIM.Parameters.*)
+            if (rawData.Parameters && typeof rawData.Parameters === 'object') {
+                for (const [key, value] of Object.entries(rawData.Parameters)) {
+                    if (key === 'Geometry') continue; // Skip Geometry (too large)
+                    if (value !== null && value !== undefined) {
+                        const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(key) : `BIM.Parameters.${key}`;
+                        const displayValue = typeof value === 'object' ? JSON.stringify(value).substring(0, 100) : String(value).substring(0, 100);
+                        html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                    }
+                }
+            }
+
+            // TypeParameters (BIM.TypeParameters.*)
+            if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
+                for (const [key, value] of Object.entries(rawData.TypeParameters)) {
+                    if (value !== null && value !== undefined) {
+                        const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(`TypeParameters.${key}`) : `BIM.TypeParameters.${key}`;
+                        const displayValue = typeof value === 'object' ? JSON.stringify(value).substring(0, 100) : String(value).substring(0, 100);
+                        html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                    }
+                }
+            }
+
+            // System Properties (BIM.System.*)
+            const systemProps = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
+            systemProps.forEach(prop => {
+                if (rawData[prop] !== undefined && rawData[prop] !== null) {
+                    const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(prop) : `BIM.System.${prop}`;
+                    const displayValue = Array.isArray(rawData[prop]) ? rawData[prop].join(', ') : rawData[prop];
+                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
+                }
+            });
+
+            // 그 외 모든 속성 (최상위 레벨, 객체가 아닌 경우)
+            for (const [key, value] of Object.entries(rawData)) {
+                // 이미 표시한 속성들은 건너뛰기
+                if (basicAttrs.includes(key) || key === 'Parameters' || key === 'TypeParameters' || systemProps.includes(key)) continue;
+
+                if (value !== null && value !== undefined && typeof value !== 'object') {
+                    const displayValue = String(value).substring(0, 100);
+                    html += `<tr><td class="prop-name">BIM.${key}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                }
+            }
+
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // 할당된 공사코드
         if (qm.cost_codes && qm.cost_codes.length > 0) {
             html += '<div class="property-section">';
-            html += '<h4>공사코드</h4>';
-            qm.cost_codes.forEach(cc => {
-                html += `<div class="property-row"><span class="property-label">${cc.code}:</span><span class="property-value">${cc.name}</span></div>`;
+            html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px;">💰 할당된 공사코드</h4>';
+            html += '<table class="properties-table"><tbody>';
+            qm.cost_codes.forEach(code => {
+                // code가 객체인 경우와 문자열인 경우 모두 처리
+                if (typeof code === 'object' && code.code && code.name) {
+                    html += `<tr><td class="prop-name">${code.code}</td><td class="prop-value">${code.name}</td></tr>`;
+                } else {
+                    html += `<tr><td class="prop-name">cost_code</td><td class="prop-value">${code}</td></tr>`;
+                }
             });
-            html += '</div>';
-        }
-
-        // Linked Raw Element
-        if (qm.raw_element_id) {
-            html += '<div class="property-section">';
-            html += '<h4>연관 BIM 원본 객체</h4>';
-            html += `<div class="property-row"><span class="property-label">Raw Element ID:</span><span class="property-value">${qm.raw_element_id}</span></div>`;
-            if (qm.raw_element_name) {
-                html += `<div class="property-row"><span class="property-label">이름:</span><span class="property-value">${qm.raw_element_name}</span></div>`;
-            }
+            html += '</tbody></table>';
             html += '</div>';
         }
 
@@ -9822,6 +9964,289 @@
 
         console.log("[Data Mgmt Split Bar] Split bar setup complete");
     };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ========================================
+    // 3D 뷰포트 연동 함수 (테이블과 선택 동기화)
+    // ========================================
+
+    /**
+     * Get currently selected objects from the 3D viewer
+     * @returns {Array} Array of selected Three.js mesh objects
+     */
+    window.getSelectedObjectsFrom3DViewer = function() {
+        console.log('[3D Viewer] getSelectedObjectsFrom3DViewer called');
+        console.log(`[3D Viewer] Currently selected: ${selectedObjects.length} objects`);
+
+        // Return copy of selectedObjects array
+        return [...selectedObjects];
+    };
+
+    /**
+     * Select objects in the 3D viewer by their BIM object IDs
+     * @param {Array<string>} bimObjectIds - Array of BIM object IDs to select
+     */
+    window.selectObjectsIn3DViewer = function(bimObjectIds) {
+        console.log('[3D Viewer] selectObjectsIn3DViewer called with IDs:', bimObjectIds);
+
+        if (!Array.isArray(bimObjectIds) || bimObjectIds.length === 0) {
+            console.log('[3D Viewer] No valid IDs provided');
+            return;
+        }
+
+        // Clear current selection
+        deselectAllObjects();
+
+        // Find and select objects matching the IDs
+        let foundCount = 0;
+        const objectsToSelect = [];
+
+        scene.traverse(function(object) {
+            if (object instanceof THREE.Mesh && object.userData) {
+                const objectId = object.userData.bimObjectId ||
+                               object.userData.splitElementId ||
+                               object.userData.rawElementId;
+
+                if (objectId && bimObjectIds.includes(objectId)) {
+                    objectsToSelect.push(object);
+                    foundCount++;
+                }
+            }
+        });
+
+        console.log(`[3D Viewer] Found ${foundCount} objects out of ${bimObjectIds.length} requested IDs`);
+
+        // Select all found objects
+        objectsToSelect.forEach(obj => {
+            // Store original material
+            if (!originalMaterials.has(obj)) {
+                originalMaterials.set(obj, obj.material);
+            }
+
+            // Create highlight material
+            const highlightMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff8800,
+                emissive: 0xff6600,
+                emissiveIntensity: 0.5,
+                metalness: 0.0,
+                roughness: 1.0,
+                flatShading: true,
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide
+            });
+
+            obj.material = highlightMaterial;
+            obj.material.needsUpdate = true;
+            selectedObjects.push(obj);
+        });
+
+        // Update selectedObject reference
+        if (selectedObjects.length > 0) {
+            selectedObject = selectedObjects[0];
+            displayObjectProperties(selectedObject);
+            displayQuantityMembers(selectedObject);
+            displayCostItemsInTab(selectedObject);
+            displayActivitiesInTab(selectedObject);
+            displayCostItems(selectedObject);
+        }
+
+        // Update visibility buttons
+        updateVisibilityControlButtons();
+
+        // Calculate selected objects center
+        calculateSelectedObjectsCenter();
+
+        console.log(`[3D Viewer] Selected ${selectedObjects.length} objects in viewer`);
+    };
+
+    // ▼▼▼ [추가] 수량산출부재 탭 버튼 기능 ▼▼▼
+
+    // BIM 저작도구에서 선택 객체 가져오기
+    function viewerQmGetSelectionFromClient() {
+        const targetGroup = window.currentMode === 'revit' ? 'revit_broadcast_group' : 'blender_broadcast_group';
+        if (!window.frontendSocket) {
+            showToast('WebSocket 연결이 없습니다.', 'error');
+            return;
+        }
+        window.frontendSocket.send(JSON.stringify({
+            type: 'command_to_client',
+            payload: {
+                command: 'get_selection',
+                target_group: targetGroup,
+            },
+        }));
+        showToast(`${window.currentMode === 'revit' ? 'Revit' : 'Blender'}에 선택 정보 가져오기를 요청했습니다.`, 'info');
+    }
+
+    // 리스트에서 선택한 수량산출부재를 BIM 저작도구에서 선택
+    function viewerQmSelectInClient() {
+        if (selectedQuantityMemberIdsInViewer.size === 0) {
+            showToast('리스트에서 먼저 항목을 선택하세요.', 'warning');
+            return;
+        }
+
+        if (!window.allRevitData || !window.loadedQuantityMembers || !window.frontendSocket) {
+            showToast('필요한 데이터가 로드되지 않았습니다.', 'error');
+            return;
+        }
+
+        // 선택된 수량산출부재들의 source_element_ids를 수집
+        const uniqueIdsToSend = [];
+        window.loadedQuantityMembers
+            .filter(qm => selectedQuantityMemberIdsInViewer.has(qm.id.toString()))
+            .forEach(qm => {
+                if (qm.source_element_ids && Array.isArray(qm.source_element_ids)) {
+                    qm.source_element_ids.forEach(elemId => {
+                        const rawElement = window.allRevitData.find(item => item.id === elemId);
+                        if (rawElement && rawElement.element_unique_id) {
+                            uniqueIdsToSend.push(rawElement.element_unique_id);
+                        }
+                    });
+                }
+            });
+
+        if (uniqueIdsToSend.length === 0) {
+            showToast('선택한 수량산출부재에 연결된 원본 요소가 없습니다.', 'warning');
+            return;
+        }
+
+        const targetGroup = window.currentMode === 'revit' ? 'revit_broadcast_group' : 'blender_broadcast_group';
+        window.frontendSocket.send(JSON.stringify({
+            type: 'command_to_client',
+            payload: {
+                command: 'select_elements',
+                target_group: targetGroup,
+                unique_ids: uniqueIdsToSend,
+            },
+        }));
+        showToast(`${uniqueIdsToSend.length}개 요소를 ${window.currentMode === 'revit' ? 'Revit' : 'Blender'}에서 선택합니다.`, 'success');
+    }
+
+    // 3D 뷰포트에서 선택 객체 가져오기
+    function viewerQmGetSelectionFrom3DViewer() {
+        console.log('[3D Viewer][QM] Getting selection from 3D viewer');
+
+        if (!selectedObjects || selectedObjects.length === 0) {
+            showToast('3D 뷰포트에서 선택된 객체가 없습니다.', 'warning');
+            return;
+        }
+
+        console.log(`[3D Viewer][QM] Found ${selectedObjects.length} selected objects`);
+
+        // 3D에서 선택된 객체의 BIM ID 수집
+        const selectedBimIds = new Set();
+        selectedObjects.forEach(obj => {
+            const bimObjectId = obj.userData.bimObjectId || obj.userData.rawElementId;
+            if (bimObjectId) {
+                selectedBimIds.add(bimObjectId);
+            }
+        });
+
+        // 해당 BIM ID를 포함하는 수량산출부재 찾기
+        selectedQuantityMemberIdsInViewer.clear();
+        if (window.loadedQuantityMembers) {
+            window.loadedQuantityMembers.forEach(qm => {
+                if (qm.source_element_ids && Array.isArray(qm.source_element_ids)) {
+                    const hasSelectedElement = qm.source_element_ids.some(elemId => selectedBimIds.has(elemId));
+                    if (hasSelectedElement) {
+                        selectedQuantityMemberIdsInViewer.add(qm.id.toString());
+                    }
+                }
+            });
+        }
+
+        // 현재 표시된 수량산출부재 리스트 갱신
+        if (currentDisplayedQMs.length > 0) {
+            const listContainer = document.getElementById('three-d-quantity-members-list');
+            if (listContainer) {
+                const items = listContainer.querySelectorAll('.quantity-member-item');
+                items.forEach(item => {
+                    const qmId = item.getAttribute('data-qm-id');
+                    if (selectedQuantityMemberIdsInViewer.has(qmId)) {
+                        item.classList.add('selected');
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                });
+            }
+        }
+
+        showToast(`${selectedQuantityMemberIdsInViewer.size}개의 수량산출부재를 선택했습니다.`, 'success');
+    }
+
+    // 리스트에서 선택한 수량산출부재를 3D 뷰포트에서 선택
+    function viewerQmSelectIn3DViewer() {
+        console.log('[3D Viewer][QM] Selecting objects in 3D viewer');
+
+        if (selectedQuantityMemberIdsInViewer.size === 0) {
+            showToast('리스트에서 먼저 항목을 선택하세요.', 'warning');
+            return;
+        }
+
+        if (!window.loadedQuantityMembers) {
+            showToast('수량산출부재 데이터가 로드되지 않았습니다.', 'error');
+            return;
+        }
+
+        // 선택된 수량산출부재들의 source_element_ids를 수집
+        const bimIdsToSelect = [];
+        window.loadedQuantityMembers
+            .filter(qm => selectedQuantityMemberIdsInViewer.has(qm.id.toString()))
+            .forEach(qm => {
+                if (qm.source_element_ids && Array.isArray(qm.source_element_ids)) {
+                    bimIdsToSelect.push(...qm.source_element_ids);
+                }
+            });
+
+        if (bimIdsToSelect.length === 0) {
+            showToast('선택한 수량산출부재에 연결된 원본 요소가 없습니다.', 'warning');
+            return;
+        }
+
+        console.log(`[3D Viewer][QM] Selecting ${bimIdsToSelect.length} objects in 3D viewer`);
+
+        // 3D 뷰어에서 객체 선택 (기존 selectObjectsIn3DViewer 함수 활용)
+        if (window.selectObjectsIn3DViewer) {
+            window.selectObjectsIn3DViewer(bimIdsToSelect);
+        } else {
+            showToast('3D 뷰어 선택 기능을 사용할 수 없습니다.', 'error');
+        }
+    }
+
+    // 버튼 이벤트 리스너 등록 (페이지 로드 후 실행)
+    function setupViewerQmButtonListeners() {
+        const viewerQmGetFromClientBtn = document.getElementById('viewer-qm-get-from-client-btn');
+        const viewerQmSelectInClientBtn = document.getElementById('viewer-qm-select-in-client-btn');
+        const viewerQmGetFrom3DViewerBtn = document.getElementById('viewer-qm-get-from-3d-viewer-btn');
+        const viewerQmSelectIn3DViewerBtn = document.getElementById('viewer-qm-select-in-3d-viewer-btn');
+
+        if (viewerQmGetFromClientBtn) {
+            viewerQmGetFromClientBtn.addEventListener('click', viewerQmGetSelectionFromClient);
+            console.log('[3D Viewer] Viewer QM Get From Client button listener registered');
+        }
+        if (viewerQmSelectInClientBtn) {
+            viewerQmSelectInClientBtn.addEventListener('click', viewerQmSelectInClient);
+            console.log('[3D Viewer] Viewer QM Select In Client button listener registered');
+        }
+        if (viewerQmGetFrom3DViewerBtn) {
+            viewerQmGetFrom3DViewerBtn.addEventListener('click', viewerQmGetSelectionFrom3DViewer);
+            console.log('[3D Viewer] Viewer QM Get From 3D Viewer button listener registered');
+        }
+        if (viewerQmSelectIn3DViewerBtn) {
+            viewerQmSelectIn3DViewerBtn.addEventListener('click', viewerQmSelectIn3DViewer);
+            console.log('[3D Viewer] Viewer QM Select In 3D Viewer button listener registered');
+        }
+    }
+
+    // 즉시 실행 또는 DOM 로드 대기
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupViewerQmButtonListeners);
+    } else {
+        // 이미 로드된 경우 즉시 실행
+        setTimeout(setupViewerQmButtonListeners, 100);
+    }
+
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 })();

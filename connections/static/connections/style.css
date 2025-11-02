@@ -35,19 +35,81 @@ body {
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
 }
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+}
 .header-left h1 {
     font-size: 22px;
     margin: 0;
 }
-.header-right {
+#connector-mode-selector {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 6px 16px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+#connector-mode-selector label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #555;
+    cursor: pointer;
+    margin: 0;
+    transition: color 0.2s;
+}
+#connector-mode-selector label:hover {
+    color: var(--primary-color);
+}
+#connector-mode-selector input[type="radio"] {
+    margin: 0;
+    cursor: pointer;
+}
+.header-center {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex: 1;
+}
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    min-width: 400px;
+    padding-left: 20px;
+    border-left: 1px solid var(--border-color);
+}
+#progress-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+#data-fetch-progress {
+    width: 150px;
+    height: 20px;
+}
+#progress-status-text {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+    min-width: 80px;
+}
+#status-container {
+    display: flex;
+    align-items: center;
 }
 #status {
     font-size: 12px;
     color: #666;
     margin: 0;
+    white-space: nowrap;
 }
 
 /* Main Navigation */
@@ -89,7 +151,9 @@ body {
 }
 
 .left-panel {
-    width: var(--left-panel-width);
+    width: 400px; /* 초기 너비 설정 */
+    min-width: 250px; /* 최소 너비 */
+    max-width: 800px; /* 최대 너비 */
     padding: 20px;
     border-right: 1px solid var(--border-color);
     background-color: #fff;
@@ -98,6 +162,29 @@ body {
     gap: 15px;
     overflow-y: auto;
     flex-shrink: 0; /* 중요: 좌측 패널 너비 고정 */
+}
+
+.panel-resizer {
+    width: 5px;
+    background-color: var(--border-color);
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.2s;
+}
+
+.panel-resizer:hover {
+    background-color: var(--primary-color);
+}
+
+.panel-resizer.resizing {
+    background-color: var(--primary-color);
+    cursor: col-resize;
+}
+
+body.resizing {
+    cursor: col-resize;
+    user-select: none;
 }
 
 .right-panel {
@@ -242,6 +329,89 @@ select {
     border-color: var(--border-color);
     font-weight: bold;
 }
+/* 3등분 그리드 레이아웃 */
+.table-controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 15px;
+}
+
+.control-section {
+    padding: 15px;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.control-section-title {
+    margin: 0 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e9ecef;
+    font-size: 14px;
+    font-weight: bold;
+    color: #495057;
+}
+
+/* 그룹핑 컨트롤 - 세로 배치 */
+#data-management-grouping-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#data-management-grouping-controls .group-level {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#data-management-grouping-controls .group-level select {
+    flex: 1;
+    min-width: 0;
+}
+
+#data-management-grouping-controls .group-level .remove-group-level-btn {
+    padding: 2px 8px;
+    font-size: 14px;
+    line-height: 1;
+    min-width: auto;
+    background-color: #dc3545;
+    color: white;
+    border: 1px solid #dc3545;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+#data-management-grouping-controls .group-level .remove-group-level-btn:hover {
+    background-color: #c82333;
+    border-color: #bd2130;
+}
+
+/* 룰셋 일괄적용 버튼 스타일 */
+.ruleset-apply-btn {
+    background-color: #6610f2 !important;
+    color: white !important;
+    border: 1px solid #5a0cd6 !important;
+}
+
+.ruleset-apply-btn:hover {
+    background-color: #5a0cd6 !important;
+}
+
 .table-controls {
     display: flex;
     justify-content: space-between;
@@ -424,6 +594,7 @@ th input {
 
 .ruleset-container {
     display: flex;
+    flex-direction: column;
     height: 100%;
     background-color: #fff;
 }
@@ -448,6 +619,39 @@ th input {
     display: flex;
     flex-direction: column;
     gap: 10px;
+}
+
+/* 가로 네비게이션 스타일 */
+.ruleset-nav-horizontal {
+    display: flex;
+    flex-direction: row;
+    gap: 5px;
+    padding: 10px 20px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    flex-wrap: wrap;
+}
+
+.ruleset-nav-horizontal .ruleset-nav-button {
+    padding: 8px 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    width: auto;
+}
+
+.ruleset-nav-horizontal .ruleset-icon {
+    font-size: 18px;
+}
+
+.ruleset-nav-horizontal .ruleset-text {
+    flex-direction: row;
+    gap: 6px;
+    align-items: center;
+}
+
+.ruleset-nav-horizontal .ruleset-text small {
+    display: none;
 }
 
 .ruleset-nav-button {
@@ -502,6 +706,9 @@ th input {
 
 .ruleset-content.active {
     display: block;
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
 }
 
 .ruleset-header {
@@ -584,10 +791,50 @@ th input {
 /* ▲▲▲ [추가] 여기까지 추가해주세요. ▲▲▲ */
 /* ▼▼▼ [추가] 수량산출부재 탭 스타일 ▼▼▼ */
 .qm-container {
-    padding: 20px;
     height: 100%;
     display: flex;
     flex-direction: column;
+}
+
+.qm-container .split-layout-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.qm-container .left-panel {
+    flex: 0 0 300px; /* 초기 너비 300px, 리사이징 가능 */
+    min-width: 200px; /* 최소 너비 */
+    max-width: 600px; /* 최대 너비 */
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    padding: 15px;
+}
+
+.qm-split-bar {
+    width: 4px;
+    background-color: var(--border-color);
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.2s;
+}
+
+.qm-split-bar:hover {
+    background-color: #0078d4;
+}
+
+.qm-split-bar:active {
+    background-color: #005a9e;
+}
+
+.qm-container .right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 20px;
 }
 
 .qm-header {
@@ -610,9 +857,91 @@ th input {
 }
 
 .qm-table-container {
-    flex-grow: 1;
+    flex: 1;
     overflow: auto;
 }
+
+/* QM 왼쪽 패널 요소 스타일 */
+.qm-container .left-panel .control-box {
+    margin-bottom: 15px;
+}
+
+.qm-container .left-panel .control-box:last-of-type {
+    margin-bottom: 0;
+}
+
+.qm-container .left-panel .control-box h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+}
+
+.qm-container .left-panel .control-box button {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.qm-container .left-panel .control-box button:last-child {
+    margin-bottom: 0;
+}
+
+/* QM 왼쪽 패널 탭 컨테이너 */
+.qm-container .left-panel-tab-container {
+    margin-top: 15px;
+}
+
+/* QM 필드 선택 체크박스 컨테이너 */
+#qm-field-selection-container {
+    padding: 15px;
+}
+
+#qm-field-selection-container label {
+    display: block;
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+#qm-field-selection-container label:hover {
+    background-color: #f0f0f0;
+}
+
+#qm-field-selection-container input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+/* QM 할당 정보 탭 스타일 */
+#qm-assigned-cost-codes-container,
+#qm-assigned-member-mark-container,
+#qm-assigned-spaces-container {
+    padding: 15px;
+    min-height: 100px;
+}
+
+.qm-assign-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.qm-assign-controls select {
+    flex: 1;
+}
+
+.qm-assign-controls button {
+    flex-shrink: 0;
+}
+
+/* QM 테이블 푸터 컨트롤 */
+.qm-container .table-footer-controls {
+    padding: 10px 0;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-start;
+}
+
 /* ▲▲▲ [추가] 여기까지 추가해주세요. ▲▲▲ */
 
 /* ▼▼▼ [추가] 공사코드 선택 모달 스타일 ▼▼▼ */
@@ -829,8 +1158,18 @@ th input {
 }
 
 /* 각 컨트롤 박스 내부에서 스크롤이 필요한 컨텐츠 영역 */
-#qm-properties-container,
-#qm-cost-codes-list,
+#qm-selected-properties-container {
+    flex-grow: 1; /* 부모(.control-box)의 남은 공간을 모두 차지 */
+    overflow: auto; /* 내용이 넘칠 경우 가로 및 세로 스크롤 자동 생성 */
+    border: 1px solid var(--border-color);
+    padding: 10px;
+    margin-top: 10px;
+    min-height: 0; /* flex 컨테이너에서 스크롤이 제대로 작동하도록 설정 */
+}
+
+#qm-assigned-cost-codes-container,
+#qm-assigned-member-mark-container,
+#qm-assigned-spaces-container,
 #qm-member-marks-list {
     flex-grow: 1; /* 부모(.control-box)의 남은 공간을 모두 차지 */
     overflow-y: auto; /* 내용이 많아지면 세로 스크롤 생성 */
@@ -876,25 +1215,17 @@ th input {
 /* --- '수량산출부재' 탭 오른쪽 패널 스타일 확장 --- */
 
 /* 일람부호 상세 정보 컨테이너 */
-#qm-member-mark-details-container {
+#qm-assigned-member-mark-container {
     flex-grow: 1;
     overflow-y: auto;
     min-height: 0;
 }
 
-#qm-member-mark-details-container h5 {
+#qm-assigned-member-mark-container h5 {
     margin: 0 0 5px 0;
     font-size: 14px;
 }
 
-/* BIM 원본 데이터 속성 컨테이너 */
-#qm-linked-raw-element-properties-container {
-    flex-grow: 1;
-    overflow-y: auto;
-    border: 1px solid var(--border-color);
-    padding: 10px;
-    margin-top: 10px;
-}
 /* ▼▼▼ [추가] 수량산출부재 탭 - 오른쪽 패널 탭 스타일 ▼▼▼ */
 
 /* details-panel이 flex-direction: column 이어야 합니다 (기존 코드에 이미 있음) */
@@ -1711,9 +2042,15 @@ th input {
 
 /* 활성화된 탭 콘텐츠만 보이도록 설정 */
 .left-panel-tab-content.active {
-    display: flex;
+    display: block;
+    overflow-y: auto;
+}
+
+/* 할당정보 탭은 flex 레이아웃 사용 */
+#qm-assigned-info-content.active {
+    display: flex !important;
     flex-direction: column;
-    overflow: hidden; /* 내부에서 스크롤을 제어하도록 변경 */
+    overflow: hidden;
 }
 
 .left-panel-tab-content > .control-box {
@@ -1754,35 +2091,6 @@ th input {
     display: flex;
     flex-direction: column;
     min-height: 0;
-}
-
-#progress-container {
-    width: 250px;
-    margin: 0 10px;
-}
-
-.progress-bar-wrapper {
-    position: relative; /* 텍스트를 겹치기 위한 기준 */
-    width: 100%;
-}
-
-#data-fetch-progress {
-    width: 100%;
-    height: 22px;
-    vertical-align: middle;
-}
-
-#progress-status-text {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    margin: 0;
-    font-size: 12px;
-    font-weight: bold;
-    color: #333;
-    text-shadow: 0 0 2px white; /* 텍스트 가독성 향상 */
-    white-space: nowrap;
 }
 
 /* style.css */
@@ -2929,6 +3237,259 @@ div[id$='-grouping-controls'] {
     flex: 1;
     color: #333;
     word-break: break-word;
+}
+
+/* Properties Table */
+.three-d-properties-panel .properties-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+}
+
+.three-d-properties-panel .properties-table td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.three-d-properties-panel .properties-table td::-webkit-scrollbar {
+    height: 6px;
+}
+
+.three-d-properties-panel .properties-table td::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 3px;
+}
+
+.three-d-properties-panel .properties-table tr:last-child td {
+    border-bottom: none;
+}
+
+.three-d-properties-panel .properties-table .prop-name {
+    width: 50%;
+    font-weight: 600;
+    color: #555;
+    background-color: #f8f9fa;
+}
+
+.three-d-properties-panel .properties-table .prop-value {
+    width: 50%;
+    color: #333;
+}
+
+/* Left Panel BIM Properties Styling (same as 3D viewer) */
+#selected-bim-properties-container .property-section,
+#sm-selected-bim-properties-container .property-section {
+    background: white;
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+#selected-bim-properties-container .property-section h4,
+#sm-selected-bim-properties-container .property-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: var(--primary-color);
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 5px;
+}
+
+#selected-bim-properties-container .property-row,
+#sm-selected-bim-properties-container .property-row {
+    display: flex;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+}
+
+#selected-bim-properties-container .property-row:last-child,
+#sm-selected-bim-properties-container .property-row:last-child {
+    border-bottom: none;
+}
+
+#selected-bim-properties-container .property-label,
+#sm-selected-bim-properties-container .property-label {
+    flex: 0 0 140px;
+    font-weight: 600;
+    color: #555;
+    padding-right: 10px;
+}
+
+#selected-bim-properties-container .property-value,
+#sm-selected-bim-properties-container .property-value {
+    flex: 1;
+    color: #333;
+    word-break: break-word;
+}
+
+#selected-bim-properties-container .properties-table,
+#sm-selected-bim-properties-container .properties-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+}
+
+#selected-bim-properties-container .properties-table td,
+#sm-selected-bim-properties-container .properties-table td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#selected-bim-properties-container .properties-table td::-webkit-scrollbar,
+#sm-selected-bim-properties-container .properties-table td::-webkit-scrollbar {
+    height: 6px;
+}
+
+#selected-bim-properties-container .properties-table td::-webkit-scrollbar-thumb,
+#sm-selected-bim-properties-container .properties-table td::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 3px;
+}
+
+#selected-bim-properties-container .properties-table tr:last-child td,
+#sm-selected-bim-properties-container .properties-table tr:last-child td {
+    border-bottom: none;
+}
+
+#selected-bim-properties-container .properties-table .prop-name,
+#sm-selected-bim-properties-container .properties-table .prop-name {
+    width: 50%;
+    font-weight: 600;
+    color: #555;
+    background-color: #f8f9fa;
+}
+
+#selected-bim-properties-container .properties-table .prop-value,
+#sm-selected-bim-properties-container .properties-table .prop-value {
+    width: 50%;
+    color: #333;
+}
+
+/* Quantity Member Properties Table - 동일한 스타일 적용 */
+#qm-selected-properties-container .properties-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+}
+
+#qm-selected-properties-container .properties-table td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#qm-selected-properties-container .properties-table td::-webkit-scrollbar {
+    height: 6px;
+}
+
+#qm-selected-properties-container .properties-table td::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 3px;
+}
+
+#qm-selected-properties-container .properties-table tr:last-child td {
+    border-bottom: none;
+}
+
+#qm-selected-properties-container .properties-table .prop-name {
+    width: 40%;
+    font-weight: 600;
+    color: #555;
+    background-color: #f8f9fa;
+}
+
+#qm-selected-properties-container .properties-table .prop-value {
+    width: 40%;
+    color: #333;
+}
+
+/* Editable Properties Table (Quantity Members) */
+#qm-selected-properties-container .editable-properties .prop-lock {
+    width: 50px;
+    text-align: center;
+    white-space: nowrap;
+    overflow-x: visible;
+}
+
+#qm-selected-properties-container .editable-properties .prop-delete {
+    width: 60px;
+    text-align: center;
+    white-space: nowrap;
+    overflow-x: visible;
+}
+
+#qm-selected-properties-container .lock-property-btn {
+    padding: 4px 8px;
+    font-size: 14px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#qm-selected-properties-container .lock-property-btn:hover {
+    background-color: #e0e0e0;
+}
+
+#qm-selected-properties-container .delete-property-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#qm-selected-properties-container .delete-property-btn:hover {
+    background-color: #c82333;
+}
+
+#qm-selected-properties-container .add-property-form {
+    margin-top: 15px;
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+#qm-selected-properties-container .add-property-form h5 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #333;
+}
+
+#qm-selected-properties-container .add-property-form input {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+#qm-selected-properties-container .add-property-form button {
+    width: 100%;
+    padding: 8px;
+    background: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.2s;
+}
+
+#qm-selected-properties-container .add-property-form button:hover {
+    background: #45a049;
 }
 
 #three-d-viewer.tab-content {

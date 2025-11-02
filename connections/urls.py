@@ -20,6 +20,7 @@ urlpatterns = [
 
     path('api/rules/property-mapping/<uuid:project_id>/', views.property_mapping_rules_api, name='property_mapping_rules_api'),
     path('api/rules/property-mapping/<uuid:project_id>/<uuid:rule_id>/', views.property_mapping_rules_api, name='property_mapping_rule_detail_api'),
+    path('api/rules/property-mapping/apply/<uuid:project_id>/', views.apply_property_mapping_rules_view, name='apply_property_mapping_rules'),
 
     path('api/rules/cost-code/<uuid:project_id>/', views.cost_code_rules_api, name='cost_code_rules_api'),
     path('api/rules/cost-code/<uuid:project_id>/<uuid:rule_id>/', views.cost_code_rules_api, name='cost_code_rule_detail_api'),
@@ -49,6 +50,7 @@ urlpatterns = [
     path('api/quantity-members/<uuid:project_id>/<uuid:member_id>/', views.quantity_members_api, name='quantity_member_detail_api'),
     path('api/quantity-members/auto-create/<uuid:project_id>/', views.create_quantity_members_auto_view, name='create_quantity_members_auto'),
     path('api/quantity-members/manage-cost-codes/<uuid:project_id>/', views.manage_quantity_member_cost_codes_api, name='manage_qm_cost_codes'),
+    path('api/quantity-members/toggle-cost-code-lock/<uuid:project_id>/', views.toggle_cost_code_lock_api, name='toggle_cost_code_lock'),
     path('api/quantity-members/manage-member-marks/<uuid:project_id>/', views.manage_quantity_member_member_marks_api, name='manage_qm_member_marks'),
     path('api/quantity-members/manage-spaces/<uuid:project_id>/', views.manage_quantity_member_spaces_api, name='manage_qm_spaces'),
 

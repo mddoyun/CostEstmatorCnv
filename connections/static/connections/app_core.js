@@ -53,6 +53,9 @@
     window.currentQmGroupByFields = [];
     window.lastSelectedQmRowIndex = -1;
     window.activeQmView = "quantity-member-view";
+    window.currentQmColumns = ['id', 'name', 'classification_tag_name', 'raw_element_id', 'is_active']; // 기본 컬럼
+    window.isQmFilterToSelectionActive = false; // 선택 필터 활성화 여부
+    window.qmFilteredIds = new Set(); // 필터링할 수량산출부재 ID
 
     // --- UI 상태 (Cost Items) ---
     window.ciColumnFilters = {};

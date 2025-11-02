@@ -106,7 +106,6 @@ window.setupWebSocket = function() {
                 progressStatus.textContent = hasTotal
                     ? `0 / ${total}`
                     : '0 / ?';
-                progressContainer.style.display = 'block';
                 statusEl.textContent = hasTotal
                     ? `데이터 수신 시작. 총 ${total}개 객체.`
                     : '데이터 수신 시작. 총 개수를 파악 중입니다.';
@@ -252,7 +251,8 @@ window.setupWebSocket = function() {
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 setTimeout(() => {
-                    progressContainer.style.display = 'none';
+                    progressBar.value = 0;
+                    progressStatus.textContent = '대기중';
                 }, 1500);
                 document.getElementById('project-selector').disabled = false;
                 console.log(
@@ -336,7 +336,8 @@ window.setupWebSocket = function() {
                 }
 
                 setTimeout(() => {
-                    progressContainer.style.display = 'none';
+                    progressBar.value = 0;
+                    progressStatus.textContent = '대기중';
                 }, 1500);
                 document.getElementById('project-selector').disabled = false;
                 console.log(

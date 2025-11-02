@@ -33,7 +33,6 @@ async function handleClassificationRuleActions(event) {
 
     // --- 저장 버튼 클릭 ---
     else if (target.classList.contains('save-rule-btn')) {
-        const priority = ruleRow.querySelector('.rule-priority-input').value;
         const description = ruleRow.querySelector(
             '.rule-description-input'
         ).value;
@@ -60,7 +59,6 @@ async function handleClassificationRuleActions(event) {
             id: ruleId !== 'new' ? parseInt(ruleId) : null,
             target_tag_id: target_tag_id,
             conditions: conditions,
-            priority: parseInt(priority) || 0,
             description: description,
         };
 

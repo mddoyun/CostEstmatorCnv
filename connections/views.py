@@ -196,7 +196,6 @@ def classification_rules_api(request, project_id, rule_id=None):
             'target_tag_id': str(rule.target_tag.id),
             'target_tag_name': rule.target_tag.name,
             'conditions': rule.conditions,
-            'priority': rule.priority,
             'description': rule.description
         } for rule in rules]
         # 디버깅: 조회 결과
@@ -221,7 +220,6 @@ def classification_rules_api(request, project_id, rule_id=None):
                 rule = ClassificationRule(project=project)
             rule.target_tag = target_tag
             rule.conditions = data.get('conditions', [])
-            rule.priority = data.get('priority', 0)
             rule.description = data.get('description', '')
             rule.save()
             # 디버깅: 저장 성공
@@ -245,6 +243,15 @@ def classification_rules_api(request, project_id, rule_id=None):
             # 디버깅: 규칙 삭제 시도
             print(f"[DEBUG][classification_rules_api] Attempting to delete rule ID: {rule_id}")
             rule = ClassificationRule.objects.get(id=rule_id, project_id=project_id)
+
+            # 이 룰셋으로 생성된 할당들을 제거
+            from connections.models import ElementClassificationAssignment
+            deleted_assignments = ElementClassificationAssignment.objects.filter(
+                assigned_by_rule=rule,
+                assignment_type='ruleset'
+            ).delete()
+            print(f"[DEBUG][classification_rules_api] Deleted {deleted_assignments[0]} ruleset-based assignments for this rule.")
+
             rule.delete()
             # 디버깅: 삭제 성공
             print(f"[DEBUG][classification_rules_api] Rule ID: {rule_id} deleted successfully.")
@@ -469,41 +476,85 @@ def evaluate_conditions(data_dict, conditions):
 
 @require_http_methods(["POST"])
 def apply_classification_rules_view(request, project_id):
+    """
+    분류 할당 룰셋을 일괄 적용합니다.
+    - 룰셋 기반 할당: 조건에 맞지 않으면 제거하고, 조건에 맞으면 추가
+    - 수동 할당: 항상 유지 (룰셋에 영향받지 않음)
+    """
     print("\n[DEBUG] --- '룰셋 일괄적용' API 요청 수신 ---")
     try:
         project = Project.objects.get(id=project_id)
-        rules = ClassificationRule.objects.filter(project=project).order_by('priority').select_related('target_tag')
-        
+        rules = ClassificationRule.objects.filter(project=project).order_by('id').select_related('target_tag')
+
+        # ElementClassificationAssignment 모델 import
+        from connections.models import ElementClassificationAssignment
+
         # [수정] 대용량 데이터를 처리하기 위해 iterator 사용
-        all_elements_qs = RawElement.objects.filter(project=project).prefetch_related('classification_tags')
+        all_elements_qs = RawElement.objects.filter(project=project)
 
         if not rules.exists():
             print("[DEBUG] 적용할 룰셋이 없어 조기 종료합니다.")
             return JsonResponse({'status': 'info', 'message': '적용할 규칙이 없습니다. 먼저 룰셋을 정의해주세요.'})
 
         print(f"[DEBUG] {all_elements_qs.count()}개의 BIM 객체에 대해 {rules.count()}개의 룰셋 적용을 시작합니다.")
-        
+
         project_tags = {tag.name: tag for tag in QuantityClassificationTag.objects.filter(project=project)}
         updated_count = 0
-        
+        added_count = 0
+        removed_count = 0
+
         # [수정] 500개씩 끊어서 처리
         for element in all_elements_qs.iterator(chunk_size=500):
-            current_tag_names = {tag.name for tag in element.classification_tags.all()}
-            
-            tags_to_add = set()
+            # 1. 이 요소에 대한 현재 할당 정보 조회
+            current_assignments = ElementClassificationAssignment.objects.filter(
+                raw_element=element
+            ).select_related('classification_tag', 'assigned_by_rule')
+
+            # 2. 수동 할당은 그대로 유지
+            manual_tag_ids = {
+                a.classification_tag.id for a in current_assignments if a.assignment_type == 'manual'
+            }
+
+            # 3. 현재 룰셋 기반 할당 정보
+            ruleset_assignments = {
+                a.classification_tag.id: a for a in current_assignments if a.assignment_type == 'ruleset'
+            }
+
+            # 4. 현재 활성화된 룰셋을 평가하여 매칭되는 태그 찾기
+            tags_matching_rules = {}  # {tag_id: rule}
             for rule in rules:
                 if evaluate_conditions(element.raw_data, rule.conditions):
-                    tags_to_add.add(rule.target_tag.name)
-                    # print(f"  [HIT!] ... ") # 로그가 너무 많아지므로 핵심 로그만 남김
-            
-            if not tags_to_add.issubset(current_tag_names):
-                final_names = current_tag_names.union(tags_to_add)
-                final_objects = [project_tags[name] for name in final_names if name in project_tags]
-                element.classification_tags.set(final_objects)
+                    tags_matching_rules[rule.target_tag.id] = rule
+
+            # 5. 룰셋 기반 할당 업데이트
+            # 5-1. 룰에 더 이상 매칭되지 않는 룰셋 할당 제거
+            for tag_id, assignment in ruleset_assignments.items():
+                if tag_id not in tags_matching_rules:
+                    assignment.delete()
+                    removed_count += 1
+                    print(f"  [REMOVE] Element {element.id}: 룰셋 할당 제거 - {assignment.classification_tag.name}")
+
+            # 5-2. 룰에 매칭되는데 아직 할당되지 않은 태그 추가
+            for tag_id, rule in tags_matching_rules.items():
+                if tag_id not in ruleset_assignments:
+                    # 새 룰셋 기반 할당 생성
+                    ElementClassificationAssignment.objects.create(
+                        raw_element=element,
+                        classification_tag_id=tag_id,
+                        assignment_type='ruleset',
+                        assigned_by_rule=rule
+                    )
+                    added_count += 1
+                    print(f"  [ADD] Element {element.id}: 룰셋 할당 추가 - {rule.target_tag.name}")
+
+            # 변경사항이 있으면 카운트 증가
+            if tags_matching_rules.keys() != ruleset_assignments.keys():
                 updated_count += 1
-        
+
         print(f"[DEBUG] 총 {updated_count}개의 객체 분류 정보가 업데이트되었습니다.")
-        message = f'룰셋을 적용하여 총 {updated_count}개 객체의 분류를 업데이트했습니다.' if updated_count > 0 else '모든 객체가 이미 룰셋의 조건과 일치하여, 변경된 사항이 없습니다.'
+        print(f"[DEBUG] 룰셋 할당 추가: {added_count}개, 제거: {removed_count}개")
+
+        message = f'룰셋을 적용하여 총 {updated_count}개 객체의 분류를 업데이트했습니다. (추가: {added_count}, 제거: {removed_count})' if updated_count > 0 else '모든 객체가 이미 룰셋의 조건과 일치하여, 변경된 사항이 없습니다.'
         return JsonResponse({'status': 'success', 'message': message})
 
     except Project.DoesNotExist:
@@ -696,18 +747,21 @@ def evaluate_expression(expression, raw_data):
     '{Volume} * 1.05' 또는 '{{Volume}} * 2'와 같은 문자열 표현식을 실제 값으로 계산합니다.
     - {parameter}: 파라미터 값을 그대로 사용합니다. (예: "30.5 m³")
     - {{parameter}}: 파라미터 값에서 숫자만 추출하여 사용합니다. (예: "30.5 m³" -> 30.5)
+    - BIM.Attributes.Name, BIM.Parameters.XXX 등의 계층적 경로를 지원합니다.
     """
     if not isinstance(expression, str):
         return expression
 
     temp_expression = expression
-    
+
     # --- 1단계: 숫자만 추출하는 {{parameter}} 처리 ---
     # 중복된 플레이스홀더가 있어도 한 번만 처리하도록 set()을 사용합니다.
     numeric_placeholders = re.findall(r'\{\{([^}]+)\}\}', temp_expression)
     for placeholder in set(numeric_placeholders):
-        value = get_value_from_element(raw_data, placeholder)
-        
+        # 계층적 경로를 내부 필드명으로 변환
+        internal_field = get_internal_field_name(placeholder)
+        value = get_value_from_element(raw_data, internal_field)
+
         if value is not None:
             # 값의 시작 부분에서 숫자(소수점, 음수 포함)만 추출합니다.
             match = re.match(r'^\s*(-?\d+(\.\d+)?)\s*', str(value))
@@ -725,7 +779,9 @@ def evaluate_expression(expression, raw_data):
     # {{...}}가 처리된 후의 문자열에서 {...}를 찾습니다.
     placeholders = re.findall(r'\{([^}]+)\}', temp_expression)
     for placeholder in set(placeholders):
-        value = get_value_from_element(raw_data, placeholder)
+        # 계층적 경로를 내부 필드명으로 변환
+        internal_field = get_internal_field_name(placeholder)
+        value = get_value_from_element(raw_data, internal_field)
         if value is not None:
             # 값이 숫자인지 확인하고, 문자열이면 따옴표로 감싸줍니다.
             replacement = str(value) if is_numeric(value) else f'"{str(value)}"'
@@ -736,7 +792,7 @@ def evaluate_expression(expression, raw_data):
     # --- 3단계: 최종 문자열 계산 ---
     if not temp_expression.strip():
         return ""
-        
+
     try:
         # eval의 위험성을 줄이기 위해 사용 가능한 내장 함수를 제한합니다.
         safe_dict = {'__builtins__': {'abs': abs, 'round': round, 'max': max, 'min': min, 'len': len}}
@@ -759,7 +815,7 @@ def calculate_properties_from_rule(raw_data, mapping_script):
     return calculated_properties
 
 
-@require_http_methods(["GET", "POST", "DELETE", "PUT"])
+@require_http_methods(["GET", "POST", "DELETE", "PUT", "PATCH"])
 def quantity_members_api(request, project_id, member_id=None):
     # --- GET: 부재 목록 조회 ---
     if request.method == 'GET':
@@ -774,17 +830,12 @@ def quantity_members_api(request, project_id, member_id=None):
                 member_mark_mark = m.member_mark.mark
                 member_mark_properties = m.member_mark.properties or {}
 
-            # RawElement 상세 정보 (주요 속성만)
+            # RawElement 상세 정보 (모든 속성 포함)
             raw_element_data = {}
             if m.raw_element:
                 raw_data = m.raw_element.raw_data or {}
-                # 중요 속성들만 추출
-                for key in ['Category', 'Family', 'Type', 'Level']:
-                    if key in raw_data:
-                        raw_element_data[key] = raw_data[key]
-                # Parameters도 포함
-                if 'Parameters' in raw_data:
-                    raw_element_data['Parameters'] = raw_data['Parameters']
+                # 모든 raw_data를 포함 (System, Attributes 등 모든 속성)
+                raw_element_data = raw_data
 
             item = {
                 'id': str(m.id),
@@ -792,6 +843,8 @@ def quantity_members_api(request, project_id, member_id=None):
                 'classification_tag_id': str(m.classification_tag.id) if m.classification_tag else '',
                 'classification_tag_name': m.classification_tag.name if m.classification_tag else '미지정',
                 'properties': m.properties,
+                'locked_properties': m.locked_properties if m.locked_properties else [],
+                'locked_cost_code_ids': m.locked_cost_code_ids if m.locked_cost_code_ids else [],
                 'mapping_expression': m.mapping_expression,
                 'member_mark_expression': m.member_mark_expression,
                 'cost_code_expressions': m.cost_code_expressions,
@@ -800,14 +853,24 @@ def quantity_members_api(request, project_id, member_id=None):
                 'member_mark_id': str(m.member_mark.id) if m.member_mark else None,
                 # ▼▼▼ [추가] MemberMark와 RawElement 상세 정보 ▼▼▼
                 'member_mark_mark': member_mark_mark,
+                'member_mark_name': m.member_mark.mark if m.member_mark else None,
                 'member_mark_properties': member_mark_properties,
                 'raw_element': raw_element_data,
                 # ▼▼▼ [추가] 할당된 공간분류 정보를 추가합니다. ▼▼▼
-                'space_classification_ids': [str(sc.id) for sc in m.space_classifications.all()],
-                # ▼▼▼ [추가] 분할 관련 필드 추가 ▼▼▼
+                # prefetch_related를 제대로 사용하기 위해 한 번만 호출
+            }
+            space_classifications_list = list(m.space_classifications.all())
+            item['space_classification_ids'] = [str(sc.id) for sc in space_classifications_list]
+            item['space_name'] = ', '.join([sc.full_path for sc in space_classifications_list if sc.full_path]) if space_classifications_list else None
+
+            # ▼▼▼ [추가] cost_codes 이름 목록도 포함 ▼▼▼
+            item['cost_codes'] = [f"{cc.code} - {cc.name}" for cc in m.cost_codes.all()]
+
+            # ▼▼▼ [추가] 분할 관련 필드 추가 ▼▼▼
+            item.update({
                 'is_active': m.is_active,
                 'split_element_id': str(m.split_element_id) if m.split_element_id else None,
-            }
+            })
             data.append(item)
         return JsonResponse(data, safe=False)
 
@@ -840,8 +903,8 @@ def quantity_members_api(request, project_id, member_id=None):
             return JsonResponse({'status': 'error', 'message': f'삭제 중 오류 발생: {str(e)}'}, status=500)
    
 
-    # --- PUT: 부재 수정 ---
-    elif request.method == 'PUT':
+    # --- PUT/PATCH: 부재 수정 ---
+    elif request.method in ['PUT', 'PATCH']:
         if not member_id:
             return JsonResponse({'status': 'error', 'message': 'Member ID가 필요합니다.'}, status=400)
         try:
@@ -859,22 +922,29 @@ def quantity_members_api(request, project_id, member_id=None):
                 member.member_mark_expression = data['member_mark_expression']
             if 'cost_code_expressions' in data:
                 member.cost_code_expressions = data['cost_code_expressions']
+            if 'locked_properties' in data:
+                member.locked_properties = data['locked_properties']
 
             # 2. 속성(properties)을 계산하고 병합합니다.
-            #    - 먼저 프론트엔드에서 보낸 수동 속성을 기본값으로 설정합니다.
-            final_properties = data.get('properties', member.properties or {})
+            #    - PATCH 요청인 경우, properties를 직접 업데이트 (산출식 포함)
+            if request.method == 'PATCH' and 'properties' in data:
+                # PATCH: 직접 properties 업데이트 (산출식 문자열 그대로 저장)
+                member.properties = data['properties']
+            else:
+                # PUT: 기존 로직 사용 (mapping_expression 기반 계산)
+                final_properties = data.get('properties', member.properties or {})
 
-            #    - BIM 원본 객체가 있으면 그 데이터를, 없으면 빈 dict를 데이터 소스로 사용합니다.
-            data_source = member.raw_element.raw_data if member.raw_element else {}
-            
-            #    - 업데이트된 맵핑식이 있다면, 이를 기반으로 속성을 계산합니다.
-            if member.mapping_expression:
-                calculated_properties = calculate_properties_from_rule(data_source, member.mapping_expression)
-                #    - 계산된 결과를 수동 속성에 덮어씁니다. (맵핑식 우선 적용)
-                final_properties.update(calculated_properties)
+                #    - BIM 원본 객체가 있으면 그 데이터를, 없으면 빈 dict를 데이터 소스로 사용합니다.
+                data_source = member.raw_element.raw_data if member.raw_element else {}
 
-            #    - 최종적으로 병합된 속성으로 업데이트합니다.
-            member.properties = final_properties
+                #    - 업데이트된 맵핑식이 있다면, 이를 기반으로 속성을 계산합니다.
+                if member.mapping_expression:
+                    calculated_properties = calculate_properties_from_rule(data_source, member.mapping_expression)
+                    #    - 계산된 결과를 수동 속성에 덮어씁니다. (맵핑식 우선 적용)
+                    final_properties.update(calculated_properties)
+
+                #    - 최종적으로 병합된 속성으로 업데이트합니다.
+                member.properties = final_properties
 
             # 3. M2M 필드 (공사코드, 일람부호)를 업데이트합니다.
             if 'cost_code_ids' in data:
@@ -917,8 +987,9 @@ def create_quantity_members_auto_view(request, project_id):
         rules = PropertyMappingRule.objects.filter(project=project).order_by('priority').select_related('target_tag')
         elements_qs = RawElement.objects.filter(project=project, classification_tags__isnull=False).prefetch_related('classification_tags').distinct()
 
-        if not rules.exists() and not QuantityMember.objects.filter(project=project, raw_element__isnull=False).exclude(mapping_expression={}).exists():
-             return JsonResponse({'status': 'info', 'message': '자동 생성을 위한 속성 맵핑 규칙이 없거나 개별 맵핑식이 적용된 부재가 없습니다.'})
+        # 분류 태그가 할당된 요소가 없고, 맵핑 규칙도 없으면 조기 리턴
+        if not elements_qs.exists() and not rules.exists() and not QuantityMember.objects.filter(project=project, raw_element__isnull=False).exclude(mapping_expression={}).exists():
+             return JsonResponse({'status': 'info', 'message': '자동 생성을 위한 분류 태그가 할당된 BIM 객체가 없고, 속성 맵핑 규칙도 없습니다.'})
 
         valid_member_ids = set()
         updated_count = 0
@@ -1025,7 +1096,7 @@ def manage_quantity_member_cost_codes_api(request, project_id):
             return JsonResponse({'status': 'error', 'message': '필수 파라미터가 누락되었습니다.'}, status=400)
 
         members = QuantityMember.objects.filter(project_id=project_id, id__in=member_ids)
-        
+
         if action == 'assign':
             if not cost_code_id:
                 return JsonResponse({'status': 'error', 'message': '할당할 공사코드 ID가 필요합니다.'}, status=400)
@@ -1034,17 +1105,89 @@ def manage_quantity_member_cost_codes_api(request, project_id):
                 member.cost_codes.add(cost_code_to_add)
             message = f'{len(member_ids)}개 부재에 공사코드 "{cost_code_to_add.name}"을(를) 추가했습니다.'
 
-        elif action == 'clear':
-            # 'clear' 액션은 모든 공사코드를 제거합니다.
+        elif action == 'remove':
+            # 'remove' 액션은 특정 공사코드를 제거합니다 (잠긴 코드는 제거 불가)
+            if not cost_code_id:
+                return JsonResponse({'status': 'error', 'message': '제거할 공사코드 ID가 필요합니다.'}, status=400)
+            cost_code_to_remove = CostCode.objects.get(id=cost_code_id, project_id=project_id)
+            removed_count = 0
+            locked_count = 0
             for member in members:
-                member.cost_codes.clear()
-            message = f'{len(member_ids)}개 부재의 모든 공사코드를 제거했습니다.'
-        
+                locked_ids = set(member.locked_cost_code_ids or [])
+                if str(cost_code_id) in locked_ids:
+                    locked_count += 1
+                else:
+                    member.cost_codes.remove(cost_code_to_remove)
+                    removed_count += 1
+
+            if locked_count > 0 and removed_count == 0:
+                message = f'공사코드 "{cost_code_to_remove.name}"은(는) 잠겨있어 제거할 수 없습니다.'
+            elif locked_count > 0:
+                message = f'{removed_count}개 부재에서 공사코드를 제거했습니다. ({locked_count}개는 잠금 상태로 제거되지 않음)'
+            else:
+                message = f'{removed_count}개 부재에서 공사코드 "{cost_code_to_remove.name}"을(를) 제거했습니다.'
+
+        elif action == 'clear':
+            # 'clear' 액션은 잠기지 않은 모든 공사코드만 제거합니다.
+            for member in members:
+                locked_ids = set(member.locked_cost_code_ids or [])
+                current_codes = list(member.cost_codes.all())
+                for code in current_codes:
+                    if str(code.id) not in locked_ids:
+                        member.cost_codes.remove(code)
+            message = f'{len(member_ids)}개 부재의 잠기지 않은 공사코드를 제거했습니다.'
+
         else:
             return JsonResponse({'status': 'error', 'message': '잘못된 action입니다. "assign" 또는 "clear"를 사용하세요.'}, status=400)
 
         return JsonResponse({'status': 'success', 'message': message})
 
+    except CostCode.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '존재하지 않는 공사코드입니다.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+@require_http_methods(["POST"])
+def toggle_cost_code_lock_api(request, project_id):
+    """특정 부재의 특정 공사코드 잠금 상태를 토글합니다."""
+    try:
+        data = json.loads(request.body)
+        member_id = data.get('member_id')
+        cost_code_id = data.get('cost_code_id')
+
+        if not all([member_id, cost_code_id]):
+            return JsonResponse({'status': 'error', 'message': '부재 ID와 공사코드 ID가 필요합니다.'}, status=400)
+
+        member = QuantityMember.objects.get(project_id=project_id, id=member_id)
+        cost_code = CostCode.objects.get(project_id=project_id, id=cost_code_id)
+
+        # 현재 잠금 상태 확인
+        locked_ids = member.locked_cost_code_ids or []
+        cost_code_id_str = str(cost_code.id)
+
+        if cost_code_id_str in locked_ids:
+            # 잠금 해제
+            locked_ids.remove(cost_code_id_str)
+            is_locked = False
+            message = f'공사코드 "{cost_code.name}"의 잠금을 해제했습니다.'
+        else:
+            # 잠금
+            locked_ids.append(cost_code_id_str)
+            is_locked = True
+            message = f'공사코드 "{cost_code.name}"을(를) 잠갔습니다.'
+
+        member.locked_cost_code_ids = locked_ids
+        member.save(update_fields=['locked_cost_code_ids'])
+
+        return JsonResponse({
+            'status': 'success',
+            'message': message,
+            'is_locked': is_locked,
+            'cost_code_id': cost_code_id_str
+        })
+
+    except QuantityMember.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '존재하지 않는 부재입니다.'}, status=404)
     except CostCode.DoesNotExist:
         return JsonResponse({'status': 'error', 'message': '존재하지 않는 공사코드입니다.'}, status=404)
     except Exception as e:
@@ -1107,8 +1250,10 @@ def manage_quantity_member_spaces_api(request, project_id):
                 return JsonResponse({'status': 'error', 'message': '할당할 공간분류 ID가 필요합니다.'}, status=400)
             space_to_add = SpaceClassification.objects.get(id=space_id, project_id=project_id)
             for member in members:
+                # 한 개만 할당하기 위해 기존 공간분류를 먼저 제거
+                member.space_classifications.clear()
                 member.space_classifications.add(space_to_add)
-            message = f"{len(member_ids)}개 부재에 '{space_to_add.name}' 공간을 할당했습니다."
+            message = f"{len(member_ids)}개 부재에 '{space_to_add.full_path}' 공간을 할당했습니다."
 
         elif action == 'clear':
             for member in members:
@@ -1896,15 +2041,29 @@ def apply_assignment_rules_view(request, project_id):
             # ... (이하 내부 로직은 대부분 동일) ...
             combined_properties = member.properties.copy() if member.properties else {}
             combined_properties['Name'] = member.name
-            
+            combined_properties['name'] = member.name  # 'name' 속성도 추가
+
             if member.raw_element and member.raw_element.raw_data:
                 raw_data = member.raw_element.raw_data
+                # BIM 속성들을 올바른 키 이름으로 저장
+                # 1. Attributes (raw_data의 직접 속성) - 키 이름 그대로 저장
                 for k, v in raw_data.items():
-                    if not isinstance(v, (dict, list)): combined_properties[f'BIM원본.{k}'] = v
-                for k, v in raw_data.get('TypeParameters', {}).items(): combined_properties[f'BIM원본.TypeParameters.{k}'] = v
-                for k, v in raw_data.get('Parameters', {}).items(): combined_properties[f'BIM원본.Parameters.{k}'] = v
-            
-            if member.classification_tag: combined_properties['classification_tag_name'] = member.classification_tag.name
+                    if k not in ['Parameters', 'TypeParameters'] and not isinstance(v, (dict, list)):
+                        combined_properties[k] = v  # 예: 'IfcClass', 'Name', 'ElementId' 등
+
+                # 2. Parameters - 'Parameters.{k}' 형태로 저장
+                if 'Parameters' in raw_data and isinstance(raw_data['Parameters'], dict):
+                    for k, v in raw_data['Parameters'].items():
+                        combined_properties[f'Parameters.{k}'] = v
+
+                # 3. TypeParameters - 'TypeParameters.{k}' 형태로 저장
+                if 'TypeParameters' in raw_data and isinstance(raw_data['TypeParameters'], dict):
+                    for k, v in raw_data['TypeParameters'].items():
+                        combined_properties[f'TypeParameters.{k}'] = v
+
+            if member.classification_tag:
+                combined_properties['classification_tag'] = member.classification_tag.name
+                combined_properties['classification_tag_name'] = member.classification_tag.name
             if member.member_mark:
                 combined_properties['member_mark_name'] = member.member_mark.mark
                 # ▼▼▼ [추가] 일람부호 속성을 대괄호 형태로 추가하여 조건에서 참조 가능하게 함 ▼▼▼
@@ -1945,11 +2104,23 @@ def apply_assignment_rules_view(request, project_id):
                     if evaluate_conditions(combined_properties, rule.conditions):
                         matching_expressions.append(rule.cost_code_expressions)
                 cost_code_exprs_list = matching_expressions
-            
+
             if cost_code_exprs_list:
                 codes_changed = False
                 current_codes_before = set(member.cost_codes.all())
-                
+
+                # ▼▼▼ [추가] 잠긴 공사코드 보존 로직 ▼▼▼
+                locked_ids = set(member.locked_cost_code_ids or [])
+                locked_codes = [code for code in current_codes_before if str(code.id) in locked_ids]
+
+                # 잠기지 않은 공사코드만 제거 (잠긴 코드는 유지)
+                for code in current_codes_before:
+                    if str(code.id) not in locked_ids:
+                        member.cost_codes.remove(code)
+                        codes_changed = True
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+                # 룰셋으로 새 공사코드 추가
                 for expr_set in cost_code_exprs_list:
                     if not isinstance(expr_set, dict): continue
                     code_val = evaluate_member_properties_expression(expr_set.get('code', ''), combined_properties)
@@ -1981,6 +2152,85 @@ def apply_assignment_rules_view(request, project_id):
     except Exception as e:
         import traceback
         return JsonResponse({'status': 'error', 'message': f'룰셋 적용 중 오류 발생: {str(e)}', 'details': traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["POST"])
+def apply_property_mapping_rules_view(request, project_id):
+    """
+    속성 맵핑 룰셋을 기존의 모든 수량산출부재에 일괄 적용합니다.
+    각 부재의 raw_element와 classification_tag를 기반으로 룰셋을 적용하여 properties를 업데이트합니다.
+    """
+    print("\n[DEBUG] --- '속성 룰셋 일괄적용' API 요청 수신 ---")
+    try:
+        project = Project.objects.get(id=project_id)
+
+        # 속성 맵핑 룰셋 조회
+        rules = PropertyMappingRule.objects.filter(project=project).order_by('priority').select_related('target_tag')
+
+        # 활성화된 수량산출부재 중 raw_element가 있는 것만 조회
+        members_qs = QuantityMember.objects.filter(
+            project=project,
+            is_active=True,
+            raw_element__isnull=False
+        ).select_related('raw_element', 'classification_tag')
+
+        if not rules.exists():
+            return JsonResponse({'status': 'info', 'message': '적용할 속성 맵핑 룰셋이 없습니다.'})
+
+        print(f"[DEBUG] {members_qs.count()}개의 수량산출부재에 대해 {rules.count()}개의 속성 룰셋 적용을 시작합니다.")
+
+        updated_count = 0
+
+        # 각 수량산출부재에 대해 룰셋 적용
+        for member in members_qs.iterator(chunk_size=500):
+            if not member.raw_element or not member.raw_element.raw_data:
+                continue
+
+            # 개별 맵핑식이 있으면 룰셋을 적용하지 않음
+            if member.mapping_expression and isinstance(member.mapping_expression, dict) and member.mapping_expression:
+                print(f"[DEBUG] 부재 {member.id}는 개별 맵핑식이 있어 건너뜁니다.")
+                continue
+
+            # 이 부재의 분류 태그와 일치하는 룰셋 찾기
+            matching_rule = None
+            for rule in rules:
+                # 분류 태그가 일치하는지 확인
+                if member.classification_tag and rule.target_tag_id == member.classification_tag.id:
+                    # 조건 평가
+                    if evaluate_conditions(member.raw_element.raw_data, rule.conditions):
+                        matching_rule = rule
+                        break
+
+            # 일치하는 룰셋이 있으면 속성 계산 및 업데이트
+            if matching_rule:
+                new_properties = calculate_properties_from_rule(member.raw_element.raw_data, matching_rule.mapping_script)
+
+                # 잠긴 속성 보존: locked_properties에 있는 속성은 기존 값 유지
+                locked_props = member.locked_properties if member.locked_properties else []
+                if locked_props and member.properties:
+                    for locked_key in locked_props:
+                        if locked_key in member.properties:
+                            new_properties[locked_key] = member.properties[locked_key]
+
+                # 기존 properties와 다르면 업데이트
+                if member.properties != new_properties:
+                    member.properties = new_properties
+                    member.save(update_fields=['properties'])
+                    updated_count += 1
+                    print(f"[DEBUG] 부재 {member.id}의 속성을 업데이트했습니다. (잠긴 속성 {len(locked_props)}개 보존)")
+
+        message = f'속성 룰셋 적용 완료! {updated_count}개 부재의 속성이 업데이트되었습니다.'
+        print(f"[DEBUG] {message}")
+        return JsonResponse({'status': 'success', 'message': message})
+
+    except Project.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] 속성 룰셋 적용 중 오류 발생: {str(e)}")
+        print(error_details)
+        return JsonResponse({'status': 'error', 'message': f'속성 룰셋 적용 중 오류 발생: {str(e)}', 'details': error_details}, status=500)
 
 
 @require_http_methods(["GET"])

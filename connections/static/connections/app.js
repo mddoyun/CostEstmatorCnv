@@ -23,7 +23,7 @@ function setupSpaceManagementListeners() {
     if (smPanel) {
         smPanel
             .querySelector(".left-panel-tabs")
-            ?.addEventListener("click", handleLeftPanelTabClick); // 좌측 패널 탭
+            ?.addEventListener("click", handleSpaceMgmtLeftPanelTabClick); // 좌측 패널 탭
         document
             .getElementById("sm-render-table-btn")
             ?.addEventListener("click", () =>
@@ -184,9 +184,14 @@ function setupCostCodeManagementListeners() {
 function setupMemberMarkManagementListeners() {
     document
         .getElementById("add-member-mark-btn")
-        ?.addEventListener("click", () =>
-            renderMemberMarksTable(loadedMemberMarks, "new")
-        );
+        ?.addEventListener("click", () => {
+            if (!currentProjectId) {
+                showToast('프로젝트를 먼저 선택해주세요.', 'warning');
+                console.warn('[WARN] Attempted to add member mark without project selected');
+                return;
+            }
+            renderMemberMarksTable(loadedMemberMarks, "new");
+        });
     document
         .getElementById("member-marks-table-container")
         ?.addEventListener("click", handleMemberMarkActions); // 수정, 삭제, 저장, 취소 위임
@@ -1080,8 +1085,8 @@ function handleConnectorModeChange(e) {
     console.log(`[UI] Connector mode changed to: ${currentMode}`); // 디버깅
 }
 
-// --- 좌측 패널 탭 클릭 핸들러 (Data Management, Space Management 공통) ---
-function handleLeftPanelTabClick(event) {
+// --- 좌측 패널 탭 클릭 핸들러 (Space Management용) ---
+function handleSpaceMgmtLeftPanelTabClick(event) {
     const clickedButton = event.target.closest(".left-panel-tab-button");
     if (!clickedButton || clickedButton.classList.contains("active")) {
         return; // 버튼 아니거나 이미 활성이면 무시
@@ -1137,3 +1142,51 @@ function saveBoqColumnSettings() {
         );
     }
 }
+
+// ==================== 패널 리사이저 기능 ====================
+// data-management 탭의 left-panel과 right-panel 사이의 리사이저 드래그 기능
+
+(function initializePanelResizer() {
+    const resizer = document.getElementById('data-management-resizer');
+    const leftPanel = document.querySelector('#data-management .left-panel');
+    
+    if (!resizer || !leftPanel) return;
+
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = leftPanel.offsetWidth;
+
+        resizer.classList.add('resizing');
+        document.body.classList.add('resizing');
+
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+
+        const deltaX = e.clientX - startX;
+        const newWidth = startWidth + deltaX;
+
+        // 최소/최대 너비 제한
+        const minWidth = 250;
+        const maxWidth = 800;
+
+        if (newWidth >= minWidth && newWidth <= maxWidth) {
+            leftPanel.style.width = `${newWidth}px`;
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!isResizing) return;
+
+        isResizing = false;
+        resizer.classList.remove('resizing');
+        document.body.classList.remove('resizing');
+    });
+})();
