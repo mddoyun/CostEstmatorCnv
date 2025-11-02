@@ -1725,12 +1725,12 @@
             const currentX = event.clientX - rect.left;
             const currentY = event.clientY - rect.top;
 
-            // Check if moved enough to be considered a drag (5px threshold)
+            // Check if moved enough to be considered a drag (15px threshold)
             const dx = currentX - dragStart.x;
             const dy = currentY - dragStart.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (distance > 5) {
+            if (distance > 15) {
                 isDragging = true;
                 dragCurrent = { x: currentX, y: currentY };
 
