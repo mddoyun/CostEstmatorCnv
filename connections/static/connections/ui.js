@@ -1,22 +1,89 @@
 // connections/static/connections/ui.js
 
+// BIM 필드명 변환 함수들 (계층적 명명 규칙 적용)
+
+// 내부 필드명을 표시용 계층 이름으로 변환
+function getDisplayFieldName(internalField) {
+    if (!internalField) return '';
+
+    // BIM.System.* - Cost Estimator 자체 관리 속성
+    const systemProps = ['id', 'element_unique_id', 'classification_tags', 'geometry_volume'];
+    if (systemProps.includes(internalField)) {
+        return `BIM.System.${internalField}`;
+    }
+
+    // BIM.TypeParameters.* - 타입 파라미터
+    if (internalField.startsWith('TypeParameters.')) {
+        const subKey = internalField.substring(15);
+        return `BIM.TypeParameters.${subKey}`;
+    }
+
+    // BIM.Attributes.* - IFC raw_data 직접 속성 (Blender/IFC 전용)
+    const ifcAttributeProps = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description',
+                                'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
+    if (ifcAttributeProps.includes(internalField)) {
+        return `BIM.Attributes.${internalField}`;
+    }
+
+    // BIM.Parameters.* - 나머지는 모두 Parameters로 간주
+    // Revit의 Category, Family 등도 실제로는 Parameters를 통해 접근 가능
+    return `BIM.Parameters.${internalField}`;
+}
+
+// 표시용 계층 이름을 내부 필드명으로 변환
+function getInternalFieldName(displayField) {
+    if (!displayField) return '';
+
+    // BIM. 접두어가 없으면 그대로 반환 (하위 호환성)
+    if (!displayField.startsWith('BIM.')) {
+        return displayField;
+    }
+
+    // BIM.System.* - Cost Estimator 자체 속성
+    if (displayField.startsWith('BIM.System.')) {
+        return displayField.substring(11); // 'BIM.System.' 제거
+    }
+
+    // BIM.TypeParameters.*
+    if (displayField.startsWith('BIM.TypeParameters.')) {
+        const subKey = displayField.substring(19); // 'BIM.TypeParameters.' 제거
+        return `TypeParameters.${subKey}`;
+    }
+
+    // BIM.Attributes.* - IFC raw_data 직접 속성
+    if (displayField.startsWith('BIM.Attributes.')) {
+        return displayField.substring(15); // 'BIM.Attributes.' 제거
+    }
+
+    // BIM.Parameters.*
+    if (displayField.startsWith('BIM.Parameters.')) {
+        return displayField.substring(15); // 'BIM.Parameters.' 제거
+    }
+
+    return displayField;
+}
+
 function getValueForItem(item, field) {
     if (!item || !field) return '';
-    if (field === 'classification_tags')
+
+    // 표시용 계층 이름을 내부 필드명으로 변환
+    const internalField = getInternalFieldName(field);
+
+    if (internalField === 'classification_tags')
         return Array.isArray(item.classification_tags)
             ? item.classification_tags.join(', ')
             : '';
     const raw_data = item.raw_data || {};
-    if (field in item && field !== 'raw_data') return item[field] ?? '';
-    if (field.startsWith('TypeParameters.')) {
-        const subKey = field.substring(15);
+    if (internalField in item && internalField !== 'raw_data') return item[internalField] ?? '';
+    if (internalField.startsWith('TypeParameters.')) {
+        const subKey = internalField.substring(15);
         return raw_data.TypeParameters
             ? raw_data.TypeParameters[subKey] ?? ''
             : '';
     }
-    if (raw_data.Parameters && field in raw_data.Parameters)
-        return raw_data.Parameters[field] ?? '';
-    if (field in raw_data) return raw_data[field] ?? '';
+    if (raw_data.Parameters && internalField in raw_data.Parameters)
+        return raw_data.Parameters[internalField] ?? '';
+    if (internalField in raw_data) return raw_data[internalField] ?? '';
     return '';
 }
 
@@ -85,20 +152,20 @@ function populateFieldSelection() {
     });
     const sortedRevitKeys = Array.from(revitKeysSet).sort();
 
-    // 3. 기존 로직: UI를 다시 그립니다 (innerHTML 덮어쓰기)
+    // 3. 기존 로직: UI를 다시 그립니다 (innerHTML 덮어쓰기) - 표시명 적용
     const fillContainers = (sysContainer, revContainer) => {
         if (!sysContainer || !revContainer) return;
         sysContainer.innerHTML = systemKeys
-            .map(
-                (k) =>
-                    `<label><input type="checkbox" class="field-checkbox" value="${k}"> ${k}</label>`
-            )
+            .map((k) => {
+                const displayName = getDisplayFieldName(k);
+                return `<label><input type="checkbox" class="field-checkbox" value="${displayName}"> ${displayName}</label>`;
+            })
             .join('');
         revContainer.innerHTML = sortedRevitKeys
-            .map(
-                (k) =>
-                    `<label><input type="checkbox" class="field-checkbox" value="${k}"> ${k}</label>`
-            )
+            .map((k) => {
+                const displayName = getDisplayFieldName(k);
+                return `<label><input type="checkbox" class="field-checkbox" value="${displayName}"> ${displayName}</label>`;
+            })
             .join('');
     };
 
@@ -121,13 +188,15 @@ function populateFieldSelection() {
     restoreCheckedState('#data-management', dmCheckedFields);
     restoreCheckedState('#space-management', smCheckedFields);
 
-    // 5. 기존 로직: 모든 그룹핑 드롭다운 메뉴를 업데이트합니다. (이 부분은 동일합니다)
-    const allKeysSorted = [...systemKeys, ...sortedRevitKeys].sort();
+    // 5. 기존 로직: 모든 그룹핑 드롭다운 메뉴를 업데이트합니다 - 표시명 적용
+    const allKeysDisplayNames = [...systemKeys, ...sortedRevitKeys]
+        .map(k => getDisplayFieldName(k))
+        .sort();
     const allGroupBySelects = document.querySelectorAll('.group-by-select');
     let optionsHtml =
         '<option value="">-- 필드 선택 --</option>' +
-        allKeysSorted
-            .map((key) => `<option value="${key}">${key}</option>`)
+        allKeysDisplayNames
+            .map((displayName) => `<option value="${displayName}">${displayName}</option>`)
             .join('');
     allGroupBySelects.forEach((select) => {
         const selectedValue = select.value;
@@ -2335,6 +2404,112 @@ function renderConditionRowForQM(condition, index) {
 }
 
 /**
+ * allRevitData로부터 BIM 속성 옵션을 동적으로 생성합니다.
+ * 계층적 명명 규칙을 적용하여 그룹화된 옵션 배열을 반환합니다.
+ */
+function generateBIMPropertyOptions() {
+    if (!allRevitData || allRevitData.length === 0) {
+        return [];
+    }
+
+    // 각 카테고리별로 필드 수집
+    const systemProps = new Set();
+    const attributeProps = new Set();
+    const instanceParams = new Set();
+    const typeParams = new Set();
+
+    // 시스템 속성 (Cost Estimator 관리)
+    const systemKeys = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
+    systemKeys.forEach(k => systemProps.add(k));
+
+    // IFC Attributes 속성
+    const ifcAttributeKeys = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description',
+                              'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
+
+    // allRevitData에서 모든 필드 수집
+    allRevitData.forEach((item) => {
+        const raw = item.raw_data;
+        if (raw) {
+            // TypeParameters 수집
+            if (raw.TypeParameters) {
+                Object.keys(raw.TypeParameters).forEach((k) => {
+                    typeParams.add(`TypeParameters.${k}`);
+                });
+            }
+            // Parameters 수집
+            if (raw.Parameters) {
+                Object.keys(raw.Parameters).forEach((k) => {
+                    instanceParams.add(k);
+                });
+            }
+            // raw_data 직접 속성 수집 (IFC Attributes)
+            Object.keys(raw).forEach((k) => {
+                if (k !== 'Parameters' && k !== 'TypeParameters') {
+                    if (ifcAttributeKeys.includes(k)) {
+                        attributeProps.add(k);
+                    } else {
+                        instanceParams.add(k);
+                    }
+                }
+            });
+        }
+    });
+
+    // 각 그룹을 정렬하고 표시명으로 변환
+    const propertyOptions = [];
+
+    // BIM.System.* 그룹
+    if (systemProps.size > 0) {
+        const options = Array.from(systemProps).sort().map(prop => {
+            const displayName = getDisplayFieldName(prop);
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM 시스템 속성 (Cost Estimator 관리)',
+            options: options
+        });
+    }
+
+    // BIM.Attributes.* 그룹 (IFC 전용)
+    if (attributeProps.size > 0) {
+        const options = Array.from(attributeProps).sort().map(prop => {
+            const displayName = getDisplayFieldName(prop);
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM Attributes (IFC 속성)',
+            options: options
+        });
+    }
+
+    // BIM.Parameters.* 그룹
+    if (instanceParams.size > 0) {
+        const options = Array.from(instanceParams).sort().map(prop => {
+            const displayName = getDisplayFieldName(prop);
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM Parameters (인스턴스 속성)',
+            options: options
+        });
+    }
+
+    // BIM.TypeParameters.* 그룹
+    if (typeParams.size > 0) {
+        const options = Array.from(typeParams).sort().map(prop => {
+            const displayName = getDisplayFieldName(prop);
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM TypeParameters (타입 속성)',
+            options: options
+        });
+    }
+
+    return propertyOptions;
+}
+
+/**
  * RawElement용 조건 빌더 단일 행 렌더링 (Classification Rules용)
  */
 function renderConditionRowForRE(condition, index) {
@@ -2342,26 +2517,8 @@ function renderConditionRowForRE(condition, index) {
     const operator = condition.operator || '==';
     const value = condition.value || '';
 
-    // RawElement 속성 옵션 생성
-    const propertyOptions = [
-        { group: 'RawElement 시스템 속성', options: [
-            { value: 'Category', label: 'Category (카테고리)' },
-            { value: 'Family', label: 'Family (패밀리)' },
-            { value: 'Type', label: 'Type (타입)' },
-            { value: 'Level', label: 'Level (레벨)' }
-        ]},
-        { group: 'RawElement Parameters', options: [
-            { value: 'Parameters.참조 레벨', label: 'Parameters.참조 레벨' },
-            { value: 'Parameters.구조용도', label: 'Parameters.구조용도' },
-            { value: 'Parameters.두께', label: 'Parameters.두께' },
-            { value: 'Parameters.너비', label: 'Parameters.너비' },
-            { value: 'Parameters.높이', label: 'Parameters.높이' }
-        ]},
-        { group: 'RawElement TypeParameters', options: [
-            { value: 'TypeParameters.구조용도', label: 'TypeParameters.구조용도' },
-            { value: 'TypeParameters.두께', label: 'TypeParameters.두께' }
-        ]}
-    ];
+    // RawElement 속성 옵션 동적 생성
+    const propertyOptions = generateBIMPropertyOptions();
 
     let propertySelectHtml = '<select class="condition-parameter" style="width: 100%; margin-bottom: 3px;">';
     propertySelectHtml += '<option value="">-- 속성 선택 --</option>';
