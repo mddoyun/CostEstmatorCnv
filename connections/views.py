@@ -365,6 +365,38 @@ def is_numeric(value):
     if value is None: return False
     try: float(value); return True
     except (ValueError, TypeError): return False
+
+def get_internal_field_name(display_field):
+    """
+    계층적 표시명 (BIM.System.*, BIM.Attributes.*, etc.)을 내부 필드명으로 변환합니다.
+    JavaScript의 getInternalFieldName()과 동일한 로직입니다.
+    """
+    if not display_field:
+        return ''
+
+    # BIM. 접두어가 없으면 그대로 반환 (하위 호환성)
+    if not display_field.startswith('BIM.'):
+        return display_field
+
+    # BIM.System.* - Cost Estimator 자체 속성
+    if display_field.startswith('BIM.System.'):
+        return display_field[11:]  # 'BIM.System.' 제거
+
+    # BIM.TypeParameters.*
+    if display_field.startswith('BIM.TypeParameters.'):
+        sub_key = display_field[19:]  # 'BIM.TypeParameters.' 제거
+        return f'TypeParameters.{sub_key}'
+
+    # BIM.Attributes.* - IFC raw_data 직접 속성
+    if display_field.startswith('BIM.Attributes.'):
+        return display_field[15:]  # 'BIM.Attributes.' 제거
+
+    # BIM.Parameters.*
+    if display_field.startswith('BIM.Parameters.'):
+        return display_field[15:]  # 'BIM.Parameters.' 제거
+
+    return display_field
+
 # 기존의 evaluate_conditions 함수를 찾아서 아래 코드로 교체해주세요.
 
 def evaluate_conditions(data_dict, conditions):
@@ -391,14 +423,17 @@ def evaluate_conditions(data_dict, conditions):
 
         if not all([p, o, v is not None]): return False
 
-        # ▼▼▼ [핵심 수정] 값 찾는 로직 개선 ▼▼▼
+        # ▼▼▼ [핵심 수정] 계층적 명명 규칙 지원 ▼▼▼
+        # 1. 계층적 표시명 (BIM.Attributes.*, etc.)을 내부 필드명으로 변환
+        internal_field = get_internal_field_name(p)
+
         actual_value = None
-        # 1. 먼저 data_dict에서 직접 키를 찾아봅니다 (예: 'classification_tag_name').
-        if p in data_dict:
-            actual_value = data_dict.get(p)
-        # 2. 직접 키가 없으면, 중첩된 구조(raw_data)를 탐색하는 기존 함수를 호출합니다.
+        # 2. 먼저 data_dict에서 직접 키를 찾아봅니다 (예: 'classification_tag_name').
+        if internal_field in data_dict:
+            actual_value = data_dict.get(internal_field)
+        # 3. 직접 키가 없으면, 중첩된 구조(raw_data)를 탐색하는 기존 함수를 호출합니다.
         else:
-            actual_value = get_value_from_element(data_dict, p)
+            actual_value = get_value_from_element(data_dict, internal_field)
         # ▲▲▲ [핵심 수정] 여기까지 입니다. ▲▲▲
             
         actual_v_str = str(actual_value or "")
