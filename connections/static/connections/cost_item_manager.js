@@ -281,7 +281,15 @@ function handleCostItemActions(event) {
     if (groupHeader && target.tagName !== 'BUTTON' && !target.closest('button') && target.tagName !== 'INPUT') {
         const groupPath = groupHeader.dataset.groupPath;
         ciCollapsedGroups[groupPath] = !ciCollapsedGroups[groupPath];
-        renderCostItemsTable(window.loadedCostItems);
+
+        // ▼▼▼ [수정] 액티비티별 뷰일 때는 확장된 데이터 사용 ▼▼▼
+        if (window.activeCiView === 'activity-view' && window.expandedCostItemsForActivityView) {
+            console.log('[DEBUG][handleCostItemActions] Using expandedCostItemsForActivityView for group toggle');
+            renderCostItemsTable(window.expandedCostItemsForActivityView);
+        } else {
+            renderCostItemsTable(window.loadedCostItems);
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         return;
     }
 
@@ -2953,6 +2961,15 @@ function handleCiViewTabClick(e) {
         // 기본 코스트아이템 뷰 - 그룹핑 초기화
         window.ciGroupingLevels = [];
         console.log('[DEBUG][handleCiViewTabClick] window.ciGroupingLevels reset to:', window.ciGroupingLevels);
+
+        // ▼▼▼ [추가] DOM 그룹핑 컨트롤도 초기화 ▼▼▼
+        const groupingControls = document.querySelectorAll('#ci-grouping-controls .group-by-select');
+        groupingControls.forEach(select => {
+            select.value = '';
+        });
+        console.log('[DEBUG][handleCiViewTabClick] DOM grouping controls cleared:', groupingControls.length, 'selects');
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         console.log('[DEBUG][handleCiViewTabClick] Rendering with loadedCostItems count:', window.loadedCostItems.length);
         renderCostItemsTable(window.loadedCostItems);
     } else if (viewType === 'activity-view') {
@@ -3036,6 +3053,11 @@ function renderCostItemsByActivityView() {
     // Activity.code를 최상위로, 사용자 설정 그룹핑을 하위로 설정
     window.ciGroupingLevels = ['Activity.code', ...userGroupingLevels];
     console.log('[DEBUG][renderCostItemsByActivityView] window.ciGroupingLevels set to:', window.ciGroupingLevels);
+
+    // ▼▼▼ [추가] 확장된 데이터를 글로벌 변수에 저장 (그룹 접기/펼치기 시 재사용) ▼▼▼
+    window.expandedCostItemsForActivityView = expandedItems;
+    console.log('[DEBUG][renderCostItemsByActivityView] Saved expandedItems to window.expandedCostItemsForActivityView');
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     console.log('[DEBUG][renderCostItemsByActivityView] Calling renderCostItemsTable with expandedItems...');
     renderCostItemsTable(expandedItems);
