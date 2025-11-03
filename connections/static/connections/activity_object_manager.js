@@ -1596,28 +1596,30 @@ function showManualAoQuantityInputModal() {
                 console.log(`[DEBUG][Manual AO Quantity] Direct mode: ${directValue}`);
 
                 for (const item of selectedItems) {
-                    item.quantity = directValue;
-                    item.is_manual = true;
-                    item.manual_formula = null;
-                    // 직접 입력 값을 quantity_expression에 저장
-                    item.quantity_expression = {
-                        mode: 'direct',
-                        value: directValue
+                    const updateData = {
+                        quantity: directValue,
+                        is_manual: true,
+                        manual_formula: null,
+                        quantity_expression: {
+                            mode: 'direct',
+                            value: directValue
+                        }
                     };
 
-                    const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`, {
-                        method: 'POST',
+                    const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/${item.id}/`, {
+                        method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': csrftoken,
                         },
-                        body: JSON.stringify(item),
+                        body: JSON.stringify(updateData),
                     });
 
                     if (saveResponse.ok) {
                         updatedCount++;
                     } else {
-                        console.warn('[WARN] Failed to save item:', item.id);
+                        const errorText = await saveResponse.text();
+                        console.warn('[WARN] Failed to save item:', item.id, errorText);
                     }
                 }
             } else {
@@ -1636,28 +1638,30 @@ function showManualAoQuantityInputModal() {
                     const calculatedQuantity = evaluateQuantityFormula(formula, aoContext);
 
                     if (calculatedQuantity !== null && !isNaN(calculatedQuantity)) {
-                        item.quantity = calculatedQuantity;
-                        item.is_manual = true;
-                        item.manual_formula = formula;
-                        // 산식을 quantity_expression에 저장
-                        item.quantity_expression = {
-                            mode: 'formula',
-                            formula: formula
+                        const updateData = {
+                            quantity: calculatedQuantity,
+                            is_manual: true,
+                            manual_formula: formula,
+                            quantity_expression: {
+                                mode: 'formula',
+                                formula: formula
+                            }
                         };
 
-                        const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`, {
-                            method: 'POST',
+                        const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/${item.id}/`, {
+                            method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-CSRFToken': csrftoken,
                             },
-                            body: JSON.stringify(item),
+                            body: JSON.stringify(updateData),
                         });
 
                         if (saveResponse.ok) {
                             updatedCount++;
                         } else {
-                            console.warn('[WARN] Failed to save item:', item.id);
+                            const errorText = await saveResponse.text();
+                            console.warn('[WARN] Failed to save item:', item.id, errorText);
                         }
                     } else {
                         console.warn('[WARN] Formula evaluation failed for item:', aoContext['Activity.code']);
@@ -2071,23 +2075,25 @@ async function recalculateAllAoQuantities() {
                     console.log(`[DEBUG][Auto Calc] Auto calculating for AO ${ao.id}: ${durationPerUnit} * ${ciQuantity} = ${newQuantity}`);
                 }
 
-                // AO.quantity 업데이트
-                ao.quantity = newQuantity;
-
                 // 서버에 저장
-                const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`, {
-                    method: 'POST',
+                const updateData = {
+                    quantity: newQuantity
+                };
+
+                const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/${ao.id}/`, {
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': csrftoken,
                     },
-                    body: JSON.stringify(ao),
+                    body: JSON.stringify(updateData),
                 });
 
                 if (saveResponse.ok) {
                     updatedCount++;
                 } else {
-                    console.warn(`[WARN][Auto Calc] Failed to save AO ${ao.id}`);
+                    const errorText = await saveResponse.text();
+                    console.warn(`[WARN][Auto Calc] Failed to save AO ${ao.id}:`, errorText);
                     errorCount++;
                 }
 

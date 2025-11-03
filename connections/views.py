@@ -6256,6 +6256,8 @@ def activity_objects_api(request, project_id, ao_id=None):
                 ao.is_manual = data['is_manual']
             if 'manual_formula' in data:
                 ao.manual_formula = data['manual_formula']
+            if 'quantity_expression' in data:
+                ao.quantity_expression = data['quantity_expression']
             if 'progress' in data:
                 ao.progress = data['progress']
             if 'metadata' in data:
@@ -6270,6 +6272,8 @@ def activity_objects_api(request, project_id, ao_id=None):
             return JsonResponse({'status': 'error', 'message': '해당 액티비티 객체를 찾을 수 없습니다.'}, status=404)
         except Exception as e:
             print(f"[ERROR][activity_objects_api] PUT Error: {e}")
+            import traceback
+            traceback.print_exc()
             return JsonResponse({'status': 'error', 'message': f'수정 중 오류 발생: {str(e)}'}, status=400)
 
     elif request.method == 'DELETE':
