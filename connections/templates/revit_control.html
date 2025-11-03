@@ -38,7 +38,7 @@
         <div class="app-container">
             <header class="app-header">
                 <div class="header-left">
-                    <h1>COST ESTIMATOR</h1>
+                    <h1>COST ESTIMATOR & SCHEDULER</h1>
                     <div id="connector-mode-selector">
                         <label
                             ><input
@@ -107,35 +107,17 @@
                 </div>
             </header>
             <nav class="main-nav">
+                <button class="nav-button active" data-primary-tab="home">
+                    🏠 홈
+                </button>
                 <button class="nav-button" data-primary-tab="management">
                     🗂️ 관리
                 </button>
-                <button class="nav-button active" data-primary-tab="takeoff">
-                    🧱 산출
+                <button class="nav-button" data-primary-tab="takeoff">
+                    🧱 작업
                 </button>
-                <button
-                    class="nav-button"
-                    data-primary-tab="detailed-estimation-dd"
-                >
-                    🧾 상세견적(DD)
-                </button>
-                <button
-                    class="nav-button"
-                    data-primary-tab="schematic-estimation-sd"
-                >
-                    🪙 개산견적(SD)
-                </button>
-                <button
-                    class="nav-button"
-                    data-primary-tab="gantt-chart"
-                >
-                    📊 공정표
-                </button>
-                <button
-                    class="nav-button"
-                    data-primary-tab="three-d-viewer"
-                >
-                    🧊 3D 뷰어
+                <button class="nav-button" data-primary-tab="results">
+                    📈 결과
                 </button>
             </nav>
             <div class="secondary-nav-container">
@@ -177,8 +159,8 @@
                         🧠 AI 모델 관리
                     </button>
                 </nav>
-                <nav id="secondary-nav-takeoff" class="secondary-nav active">
-                    <button class="sub-nav-button active" data-tab="data-management">
+                <nav id="secondary-nav-takeoff" class="secondary-nav">
+                    <button class="sub-nav-button" data-tab="data-management">
                         📊 BIM원본데이터
                     </button>
                     <button class="sub-nav-button" data-tab="quantity-members">
@@ -194,14 +176,106 @@
                         📅 액티비티 객체
                     </button>
                 </nav>
-                <nav
-                    id="secondary-nav-schematic-estimation-sd"
-                    class="secondary-nav"
-                ></nav>
+                <nav id="secondary-nav-home" class="secondary-nav active"></nav>
+                <nav id="secondary-nav-results" class="secondary-nav">
+                    <button class="sub-nav-button" data-tab="schematic-estimation-sd">
+                        🪙 개산견적(SD)
+                    </button>
+                    <button class="sub-nav-button" data-tab="detailed-estimation-dd">
+                        🧾 상세견적(DD)
+                    </button>
+                    <button class="sub-nav-button" data-tab="gantt-chart">
+                        📊 공정계획
+                    </button>
+                    <button class="sub-nav-button" data-tab="three-d-viewer">
+                        🧊 시뮬레이션
+                    </button>
+                </nav>
             </div>
 
             <div class="main-content">
-                <div id="data-management" class="tab-content active">
+                <div id="home" class="tab-content active" style="overflow-y: auto; height: 100%;">
+                    <div style="padding: 30px; max-width: 1400px; margin: 0 auto;">
+                        <h1 style="font-size: 32px; margin-bottom: 10px; color: #1976d2; font-weight: bold;">
+                            COST ESTIMATOR & SCHEDULER
+                        </h1>
+                        <p style="font-size: 16px; color: #666; margin-bottom: 30px;">
+                            BIM & AI 기반 건설원가산출 및 공정계획 시스템
+                        </p>
+
+                        <!-- 프로젝트 관리 섹션 -->
+                        <div style="background: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                            <h2 style="font-size: 20px; margin: 0 0 15px 0; color: #333;">프로젝트 관리</h2>
+
+                            <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                                <button id="home-import-project-btn" style="padding: 8px 16px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                                    📥 프로젝트 가져오기
+                                </button>
+                                <button id="home-export-project-btn" style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;" disabled>
+                                    📤 프로젝트 내보내기
+                                </button>
+                                <button id="home-delete-project-btn" style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-left: auto;" disabled>
+                                    🗑️ 프로젝트 삭제
+                                </button>
+                            </div>
+
+                            <div id="home-project-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                                <p style="padding: 20px; text-align: center; color: #999;">프로젝트 목록을 불러오는 중...</p>
+                            </div>
+
+                            <div id="home-current-project-info" style="margin-top: 15px; padding: 15px; background: #e3f2fd; border-radius: 4px; display: none;">
+                                <strong style="color: #1976d2;">현재 선택된 프로젝트:</strong>
+                                <span id="home-current-project-name" style="color: #333; margin-left: 10px;">없음</span>
+                            </div>
+                        </div>
+
+                        <!-- 빠른 작업 시작 섹션 -->
+                        <div style="margin-bottom: 30px;">
+                            <h2 style="font-size: 20px; margin-bottom: 20px; color: #333;">🚀 빠른 작업 시작</h2>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                                <!-- 상세내역서 카드 -->
+                                <div class="quick-action-card" data-target-tab="detailed-estimation-dd" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                    <div style="font-size: 48px; margin-bottom: 15px;">🧾</div>
+                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">상세내역서 보기</h3>
+                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">상세견적(DD) 확인 및 관리</p>
+                                </div>
+
+                                <!-- 공정표 카드 -->
+                                <div class="quick-action-card" data-target-tab="gantt-chart" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                    <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
+                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">공정계획 확인</h3>
+                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">간트차트 및 공정관리</p>
+                                </div>
+
+                                <!-- 시뮬레이션 카드 -->
+                                <div class="quick-action-card" data-target-tab="three-d-viewer" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                    <div style="font-size: 48px; margin-bottom: 15px;">🧊</div>
+                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">공정시뮬레이션</h3>
+                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">3D 시각화 및 시뮬레이션</p>
+                                </div>
+
+                                <!-- AI 기반 개산견적 카드 -->
+                                <div class="quick-action-card" data-target-tab="schematic-estimation-sd" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                    <div style="font-size: 48px; margin-bottom: 15px;">🧠</div>
+                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">AI 기반 개산견적</h3>
+                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">인공지능 기반 개략 공사비 예측</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 작업 가이드 -->
+                        <div style="background: #f5f5f5; border-radius: 8px; padding: 25px;">
+                            <h2 style="font-size: 18px; margin: 0 0 15px 0; color: #333;">📖 작업 가이드</h2>
+                            <ol style="color: #666; line-height: 2; margin: 0; padding-left: 20px;">
+                                <li><strong>관리</strong> 탭에서 수량산출분류, 공사코드, 액티비티 등을 설정하세요.</li>
+                                <li><strong>작업</strong> 탭에서 BIM 데이터를 불러오고 수량산출부재와 산출항목을 생성하세요.</li>
+                                <li><strong>결과</strong> 탭에서 개산견적, 상세견적, 공정계획을 확인하세요.</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="data-management" class="tab-content">
                     <aside class="left-panel">
                         <div class="control-box">
                             <h3>BIM 저작도구 연동</h3>
@@ -1875,7 +1949,7 @@
                     <div class="gantt-container" style="display: flex; flex-direction: column; height: calc(100vh - 120px); overflow: hidden;">
                         <div class="gantt-header" style="flex-shrink: 0;">
                             <h2>공정표 (간트차트)</h2>
-                            <div class="gantt-controls" style="display: flex; align-items: center; gap: 15px; margin-top: 15px;">
+                            <div class="gantt-controls" style="display: flex; align-items: center; gap: 15px; margin-top: 15px; flex-wrap: wrap;">
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <label for="project-start-date">프로젝트 시작일:</label>
                                     <input type="date" id="project-start-date" style="padding: 5px;">
@@ -1894,29 +1968,55 @@
                                     </select>
                                 </div>
                             </div>
-                        </div>
-                        <div id="gantt-chart-container" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; margin-top: 20px;">
-                            <p style="padding: 20px; text-align: center; color: #999;">로딩 중...</p>
-                        </div>
-                        <!-- 하단 탭 영역 -->
-                        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 20px; border-top: 2px solid #ddd; padding-top: 20px; overflow: hidden;">
-                            <!-- 탭 헤더 -->
-                            <div style="display: flex; border-bottom: 2px solid #ddd; margin-bottom: 15px; flex-shrink: 0;">
-                                <button class="gantt-bottom-tab-btn active" data-tab="detail" style="padding: 12px 24px; border: none; background: #1976d2; color: white; cursor: pointer; font-size: 14px; font-weight: bold; border-radius: 4px 4px 0 0; margin-right: 2px;">
-                                    상세 정보
-                                </button>
-                                <button class="gantt-bottom-tab-btn" data-tab="boq" style="padding: 12px 24px; border: none; background: #f5f5f5; color: #666; cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; margin-right: 2px;">
-                                    내역집계표
-                                </button>
-                            </div>
-                            <!-- 탭 내용 -->
-                            <div style="flex: 1; min-height: 0; overflow: hidden;">
-                                <!-- 상세 정보 탭 -->
-                                <div id="gantt-detail-container" class="gantt-bottom-tab-content active" data-tab="detail" style="height: 100%; overflow-y: auto; overflow-x: hidden;">
+                            <!-- 액티비티 단위 3D 연동 버튼 -->
+                            <div id="gantt-activity-3d-controls" style="display: none; margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 4px; border: 1px solid #4caf50;">
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <span style="font-weight: bold; color: #2e7d32;">선택한 액티비티:</span>
+                                    <span id="selected-activity-name" style="color: #2e7d32;"></span>
+                                    <div style="margin-left: auto; display: flex; gap: 8px;">
+                                        <button id="gantt-activity-select-in-client-btn" style="padding: 6px 12px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">BIM 저작도구에서 확인</button>
+                                        <button id="gantt-activity-select-in-3d-btn" style="padding: 6px 12px; background: #2196f3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">3D 뷰포트에서 확인</button>
+                                    </div>
                                 </div>
-                                <!-- 내역집계표 탭 -->
-                                <div id="gantt-boq-container" class="gantt-bottom-tab-content" data-tab="boq" style="display: none; height: 100%; overflow-y: auto; overflow-x: hidden;">
-                                    <p style="padding: 20px; text-align: center; color: #999;">기준일을 선택하면 해당 일자까지의 내역집계표가 표시됩니다.</p>
+                            </div>
+                        </div>
+                        <!-- 상단: 공정표 -->
+                        <div id="gantt-top-section" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 200px;">
+                            <div id="gantt-chart-container" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; margin-top: 20px;">
+                                <p style="padding: 20px; text-align: center; color: #999;">로딩 중...</p>
+                            </div>
+                        </div>
+                        <!-- 스플릿바 -->
+                        <div id="gantt-resize-handle" style="height: 8px; background: #ddd; cursor: ns-resize; display: flex; align-items: center; justify-content: center; border-top: 1px solid #bbb; border-bottom: 1px solid #bbb; flex: 0 0 8px;">
+                            <div style="width: 60px; height: 4px; background: #999; border-radius: 2px;"></div>
+                        </div>
+                        <!-- 하단: 상세정보 (접기/펼치기 가능) -->
+                        <div id="gantt-bottom-section" style="border-top: 2px solid #ddd; background: #fafafa; flex: 0 0 50px; display: flex; flex-direction: column; min-height: 50px;">
+                            <!-- 토글 헤더 -->
+                            <div id="gantt-bottom-toggle-header" style="padding: 12px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #e3f2fd; border-bottom: 1px solid #1976d2; flex: 0 0 auto;">
+                                <h3 style="margin: 0; color: #1976d2; font-size: 15px; font-weight: bold;">📊 상세 정보 / 내역집계표</h3>
+                                <span id="gantt-bottom-toggle-icon" style="font-size: 18px; color: #1976d2; font-weight: bold;">▼</span>
+                            </div>
+                            <!-- 하단 컨텐츠 -->
+                            <div id="gantt-bottom-content" style="display: none; background: white; flex: 1 1 auto; overflow: hidden; min-height: 0; flex-direction: column;">
+                                <!-- 탭 헤더 -->
+                                <div style="display: flex; border-bottom: 2px solid #ddd; margin-bottom: 15px; flex-shrink: 0; padding: 0 20px;">
+                                    <button class="gantt-bottom-tab-btn active" data-tab="detail" style="padding: 12px 24px; border: none; background: #1976d2; color: white; cursor: pointer; font-size: 14px; font-weight: bold; border-radius: 4px 4px 0 0; margin-right: 2px;">
+                                        상세 정보
+                                    </button>
+                                    <button class="gantt-bottom-tab-btn" data-tab="boq" style="padding: 12px 24px; border: none; background: #f5f5f5; color: #666; cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; margin-right: 2px;">
+                                        내역집계표
+                                    </button>
+                                </div>
+                                <!-- 탭 내용 -->
+                                <div style="flex: 1; min-height: 0; overflow: hidden; padding: 0 20px 20px 20px;">
+                                    <!-- 상세 정보 탭 -->
+                                    <div id="gantt-detail-container" class="gantt-bottom-tab-content active" data-tab="detail" style="height: 100%; overflow-y: auto; overflow-x: hidden;">
+                                    </div>
+                                    <!-- 내역집계표 탭 -->
+                                    <div id="gantt-boq-container" class="gantt-bottom-tab-content" data-tab="boq" style="display: none; height: 100%; overflow-y: auto; overflow-x: hidden;">
+                                        <p style="padding: 20px; text-align: center; color: #999;">기준일을 선택하면 해당 일자까지의 내역집계표가 표시됩니다.</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -3109,6 +3209,31 @@
         <script src="{% static 'connections/quantity_members_manager.js' %}"></script>
         <script src="{% static 'connections/cost_item_manager.js' %}"></script>
         <script src="{% static 'connections/activity_object_manager.js' %}"></script>
+        <script src="{% static 'connections/home_tab_handlers.js' %}"></script>
+        <script>
+            // Initialize home tab listeners and load project list on page load
+            console.log('[HTML] Initializing home tab...');
+
+            // Call setup function after a short delay to ensure DOM is ready
+            setTimeout(() => {
+                if (typeof window.setupHomeTabListeners === 'function') {
+                    console.log('[HTML] Calling setupHomeTabListeners...');
+                    window.setupHomeTabListeners();
+                } else {
+                    console.error('[HTML] setupHomeTabListeners function not found!');
+                }
+
+                // Load home project list if home tab is active
+                if (window.activeTab === 'home') {
+                    console.log('[HTML] Home tab is active, loading project list...');
+                    if (typeof window.loadHomeProjectList === 'function') {
+                        window.loadHomeProjectList();
+                    } else {
+                        console.error('[HTML] loadHomeProjectList function not found!');
+                    }
+                }
+            }, 100);
+        </script>
         <script src="{% static 'connections/app.js' %}"></script>
     </body>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

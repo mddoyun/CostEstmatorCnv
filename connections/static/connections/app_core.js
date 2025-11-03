@@ -3,7 +3,7 @@
     window.allRevitData = [];
     window.currentProjectId = null;
     window.currentMode = "revit";
-    window.activeTab = "ruleset-management"; // 초기 활성 탭 변경 (관리->룰셋)
+    window.activeTab = "home"; // 초기 활성 탭을 홈으로 설정
     window.viewerStates = {
         "data-management": {
             selectedElementIds: new Set(),
@@ -176,6 +176,13 @@
         setupAiModelManagementListeners(); // [신규] AI 탭
         setupSchematicEstimationListeners(); // [신규] SD 탭
 
+        // [추가] 홈 탭 리스너 설정
+        if (typeof window.setupHomeTabListeners === 'function') {
+            window.setupHomeTabListeners();
+        } else {
+            console.log("[DEBUG] setupHomeTabListeners not yet loaded.");
+        }
+
         // [수정] 3D Viewer는 모듈로 비동기 로드되므로 조건부 호출
         if (typeof window.setupThreeDViewerListeners === 'function') {
             window.setupThreeDViewerListeners();
@@ -197,48 +204,47 @@
             clearAllTabData(); // 프로젝트 없으면 초기화
         }
 
-        // --- 기본 탭 강제 활성화 (관리 -> 룰셋 관리) ---
-        // 페이지 로드 시 기본적으로 보여줄 탭을 설정합니다.
+        // --- 기본 탭 강제 활성화 (홈) ---
+        // 페이지 로드 시 기본적으로 홈 탭을 보여줍니다.
         const defaultPrimaryTabButton = document.querySelector(
-            '.main-nav .nav-button[data-primary-tab="management"]'
-        );
-        const defaultSubTabButton = document.querySelector(
-            '#secondary-nav-management .sub-nav-button[data-tab="ruleset-management"]'
+            '.main-nav .nav-button[data-primary-tab="home"]'
         );
 
-        if (defaultPrimaryTabButton && defaultSubTabButton) {
-            // 이미 활성화된 보조 탭이 있는지 확인 (예: 새로고침 후 브라우저가 상태 유지)
-            const alreadyActiveSubTab = document.querySelector(
-                ".secondary-nav.active .sub-nav-button.active"
+        if (defaultPrimaryTabButton) {
+            // 이미 활성화된 주 탭이 있는지 확인 (예: 새로고침 후 브라우저가 상태 유지)
+            const alreadyActivePrimaryTab = document.querySelector(
+                ".main-nav .nav-button.active"
             );
 
-            if (
-                !alreadyActiveSubTab ||
-                !alreadyActiveSubTab.closest("#secondary-nav-management")
-            ) {
+            if (!alreadyActivePrimaryTab || alreadyActivePrimaryTab.dataset.primaryTab !== 'home') {
                 console.log(
-                    "[DEBUG] No relevant active sub-tab found. Forcing activation of default: Management -> Ruleset Management"
+                    "[DEBUG] No relevant active tab found. Forcing activation of default: Home"
                 );
-                // 주 탭 클릭 -> 보조 탭 자동 클릭 순서로 진행 (약간의 지연 추가)
+                // 홈 탭 클릭
                 setTimeout(() => {
                     defaultPrimaryTabButton.click();
-                    // handleMainNavClick 함수가 자동으로 첫 번째 보조 탭(룰셋 관리)을 클릭해줍니다.
                 }, 150); // DOM 렌더링 및 다른 스크립트 실행 시간 확보
             } else {
                 console.log(
-                    "[DEBUG] Default tab activation skipped, an active sub-tab already exists in Management:",
-                    alreadyActiveSubTab.dataset.tab
+                    "[DEBUG] Default tab activation skipped, Home tab is already active"
                 );
-                // 이미 활성 탭이 있으면 해당 탭 데이터 로드
-                window.activeTab = alreadyActiveSubTab.dataset.tab; // Assign to global window.activeTab
+                // 이미 홈 탭이 활성화되어 있으면 홈 탭 데이터 로드
+                window.activeTab = "home"; // Assign to global window.activeTab
                 loadDataForActiveTab();
             }
         } else {
             console.warn(
-                "[WARN] Could not find default tab buttons (Management -> Ruleset) for initial activation."
+                "[WARN] Could not find Home tab button for initial activation."
             );
-            // 기본 탭 로드가 안될 경우 대비, 프로젝트가 있으면 데이터 관리 탭이라도 로드 시도
-            if (window.currentProjectId) {
+            // 홈 탭 버튼을 찾을 수 없으면 기존 management 탭으로 폴백
+            const fallbackButton = document.querySelector(
+                '.main-nav .nav-button[data-primary-tab="management"]'
+            );
+            if (fallbackButton) {
+                setTimeout(() => {
+                    fallbackButton.click();
+                }, 150);
+            } else if (window.currentProjectId) {
                 window.activeTab = "data-management"; // 임시 기본값
                 loadDataForActiveTab();
             }

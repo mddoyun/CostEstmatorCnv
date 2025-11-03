@@ -8,6 +8,10 @@
     let dataMgmtCamera = null; // ▼▼▼ [수정] 데이터 관리 탭의 독립 camera ▼▼▼
     let dataMgmtRenderer = null; // ▼▼▼ [추가] 데이터 관리 탭의 독립 렌더러 ▼▼▼
     let dataMgmtControls = null; // ▼▼▼ [추가] 데이터 관리 탭의 독립 컨트롤 ▼▼▼
+    let simScene = null; // ▼▼▼ [추가] 시뮬레이션 탭의 독립 scene ▼▼▼
+    let simCamera = null; // ▼▼▼ [추가] 시뮬레이션 탭의 독립 camera ▼▼▼
+    let simRenderer = null; // ▼▼▼ [추가] 시뮬레이션 탭의 독립 renderer ▼▼▼
+    let simControls = null; // ▼▼▼ [추가] 시뮬레이션 탭의 독립 controls ▼▼▼
     let geometryLoaded = false;
     let raycaster, mouse;
     let selectedObject = null;
@@ -33,6 +37,15 @@
     let dataMgmtLastRotateX = 0;
     let dataMgmtLastRotateY = 0;
     let dataMgmtKeys = { w: false, a: false, s: false, d: false, q: false, e: false };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 전용 변수들 ▼▼▼
+    let simRaycaster = null;
+    let simMouse = null;
+    let simSelectedObjects = [];
+    let simOriginalMaterials = new Map();
+    let simHoveredObject = null;
+    let simHiddenObjectIds = new Set();
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // For cycling through overlapping objects
@@ -1087,28 +1100,90 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 시뮬레이션 재생 컨트롤 ▼▼▼
+        // ▼▼▼ [추가] 시뮬레이션 탭 컨트롤 (공정표 탭 영역) ▼▼▼
+        const simCutoffDateInput = document.getElementById('sim-cutoff-date');
+        const applySimDateBtn = document.getElementById('apply-sim-date-btn');
+        const resetSimDateBtn = document.getElementById('reset-sim-date-btn');
         const simPlayBtn = document.getElementById('sim-play-btn');
         const simPauseBtn = document.getElementById('sim-pause-btn');
         const simStopBtn = document.getElementById('sim-stop-btn');
 
-        if (simPlayBtn) {
-            simPlayBtn.onclick = function() {
-                console.log("[3D Viewer] Starting simulation");
-                startSimulation();
+        // 시뮬레이션 날짜 적용 버튼
+        if (applySimDateBtn) {
+            applySimDateBtn.onclick = async function() {
+                const selectedDate = simCutoffDateInput?.value;
+                if (!selectedDate) {
+                    showToast('날짜를 선택해주세요', 'warning');
+                    return;
+                }
+                console.log("[Simulation] Applying date filter to main scene:", selectedDate);
+                await applyConstructionScheduleFilterWithColors(selectedDate);
+                showToast(`공정 기준일 ${selectedDate} 적용됨`, 'success');
             };
         }
 
+        // 시뮬레이션 초기화 버튼
+        if (resetSimDateBtn) {
+            resetSimDateBtn.onclick = function() {
+                console.log("[Simulation] Resetting simulation - clearing all filters");
+
+                // 1. 날짜 입력 초기화
+                if (simCutoffDateInput) {
+                    simCutoffDateInput.value = '';
+                }
+
+                // 2. 현재 날짜 표시 초기화
+                const currentDateDisplay = document.getElementById('sim-current-date');
+                if (currentDateDisplay) {
+                    currentDateDisplay.textContent = '';
+                }
+
+                // 3. 3D 뷰포트 초기화 (모든 객체 표시, 색상 복원)
+                showAll();
+
+                // 4. 공정표 초기화 (모든 액티비티 표시)
+                if (typeof renderViewerGanttChart === 'function') {
+                    renderViewerGanttChart(null); // null = 필터 없이 전체 표시
+                }
+
+                // 5. 내역집계표 초기화
+                const boqContainer = document.getElementById('viewer-boq-content');
+                if (boqContainer) {
+                    boqContainer.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">공정 기준일을 선택하면 해당 일자까지의 내역집계표가 표시됩니다.</p>';
+                }
+
+                showToast('시뮬레이션이 초기화되었습니다', 'success');
+            };
+        }
+
+        // 시뮬레이션 재생 버튼
+        console.log("[3D Viewer] Setting up sim-play-btn, found:", !!simPlayBtn);
+        if (simPlayBtn) {
+            simPlayBtn.onclick = function() {
+                console.log("[Simulation] Play button clicked - Starting simulation on main scene");
+                try {
+                    startSimulation();
+                } catch (error) {
+                    console.error("[Simulation] Error starting simulation:", error);
+                    showToast('시뮬레이션 시작 중 오류: ' + error.message, 'error');
+                }
+            };
+        } else {
+            console.warn("[3D Viewer] sim-play-btn NOT FOUND in setupThreeDViewerListeners!");
+        }
+
+        // 시뮬레이션 일시정지 버튼
         if (simPauseBtn) {
             simPauseBtn.onclick = function() {
-                console.log("[3D Viewer] Pausing simulation");
+                console.log("[Simulation] Pausing simulation");
                 pauseSimulation();
             };
         }
 
+        // 시뮬레이션 정지 버튼
         if (simStopBtn) {
             simStopBtn.onclick = function() {
-                console.log("[3D Viewer] Stopping simulation");
+                console.log("[Simulation] Stopping simulation");
                 stopSimulation();
             };
         }
@@ -2635,6 +2710,12 @@
         // ▼▼▼ [수정] 선택된 객체 중심 계산 (화면 이동 없음) ▼▼▼
         calculateSelectedObjectsCenter();
         // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 시뮬레이션 뷰어로 선택 동기화 ▼▼▼
+        if (typeof syncSelectionFromMainToSim === 'function') {
+            syncSelectionFromMainToSim();
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     // Deselect current object
@@ -2779,6 +2860,12 @@
 
         // Update visibility control buttons
         updateVisibilityControlButtons();
+
+        // ▼▼▼ [추가] 시뮬레이션 뷰어로 선택 동기화 ▼▼▼
+        if (typeof syncSelectionFromMainToSim === 'function') {
+            syncSelectionFromMainToSim();
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     /**
@@ -2844,6 +2931,12 @@
         // ▼▼▼ [수정] 선택된 객체 중심 계산 (화면 이동 없음) ▼▼▼
         calculateSelectedObjectsCenter();
         // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 시뮬레이션 뷰어로 선택 동기화 ▼▼▼
+        if (typeof syncSelectionFromMainToSim === 'function') {
+            syncSelectionFromMainToSim();
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     /**
@@ -3516,30 +3609,106 @@
         });
     }
 
-    // Display cost item details
-    function displayCostItemDetails(costItem) {
+    // Display cost item details (same format as cost_item_manager.js renderCiSelectedProperties)
+    function displayCostItemDetails(item) {
         const detailsContainer = document.getElementById('three-d-cost-item-details');
         if (!detailsContainer) return;
 
+        // Find associated QuantityMember
+        const member = item.quantity_member_id ? window.loadedQuantityMembers?.find(m => m.id === item.quantity_member_id) : null;
+
         let html = '';
-        html += '<div class="property-group">';
-        html += '<div class="property-row"><span class="property-label">ID:</span><span class="property-value">' + (costItem.id || 'N/A') + '</span></div>';
-        html += '<div class="property-row"><span class="property-label">이름:</span><span class="property-value">' + (costItem.name || 'N/A') + '</span></div>';
-        if (costItem.cost_code_name) {
-            html += '<div class="property-row"><span class="property-label">공사코드:</span><span class="property-value">' + costItem.cost_code_name + '</span></div>';
+
+        // ============ 1. CI 기본 속성 (코스트아이템 고유 속성) ============
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📊 산출항목 기본 속성</h4>';
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">CI.id</td><td class="prop-value">${item.id || 'N/A'}</td></tr>`;
+        if (item.quantity !== undefined) {
+            html += `<tr><td class="prop-name">CI.quantity</td><td class="prop-value">${item.quantity}</td></tr>`;
         }
-        if (costItem.quantity !== undefined) {
-            html += '<div class="property-row"><span class="property-label">수량:</span><span class="property-value">' + costItem.quantity + '</span></div>';
+        if (item.cost_code_name) {
+            html += `<tr><td class="prop-name">CI.cost_code_name</td><td class="prop-value">${item.cost_code_name}</td></tr>`;
         }
-        if (costItem.unit) {
-            html += '<div class="property-row"><span class="property-label">단위:</span><span class="property-value">' + costItem.unit + '</span></div>';
+        if (item.description) {
+            html += `<tr><td class="prop-name">CI.description</td><td class="prop-value">${item.description}</td></tr>`;
         }
+        if (item.quantity_member_id) {
+            html += `<tr><td class="prop-name">CI.quantity_member_id</td><td class="prop-value">${item.quantity_member_id}</td></tr>`;
+        }
+        if (item.raw_element_id) {
+            html += `<tr><td class="prop-name">CI.raw_element_id</td><td class="prop-value">${item.raw_element_id}</td></tr>`;
+        }
+        html += '</tbody></table>';
         html += '</div>';
+
+        if (!member) {
+            html += '<div class="property-section">';
+            html += '<p style="color: #999; font-style: italic;">연결된 수량산출부재가 없습니다.</p>';
+            html += '</div>';
+            detailsContainer.innerHTML = html;
+            return;
+        }
+
+        // ============ 2. QM 기본 속성 (상속) ============
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성 (상속 from QM)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${member.id || 'N/A'}</td></tr>`;
+        if (member.name) {
+            html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${member.name}</td></tr>`;
+        }
+        if (member.classification_tag_name) {
+            html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${member.classification_tag_name}</td></tr>`;
+        }
+        html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${member.is_active ? 'true' : 'false'}</td></tr>`;
+        if (member.raw_element_id) {
+            html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${member.raw_element_id}</td></tr>`;
+        }
+        if (member.split_element_id) {
+            html += `<tr><td class="prop-name">QM.split_element_id</td><td class="prop-value">${member.split_element_id}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+
+        // ============ 3. QM 부재 속성 (상속) ============
+        if (member.properties && Object.keys(member.properties).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            for (const [key, value] of Object.entries(member.properties)) {
+                if (value !== null && value !== undefined) {
+                    const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
+                    html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // ============ 4. MM 일람부호 (상속) ============
+        if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호 (상속 from MM)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            if (member.member_mark_mark) {
+                html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${member.member_mark_mark}</td></tr>`;
+            }
+            if (member.member_mark_properties) {
+                for (const [key, value] of Object.entries(member.member_mark_properties)) {
+                    if (value !== null && value !== undefined) {
+                        html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
+                    }
+                }
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
 
         detailsContainer.innerHTML = html;
     }
 
-    // Display activities in tab for selected BIM object
+    // Display activity objects in tab for selected BIM object
     function displayActivitiesInTab(object) {
         const listContainer = document.getElementById('three-d-activities-list');
         if (!listContainer) {
@@ -3547,31 +3716,38 @@
             return;
         }
         console.log('[3D Viewer] displayActivitiesInTab called for object:', object.userData);
+        console.log('[3D Viewer] window.loadedActivityObjects:', window.loadedActivityObjects);
 
-        // Find activities related to this object through quantity members and cost items
-        let activities = new Map(); // Use Map to avoid duplicates
+        // Find activity objects related to this object through cost items
+        let activityObjects = [];
 
         if (object.userData.splitElementId) {
             // Split object case
             const quantityMembers = findQuantityMembersBySplitElementId(object.userData.splitElementId);
+            console.log('[3D Viewer] Split case - Found QMs:', quantityMembers.length);
             quantityMembers.forEach(qm => {
-                // Activities from quantity member
-                if (qm.activity_id) {
-                    const activity = findActivityById(qm.activity_id);
-                    if (activity) {
-                        activities.set(activity.id, { ...activity, source: 'QuantityMember' });
-                    }
-                }
-                // Activities from cost items
-                const items = findCostItemsByQuantityMemberId(qm.id);
-                items.forEach(item => {
-                    if (item.activities && Array.isArray(item.activities)) {
-                        item.activities.forEach(activityId => {
-                            const activity = findActivityById(activityId);
-                            if (activity) {
-                                activities.set(activity.id, { ...activity, source: 'CostItem' });
+                const costItems = findCostItemsByQuantityMemberId(qm.id);
+                console.log('[3D Viewer] QM', qm.id, '- Found CostItems:', costItems.length);
+                costItems.forEach(ci => {
+                    console.log('[3D Viewer] Checking CostItem:', ci.id);
+                    // Find activity objects for this cost item
+                    if (window.loadedActivityObjects) {
+                        const aos = window.loadedActivityObjects.filter(ao => {
+                            // Handle both object and string cost_item field
+                            let ciId = null;
+                            if (ao.cost_item) {
+                                if (typeof ao.cost_item === 'object' && ao.cost_item.id) {
+                                    ciId = ao.cost_item.id;
+                                } else if (typeof ao.cost_item === 'string') {
+                                    ciId = ao.cost_item;
+                                }
+                            } else if (ao.cost_item_id) {
+                                ciId = ao.cost_item_id;
                             }
+                            return ciId && ciId.toString() === ci.id.toString();
                         });
+                        console.log('[3D Viewer] Found AOs for CI', ci.id, ':', aos.length);
+                        activityObjects.push(...aos);
                     }
                 });
             });
@@ -3583,46 +3759,52 @@
                 return;
             }
             const quantityMembers = findQuantityMembersByRawElementId(bimObjectId);
+            console.log('[3D Viewer] Original case - Found QMs:', quantityMembers.length);
             quantityMembers.forEach(qm => {
-                // Activities from quantity member
-                if (qm.activity_id) {
-                    const activity = findActivityById(qm.activity_id);
-                    if (activity) {
-                        activities.set(activity.id, { ...activity, source: 'QuantityMember' });
-                    }
-                }
-                // Activities from cost items
-                const items = findCostItemsByQuantityMemberId(qm.id);
-                items.forEach(item => {
-                    if (item.activities && Array.isArray(item.activities)) {
-                        item.activities.forEach(activityId => {
-                            const activity = findActivityById(activityId);
-                            if (activity) {
-                                activities.set(activity.id, { ...activity, source: 'CostItem' });
+                const costItems = findCostItemsByQuantityMemberId(qm.id);
+                console.log('[3D Viewer] QM', qm.id, '- Found CostItems:', costItems.length);
+                costItems.forEach(ci => {
+                    console.log('[3D Viewer] Checking CostItem:', ci.id);
+                    // Find activity objects for this cost item
+                    if (window.loadedActivityObjects) {
+                        const aos = window.loadedActivityObjects.filter(ao => {
+                            // Handle both object and string cost_item field
+                            let ciId = null;
+                            if (ao.cost_item) {
+                                if (typeof ao.cost_item === 'object' && ao.cost_item.id) {
+                                    ciId = ao.cost_item.id;
+                                } else if (typeof ao.cost_item === 'string') {
+                                    ciId = ao.cost_item;
+                                }
+                            } else if (ao.cost_item_id) {
+                                ciId = ao.cost_item_id;
                             }
+                            return ciId && ciId.toString() === ci.id.toString();
                         });
+                        console.log('[3D Viewer] Found AOs for CI', ci.id, ':', aos.length);
+                        activityObjects.push(...aos);
                     }
                 });
             });
         }
 
-        const activityList = Array.from(activities.values());
-
-        if (activityList.length === 0) {
-            listContainer.innerHTML = '<p class="no-selection">연관된 액티비티가 없습니다</p>';
+        if (activityObjects.length === 0) {
+            listContainer.innerHTML = '<p class="no-selection">연관된 액티비티 객체가 없습니다</p>';
             return;
         }
 
-        console.log('[3D Viewer] Found activities:', activityList);
+        console.log('[3D Viewer] Found activity objects:', activityObjects);
 
         let html = '';
-        activityList.forEach((activity) => {
-            html += `<div class="quantity-member-item" data-activity-id="${activity.id}">`;
-            html += `<div class="quantity-member-item-name">${activity.code} - ${activity.name || 'Unnamed Activity'}</div>`;
+        activityObjects.forEach((ao) => {
+            const activityName = ao.activity ? `${ao.activity.code} - ${ao.activity.name}` : 'N/A';
+            const costItemName = ao.cost_item ? (ao.cost_item.name || ao.cost_item.id) : 'N/A';
+            html += `<div class="quantity-member-item" data-ao-id="${ao.id}">`;
+            html += `<div class="quantity-member-item-name">${activityName}</div>`;
             html += `<div class="quantity-member-item-info">`;
-            html += `출처: ${activity.source}`;
-            if (activity.duration_per_unit) {
-                html += ` | 단위당 소요일수: ${activity.duration_per_unit}`;
+            html += `산출항목: ${costItemName}`;
+            if (ao.quantity !== undefined) {
+                html += ` | 수량: ${ao.quantity}`;
             }
             html += `</div>`;
             html += `</div>`;
@@ -3636,55 +3818,116 @@
             item.addEventListener('click', function() {
                 items.forEach(i => i.classList.remove('selected'));
                 this.classList.add('selected');
-                const activityId = this.getAttribute('data-activity-id');
-                const activity = activityList.find(a => a.id.toString() === activityId.toString());
-                if (activity) {
-                    displayActivityDetails(activity);
+                const aoId = this.getAttribute('data-ao-id');
+                const ao = activityObjects.find(a => a.id.toString() === aoId.toString());
+                if (ao) {
+                    displayActivityDetails(ao);
                 }
             });
         });
     }
 
-    // Display activity details
-    function displayActivityDetails(activity) {
+    // Display activity object details (same format as activity_object_manager.js renderAoPropertiesPanel)
+    function displayActivityDetails(ao) {
         const detailsContainer = document.getElementById('three-d-activity-details');
         if (!detailsContainer) return;
 
         let html = '';
-        html += '<div class="property-group">';
-        html += '<div class="property-row"><span class="property-label">ID:</span><span class="property-value">' + (activity.id || 'N/A') + '</span></div>';
-        html += '<div class="property-row"><span class="property-label">공정코드:</span><span class="property-value">' + (activity.code || 'N/A') + '</span></div>';
-        html += '<div class="property-row"><span class="property-label">공정명:</span><span class="property-value">' + (activity.name || 'N/A') + '</span></div>';
 
-        if (activity.description) {
-            html += '<div class="property-row"><span class="property-label">설명:</span><span class="property-value">' + activity.description + '</span></div>';
+        // ============ 1. AO 기본 속성 ============
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #6a1b9a; border-bottom: 2px solid #6a1b9a; padding-bottom: 5px;">📅 액티비티 객체 기본 속성</h4>';
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">AO.id</td><td class="prop-value">${ao.id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">AO.start_date</td><td class="prop-value">${ao.start_date || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">AO.end_date</td><td class="prop-value">${ao.end_date || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">AO.actual_duration</td><td class="prop-value">${ao.actual_duration || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">AO.quantity</td><td class="prop-value">${ao.quantity}</td></tr>`;
+        html += `<tr><td class="prop-name">AO.is_manual</td><td class="prop-value">${ao.is_manual ? 'true' : 'false'}</td></tr>`;
+        if (ao.manual_formula) {
+            html += `<tr><td class="prop-name">AO.manual_formula</td><td class="prop-value">${ao.manual_formula}</td></tr>`;
         }
-
-        if (activity.wbs_code) {
-            html += '<div class="property-row"><span class="property-label">WBS 코드:</span><span class="property-value">' + activity.wbs_code + '</span></div>';
-        }
-
-        if (activity.duration_per_unit) {
-            html += '<div class="property-row"><span class="property-label">단위당 소요일수:</span><span class="property-value">' + activity.duration_per_unit + '</span></div>';
-        }
-
-        if (activity.estimated_cost) {
-            html += '<div class="property-row"><span class="property-label">예상 비용:</span><span class="property-value">' + Number(activity.estimated_cost).toLocaleString() + '</span></div>';
-        }
-
-        if (activity.responsible_person) {
-            html += '<div class="property-row"><span class="property-label">담당자:</span><span class="property-value">' + activity.responsible_person + '</span></div>';
-        }
-
-        if (activity.contractor) {
-            html += '<div class="property-row"><span class="property-label">시공사:</span><span class="property-value">' + activity.contractor + '</span></div>';
-        }
-
-        if (activity.location) {
-            html += '<div class="property-row"><span class="property-label">작업 위치:</span><span class="property-value">' + activity.location + '</span></div>';
-        }
-
+        html += `<tr><td class="prop-name">AO.progress</td><td class="prop-value">${ao.progress}%</td></tr>`;
+        html += '</tbody></table>';
         html += '</div>';
+
+        // ============ 2. Activity 속성 ============
+        if (ao.activity) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d84315; border-bottom: 2px solid #d84315; padding-bottom: 5px;">⚙️ 액티비티 코드 속성</h4>';
+            html += '<table class="properties-table"><tbody>';
+            html += `<tr><td class="prop-name">Activity.code</td><td class="prop-value">${ao.activity.code || 'N/A'}</td></tr>`;
+            html += `<tr><td class="prop-name">Activity.name</td><td class="prop-value">${ao.activity.name || 'N/A'}</td></tr>`;
+            if (ao.activity.duration_per_unit !== null && ao.activity.duration_per_unit !== undefined) {
+                html += `<tr><td class="prop-name">Activity.duration_per_unit</td><td class="prop-value">${ao.activity.duration_per_unit}</td></tr>`;
+            }
+            if (ao.activity.responsible_person) {
+                html += `<tr><td class="prop-name">Activity.responsible_person</td><td class="prop-value">${ao.activity.responsible_person}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // ============ 3. CI 속성 (상속) ============
+        if (ao.cost_item) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📊 산출항목 속성 (상속 from CI)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            html += `<tr><td class="prop-name">CI.id</td><td class="prop-value">${ao.cost_item.id || 'N/A'}</td></tr>`;
+            if (ao.cost_item.quantity !== undefined) {
+                html += `<tr><td class="prop-name">CI.quantity</td><td class="prop-value">${ao.cost_item.quantity}</td></tr>`;
+            }
+            if (ao.cost_item.description) {
+                html += `<tr><td class="prop-name">CI.description</td><td class="prop-value">${ao.cost_item.description}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // ============ 4. CostCode 속성 (상속) ============
+        if (ao.cost_code) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #c62828; border-bottom: 2px solid #c62828; padding-bottom: 5px;">💰 공사코드 속성 (상속 from CostCode)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            html += `<tr><td class="prop-name">CostCode.code</td><td class="prop-value">${ao.cost_code.code || 'N/A'}</td></tr>`;
+            html += `<tr><td class="prop-name">CostCode.name</td><td class="prop-value">${ao.cost_code.name || 'N/A'}</td></tr>`;
+            if (ao.cost_code.detail_code) {
+                html += `<tr><td class="prop-name">CostCode.detail_code</td><td class="prop-value">${ao.cost_code.detail_code}</td></tr>`;
+            }
+            if (ao.cost_code.note) {
+                html += `<tr><td class="prop-name">CostCode.note</td><td class="prop-value">${ao.cost_code.note}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // ============ 5. QM 속성 (상속) ============
+        if (ao.quantity_member) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px;">📌 수량산출부재 기본 속성 (상속 from QM)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${ao.quantity_member.id || 'N/A'}</td></tr>`;
+            if (ao.quantity_member.name) {
+                html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${ao.quantity_member.name}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+
+            // QM properties
+            if (ao.quantity_member.properties && Object.keys(ao.quantity_member.properties).length > 0) {
+                html += '<div class="property-section">';
+                html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
+                html += '<table class="properties-table"><tbody>';
+                for (const [key, value] of Object.entries(ao.quantity_member.properties)) {
+                    if (value !== null && value !== undefined) {
+                        const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
+                        html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
+                    }
+                }
+                html += '</tbody></table>';
+                html += '</div>';
+            }
+        }
 
         detailsContainer.innerHTML = html;
     }
@@ -7018,31 +7261,68 @@
         console.log('[3D Viewer] showAll called');
         console.log('[3D Viewer] Current hiddenObjectIds size:', hiddenObjectIds.size);
         console.log('[3D Viewer] Selected object:', selectedObject ? getObjectId(selectedObject) : 'none');
+        console.log('[3D Viewer] [DEBUG] Checking global material maps:');
+        console.log('[3D Viewer] [DEBUG] originalMaterials size:', originalMaterials.size);
+        console.log('[3D Viewer] [DEBUG] simOriginalMaterials size:', simOriginalMaterials.size);
 
         let restoredCount = 0;
+        let materialRestoredCount = 0;
         let totalMeshes = 0;
         scene.traverse((object) => {
             if (object.isMesh) {
                 totalMeshes++;
                 const objectId = getObjectId(object);
                 if (objectId) {
+                    // 숨김 해제
                     const wasHidden = !object.visible;
                     if (wasHidden) {
                         object.visible = true;
                         restoredCount++;
-                        console.log('[3D Viewer] Restored object:', objectId);
+                        console.log('[3D Viewer] Restored visibility for object:', objectId);
                     }
+
+                    // ▼▼▼ [수정] 원본 재질 복원 - originalMaterials와 simOriginalMaterials 둘 다 확인 ▼▼▼
+                    let materialRestored = false;
+
+                    // 먼저 simOriginalMaterials 확인 (시뮬레이션 탭에서 저장된 재질)
+                    if (simOriginalMaterials.has(object.id)) {
+                        const originalMaterial = simOriginalMaterials.get(object.id);
+                        console.log('[3D Viewer] Restoring material from simOriginalMaterials for object:', objectId, 'mesh.id:', object.id);
+                        object.material = originalMaterial;
+                        object.material.needsUpdate = true;
+                        simOriginalMaterials.delete(object.id);
+                        materialRestoredCount++;
+                        materialRestored = true;
+                    }
+                    // 그 다음 originalMaterials 확인 (일반 뷰어에서 저장된 재질)
+                    else if (originalMaterials.has(object.id)) {
+                        const originalMaterial = originalMaterials.get(object.id);
+                        console.log('[3D Viewer] Restoring material from originalMaterials for object:', objectId, 'mesh.id:', object.id);
+                        object.material = originalMaterial;
+                        object.material.needsUpdate = true;
+                        originalMaterials.delete(object.id);
+                        materialRestoredCount++;
+                        materialRestored = true;
+                    }
+
+                    if (!materialRestored) {
+                        console.log('[3D Viewer] No original material found in any map for object:', objectId, 'mesh.id:', object.id);
+                    }
+                    // ▲▲▲ [수정] 여기까지 ▲▲▲
                 }
             }
         });
 
         hiddenObjectIds.clear();
+        simHiddenObjectIds.clear(); // 시뮬레이션 hidden IDs도 클리어
 
         console.log('[3D Viewer] Total meshes:', totalMeshes);
-        console.log('[3D Viewer] Restored', restoredCount, 'objects');
+        console.log('[3D Viewer] Restored visibility:', restoredCount, 'objects');
+        console.log('[3D Viewer] Restored materials:', materialRestoredCount, 'objects');
+        console.log('[3D Viewer] Remaining originalMaterials size:', originalMaterials.size);
         console.log('[3D Viewer] ========================================');
 
-        showToast(`모든 객체 표시 (${restoredCount}개 복원)`, 'success');
+        showToast(`모든 객체 표시 (숨김 ${restoredCount}개, 재질 ${materialRestoredCount}개 복원)`, 'success');
 
         // Persist visibility state
         window.viewerVisibilityState = { hiddenObjectIds: [] };
@@ -7503,21 +7783,52 @@
         const container = document.getElementById('viewer-gantt-chart-container');
         if (!container) return;
 
-        // Check if gantt data is available
+        // Check if gantt data is available, if not try to load it
         if (typeof window.ganttData === 'undefined' || !window.ganttData || window.ganttData.length === 0) {
-            container.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">간트차트 탭에서 먼저 간트차트를 로드해주세요</p>';
-            return;
+            // Try to load gantt chart data automatically
+            if (typeof window.loadGanttChart === 'function') {
+                console.log('[3D Viewer] Gantt data not loaded, attempting to load...');
+                window.loadGanttChart();
+                // After loading, the ganttData should be available
+                // Check again after a short delay to allow async loading
+                setTimeout(() => {
+                    if (window.ganttData && window.ganttData.length > 0) {
+                        renderViewerGanttChart(highlightDate);
+                    } else {
+                        container.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">간트차트 데이터가 없습니다. 액티비티 객체를 생성해주세요.</p>';
+                    }
+                }, 500);
+                return;
+            } else {
+                container.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">간트차트 로딩 함수를 찾을 수 없습니다.</p>';
+                return;
+            }
         }
 
         console.log('[3D Viewer] Rendering gantt chart with', window.ganttData.length, 'tasks');
 
-        // Get current date from input (if set)
-        const cutoffDateString = document.getElementById('viewer-cutoff-date')?.value;
-        const cutoffDate = cutoffDateString ? new Date(cutoffDateString) : null;
+        // ▼▼▼ [수정] highlightDate가 명시적으로 null이면 필터링하지 않음 ▼▼▼
+        // Get current date from input (if set) - but only if highlightDate is not explicitly null
+        let cutoffDate = null;
+        let cutoffDateString = null;
+
+        if (highlightDate === null) {
+            // Explicitly null - do not filter, show all tasks
+            console.log('[3D Viewer] highlightDate is null - showing all tasks without filter');
+        } else if (highlightDate) {
+            // highlightDate provided as parameter
+            cutoffDateString = highlightDate;
+            cutoffDate = new Date(highlightDate);
+        } else {
+            // Check input field - try sim-cutoff-date first (simulation tab), then viewer-cutoff-date
+            cutoffDateString = document.getElementById('sim-cutoff-date')?.value ||
+                             document.getElementById('viewer-cutoff-date')?.value;
+            cutoffDate = cutoffDateString ? new Date(cutoffDateString) : null;
+        }
 
         // Filter tasks: only show tasks that overlap with cutoff date
         let tasksToShow = window.ganttData;
-        if (cutoffDate) {
+        if (cutoffDate && highlightDate !== null) {
             tasksToShow = window.ganttData.filter(task => {
                 const startDate = new Date(task.start);
                 const endDate = new Date(task.end);
@@ -7525,7 +7836,10 @@
                 return startDate <= cutoffDate && endDate >= cutoffDate;
             });
             console.log('[3D Viewer] Filtered to', tasksToShow.length, 'overlapping tasks on', cutoffDateString);
+        } else {
+            console.log('[3D Viewer] Showing all', tasksToShow.length, 'tasks (no filter)');
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         if (tasksToShow.length === 0) {
             container.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">선택한 날짜에 진행 중인 액티비티가 없습니다</p>';
@@ -7638,10 +7952,15 @@
                     const clickedDate = this.getAttribute('data-date');
                     console.log('[3D Viewer] Gantt date cell clicked:', clickedDate);
 
-                    // Update date input
-                    const dateInput = document.getElementById('viewer-cutoff-date');
-                    if (dateInput) {
-                        dateInput.value = clickedDate;
+                    // Update date input - try sim-cutoff-date first (simulation tab), then viewer-cutoff-date
+                    const simDateInput = document.getElementById('sim-cutoff-date');
+                    const viewerDateInput = document.getElementById('viewer-cutoff-date');
+
+                    if (simDateInput) {
+                        simDateInput.value = clickedDate;
+                    }
+                    if (viewerDateInput) {
+                        viewerDateInput.value = clickedDate;
                     }
 
                     // Apply filter
@@ -7656,14 +7975,20 @@
     /**
      * ▼▼▼ [추가] 색상 구분 필터링 (간트차트 클릭용) ▼▼▼
      */
-    async function applyConstructionScheduleFilterWithColors(cutoffDateString) {
+    // ▼▼▼ [수정] scene 파라미터 추가 - 시뮬레이션 뷰어와 메인 뷰어 모두 지원 ▼▼▼
+    async function applyConstructionScheduleFilterWithColors(cutoffDateString, targetScene = null) {
+        // If no scene specified, use main scene
+        const workingScene = targetScene || scene;
+        const isSimulationScene = (targetScene === simScene);
+
         try {
             if (!window.currentProjectId) {
                 showToast('프로젝트를 먼저 선택하세요', 'warning');
                 return;
             }
 
-            console.log('[3D Viewer] Applying construction schedule filter with colors for date:', cutoffDateString);
+            const sceneType = isSimulationScene ? '[Simulation Scene]' : '[Main Scene]';
+            console.log(sceneType, 'Applying construction schedule filter with colors for date:', cutoffDateString);
             const cutoffDate = new Date(cutoffDateString);
 
             // Check if gantt chart data is available
@@ -7702,7 +8027,7 @@
             const completedActivityIds = new Set(completedTasks.map(t => t.activityId));
             const inProgressActivityIds = new Set(inProgressTasks.map(t => t.activityId));
 
-            // 3. Get cost items
+            // 3. Get cost items and quantity members
             let costItems;
             if (typeof window.ganttCostItems !== 'undefined' && window.ganttCostItems && window.ganttCostItems.length > 0) {
                 costItems = window.ganttCostItems;
@@ -7713,6 +8038,46 @@
                 }
                 costItems = await costItemResponse.json();
             }
+
+            // Load quantity members to get raw_element_id mapping
+            let quantityMembers = [];
+            if (typeof window.loadedQuantityMembers !== 'undefined' && window.loadedQuantityMembers && window.loadedQuantityMembers.length > 0) {
+                quantityMembers = window.loadedQuantityMembers;
+            } else {
+                try {
+                    const qmResponse = await fetch(`/connections/api/quantity-members/${window.currentProjectId}/`);
+                    if (qmResponse.ok) {
+                        quantityMembers = await qmResponse.json();
+                    }
+                } catch (e) {
+                    console.warn('[3D Viewer] Failed to load quantity members:', e);
+                }
+            }
+
+            // Create mapping: quantity_member_id -> raw_element_id
+            const qmIdToElementId = new Map();
+            console.log('[DEBUG] Total quantity members loaded:', quantityMembers.length);
+
+            quantityMembers.forEach((qm, idx) => {
+                console.log(`[DEBUG] QM #${idx}:`, {
+                    id: qm.id,
+                    name: qm.name,
+                    raw_element_id: qm.raw_element_id,
+                    split_element_id: qm.split_element_id
+                });
+
+                if (qm.raw_element_id) {
+                    qmIdToElementId.set(qm.id, qm.raw_element_id);
+                    console.log(`[DEBUG] Mapped QM ${qm.id} -> raw_element ${qm.raw_element_id}`);
+                }
+                if (qm.split_element_id) {
+                    qmIdToElementId.set(qm.id, qm.split_element_id);
+                    console.log(`[DEBUG] Mapped QM ${qm.id} -> split_element ${qm.split_element_id}`);
+                }
+            });
+
+            console.log('[3D Viewer] QM to Element ID mapping:', qmIdToElementId.size, 'entries');
+            console.log('[DEBUG] Full mapping contents:', Array.from(qmIdToElementId.entries()));
 
             // 4. Filter cost items
             const completedCostItems = costItems.filter(item =>
@@ -7725,29 +8090,120 @@
 
             console.log('[3D Viewer] Cost items - Completed:', completedCostItems.length, 'In-progress:', inProgressCostItems.length);
 
+            // ▼▼▼ [디버깅] Cost item 구조 확인 ▼▼▼
+            if (inProgressCostItems.length > 0) {
+                console.log('[DEBUG] Sample in-progress cost item:', inProgressCostItems[0]);
+                console.log('[DEBUG] Cost item keys:', Object.keys(inProgressCostItems[0]));
+            }
+            // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
             // 5. Extract element IDs
             const completedElementIds = new Set();
             const inProgressElementIds = new Set();
 
-            completedCostItems.forEach(item => {
-                if (item.raw_element_id) completedElementIds.add(item.raw_element_id);
-                if (item.split_element_id) completedElementIds.add(item.split_element_id);
+            // ▼▼▼ [디버깅] 상세 로그 추가 ▼▼▼
+            console.log('[DEBUG] === Detailed activity_objects debugging ===');
+            console.log('[DEBUG] Completed cost items count:', completedCostItems.length);
+            console.log('[DEBUG] In-progress cost items count:', inProgressCostItems.length);
+
+            completedCostItems.forEach((item, itemIdx) => {
+                console.log(`[DEBUG] Completed item #${itemIdx}:`, {
+                    id: item.id,
+                    description: item.description,
+                    activity_objects_type: typeof item.activity_objects,
+                    activity_objects_isArray: Array.isArray(item.activity_objects),
+                    activity_objects_length: item.activity_objects ? item.activity_objects.length : 0
+                });
+
+                // Extract element IDs from activity_objects
+                // ▼▼▼ [수정] quantity_member는 중첩 객체 구조 (quantity_member.id) ▼▼▼
+                if (item.activity_objects && Array.isArray(item.activity_objects)) {
+                    console.log(`[DEBUG] Processing ${item.activity_objects.length} activity objects from completed item #${itemIdx}`);
+                    item.activity_objects.forEach((ao, aoIdx) => {
+                        console.log(`[DEBUG] Completed AO #${aoIdx}:`, ao);
+
+                        // quantity_member는 중첩 객체
+                        const qmId = ao.quantity_member?.id;
+                        console.log(`[DEBUG] AO quantity_member.id:`, qmId);
+
+                        if (qmId) {
+                            const elementId = qmIdToElementId.get(qmId);
+                            console.log(`[DEBUG] Looking up QM ${qmId} -> Element ${elementId}`);
+                            if (elementId) {
+                                completedElementIds.add(elementId);
+                                console.log('[DEBUG] Completed item - QM:', qmId, '-> Element:', elementId);
+                            } else {
+                                console.log('[DEBUG] No element ID found in mapping for QM:', qmId);
+                            }
+                        } else {
+                            console.log('[DEBUG] AO has no quantity_member or quantity_member.id');
+                        }
+                    });
+                } else {
+                    console.log(`[DEBUG] Completed item #${itemIdx} has no valid activity_objects array`);
+                }
             });
 
-            inProgressCostItems.forEach(item => {
-                if (item.raw_element_id) inProgressElementIds.add(item.raw_element_id);
-                if (item.split_element_id) inProgressElementIds.add(item.split_element_id);
-            });
+            inProgressCostItems.forEach((item, itemIdx) => {
+                console.log(`[DEBUG] In-progress item #${itemIdx}:`, {
+                    id: item.id,
+                    description: item.description,
+                    activity_objects_type: typeof item.activity_objects,
+                    activity_objects_isArray: Array.isArray(item.activity_objects),
+                    activity_objects_length: item.activity_objects ? item.activity_objects.length : 0
+                });
 
-            console.log('[3D Viewer] Element IDs - Completed:', completedElementIds.size, 'In-progress:', inProgressElementIds.size);
+                // Extract element IDs from activity_objects
+                // ▼▼▼ [수정] quantity_member는 중첩 객체 구조 (quantity_member.id) ▼▼▼
+                if (item.activity_objects && Array.isArray(item.activity_objects)) {
+                    console.log(`[DEBUG] Processing ${item.activity_objects.length} activity objects from in-progress item #${itemIdx}`);
+                    item.activity_objects.forEach((ao, aoIdx) => {
+                        console.log(`[DEBUG] In-progress AO #${aoIdx}:`, ao);
+
+                        // quantity_member는 중첩 객체
+                        const qmId = ao.quantity_member?.id;
+                        console.log(`[DEBUG] AO quantity_member.id:`, qmId);
+
+                        if (qmId) {
+                            const elementId = qmIdToElementId.get(qmId);
+                            console.log(`[DEBUG] Looking up QM ${qmId} -> Element ${elementId}`);
+                            if (elementId) {
+                                inProgressElementIds.add(elementId);
+                                console.log('[DEBUG] In-progress item - QM:', qmId, '-> Element:', elementId);
+                            } else {
+                                console.log('[DEBUG] No element ID found in mapping for QM:', qmId);
+                            }
+                        } else {
+                            console.log('[DEBUG] AO has no quantity_member or quantity_member.id');
+                        }
+                    });
+                } else {
+                    console.log(`[DEBUG] In-progress item #${itemIdx} has no valid activity_objects array`);
+                }
+            });
+            console.log('[DEBUG] === End of detailed debugging ===');
+            // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
+            console.log(sceneType, 'Element IDs - Completed:', completedElementIds.size, 'In-progress:', inProgressElementIds.size);
 
             // 6. Apply colors to objects
-            hiddenObjectIds.clear();
+            // ▼▼▼ [수정] 시뮬레이션 scene일 때는 시뮬레이션 전용 변수 사용 ▼▼▼
+            const workingHiddenIds = isSimulationScene ? simHiddenObjectIds : hiddenObjectIds;
+            const workingMaterials = isSimulationScene ? simOriginalMaterials : originalMaterials;
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            // [DEBUG] Verify reference equality
+            console.log(sceneType, '[DEBUG] Reference check - workingMaterials === originalMaterials:', workingMaterials === originalMaterials);
+            console.log(sceneType, '[DEBUG] workingMaterials === simOriginalMaterials:', workingMaterials === simOriginalMaterials);
+            console.log(sceneType, '[DEBUG] workingMaterials size BEFORE clear:', workingMaterials.size);
+            console.log(sceneType, '[DEBUG] originalMaterials size BEFORE clear:', originalMaterials.size);
+
+            workingHiddenIds.clear();
             let completedCount = 0;
             let inProgressCount = 0;
             let hiddenCount = 0;
 
-            scene.traverse((object) => {
+            workingScene.traverse((object) => {
                 if (object.isMesh) {
                     const objectId = getObjectId(object);
                     if (objectId) {
@@ -7759,6 +8215,14 @@
                             // 분할 객체: splitElementId만 체크 (rawElementId 체크 안 함 - 다른 분할 객체와 구분하기 위해)
                             isInProgress = inProgressElementIds.has(object.userData.splitElementId);
                             isCompleted = completedElementIds.has(object.userData.splitElementId);
+
+                            console.log(sceneType, '[DEBUG] Split object check:', {
+                                splitElementId: object.userData.splitElementId,
+                                isInProgress,
+                                isCompleted,
+                                inProgressIds: Array.from(inProgressElementIds),
+                                completedIds: Array.from(completedElementIds)
+                            });
                         } else {
                             // 원본 객체: bimObjectId 또는 rawElementId 체크
                             isInProgress = inProgressElementIds.has(objectId) ||
@@ -7768,33 +8232,46 @@
                             isCompleted = completedElementIds.has(objectId) ||
                                         completedElementIds.has(object.userData.bimObjectId) ||
                                         completedElementIds.has(object.userData.rawElementId);
+
+                            console.log(sceneType, '[DEBUG] Original object check:', {
+                                objectId,
+                                bimObjectId: object.userData.bimObjectId,
+                                rawElementId: object.userData.rawElementId,
+                                isInProgress,
+                                isCompleted,
+                                inProgressIds: Array.from(inProgressElementIds),
+                                completedIds: Array.from(completedElementIds)
+                            });
                         }
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                         if (isInProgress) {
-                            // In-progress: RED
+                            // In-progress: BLUE
                             object.visible = true;
 
-                            if (!originalMaterials.has(object)) {
-                                originalMaterials.set(object, object.material.clone());
+                            if (!workingMaterials.has(object.id)) {
+                                console.log(sceneType, '[DEBUG] Saving original material for object.id:', object.id, 'objectId:', objectId);
+                                workingMaterials.set(object.id, object.material);
+                                console.log(sceneType, '[DEBUG] workingMaterials size after save:', workingMaterials.size);
                             }
 
-                            const redMaterial = new THREE.MeshStandardMaterial({
-                                color: 0xFF0000, // Red
+                            const blueMaterial = new THREE.MeshStandardMaterial({
+                                color: 0x0066FF, // Blue
                                 metalness: 0.3,
                                 roughness: 0.5,
-                                emissive: 0xFF0000,
+                                emissive: 0x0066FF,
                                 emissiveIntensity: 0.3
                             });
-                            object.material = redMaterial;
+                            object.material = blueMaterial;
                             inProgressCount++;
+                            console.log(sceneType, '[DEBUG] Object set to IN-PROGRESS (BLUE), visible:', object.visible);
 
                         } else if (isCompleted) {
                             // Completed: GRAY
                             object.visible = true;
 
-                            if (!originalMaterials.has(object)) {
-                                originalMaterials.set(object, object.material.clone());
+                            if (!workingMaterials.has(object.id)) {
+                                workingMaterials.set(object.id, object.material);
                             }
 
                             const grayMaterial = new THREE.MeshStandardMaterial({
@@ -7804,30 +8281,37 @@
                             });
                             object.material = grayMaterial;
                             completedCount++;
+                            console.log(sceneType, '[DEBUG] Object set to COMPLETED (GRAY), visible:', object.visible);
 
                         } else {
                             // Future or not related: HIDE
                             object.visible = false;
-                            hiddenObjectIds.add(objectId);
+                            workingHiddenIds.add(objectId);
                             hiddenCount++;
+                            console.log(sceneType, '[DEBUG] Object set to HIDDEN, visible:', object.visible);
 
                             // Restore original material
-                            if (originalMaterials.has(object)) {
-                                object.material = originalMaterials.get(object);
+                            if (workingMaterials.has(object.id)) {
+                                object.material = workingMaterials.get(object.id);
+                                workingMaterials.delete(object.id);
                             }
                         }
                     }
                 }
             });
 
-            console.log('[3D Viewer] Color filtering complete - Completed(gray):', completedCount, 'In-progress(red):', inProgressCount, 'Hidden:', hiddenCount);
+            console.log(sceneType, 'Color filtering complete - Completed(gray):', completedCount, 'In-progress(blue):', inProgressCount, 'Hidden:', hiddenCount);
 
             // ▼▼▼ [수정] 고정 상태 표시 영역 업데이트 (토스트 대신) ▼▼▼
-            const statusDisplay = document.getElementById('schedule-status-display');
-            const statusText = document.getElementById('schedule-status-text');
+            // 시뮬레이션 scene인지 메인 scene인지에 따라 다른 패널 업데이트
+            const statusDisplayId = isSimulationScene ? 'simulation-schedule-status-display' : 'schedule-status-display';
+            const statusTextId = isSimulationScene ? 'simulation-schedule-status-text' : 'schedule-status-text';
+
+            const statusDisplay = document.getElementById(statusDisplayId);
+            const statusText = document.getElementById(statusTextId);
             if (statusDisplay && statusText) {
                 statusText.innerHTML = `<div style="margin-bottom: 5px; font-size: 14px; color: #4fc3f7;">${cutoffDateString} 기준</div>` +
-                                      `<div style="color: #ff5252;">진행중: ${inProgressCount}개 (빨강)</div>` +
+                                      `<div style="color: #0066FF;">진행중: ${inProgressCount}개 (파랑)</div>` +
                                       `<div style="color: #bdbdbd;">완료: ${completedCount}개 (회색)</div>` +
                                       `<div style="color: #888;">숨김: ${hiddenCount}개</div>`;
                 statusDisplay.style.display = 'block';
@@ -7840,10 +8324,10 @@
             // Update button states
             updateVisibilityControlButtons();
 
-            // Update gantt chart
+            // Update gantt chart - pass cutoffDateString to maintain filter
             const ganttTab = document.querySelector('.viewer-bottom-tab-content[data-tab="gantt-chart"]');
             if (ganttTab && ganttTab.style.display !== 'none') {
-                renderViewerGanttChart();
+                renderViewerGanttChart(cutoffDateString);
             }
 
             // ▼▼▼ [추가] 내역집계표 자동 업데이트 ▼▼▼
@@ -7935,11 +8419,14 @@
 
             // Update current date display
             const dateString = simulationCurrentDate.toISOString().split('T')[0];
-            document.getElementById('sim-current-date').textContent = dateString;
-            document.getElementById('viewer-cutoff-date').value = dateString;
+            const currentDateDisplay = document.getElementById('sim-current-date');
+            if (currentDateDisplay) currentDateDisplay.textContent = dateString;
 
-            // Apply filter for current date
-            applyConstructionScheduleFilterWithColors(dateString); // ▼▼▼ [수정] 색상 구분 필터 사용 ▼▼▼
+            const simCutoffInput = document.getElementById('sim-cutoff-date');
+            if (simCutoffInput) simCutoffInput.value = dateString;
+
+            // Apply filter for current date (to main scene)
+            applyConstructionScheduleFilterWithColors(dateString);
 
             // Advance date
             simulationCurrentDate.setDate(simulationCurrentDate.getDate() + dayInterval);
@@ -8184,7 +8671,7 @@
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
                         <thead>
-                            <tr style="background: #1976d2; color: white;">
+                            <tr style="background: #f5f5f5; color: black;">
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">내역코드</th>
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">세부코드</th>
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">이름</th>
@@ -8382,6 +8869,534 @@
 
         console.log("[Data Mgmt 3D Viewer] Initialization complete");
     };
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 초기화 함수 ▼▼▼
+    window.initSimulationViewer = function() {
+        console.log("[Simulation 3D Viewer] Initializing independent 3D viewer for simulation tab...");
+
+        // Show simulation viewer container (왼쪽 뷰포트는 그대로 유지)
+        const simContainer = document.getElementById('simulation-viewer-container');
+        if (simContainer) {
+            simContainer.style.display = 'flex';
+            console.log("[Simulation 3D Viewer] Simulation container displayed");
+        }
+
+        // Check if already initialized
+        if (simScene && simCamera && simRenderer && simControls) {
+            console.log("[Simulation 3D Viewer] Already initialized, resizing and syncing geometry...");
+            resizeSimulationViewer();
+            // Re-sync geometry if scene has objects
+            if (scene && geometryLoaded) {
+                syncGeometryToSimulation();
+            }
+            // ▼▼▼ [추가] 간트차트 표시 ▼▼▼
+            showSimulationGanttChart();
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+            return;
+        }
+
+        const canvas = document.getElementById('simulation-three-d-canvas');
+        if (!canvas) {
+            console.log("[Simulation 3D Viewer] Canvas not found, skipping initialization");
+            return;
+        }
+
+        // Get canvas size
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+
+        // Create independent scene
+        simScene = new THREE.Scene();
+        simScene.background = new THREE.Color(0xcccccc);
+
+        // Create independent camera
+        simCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        simCamera.position.set(10, 10, 10);
+        simCamera.lookAt(0, 0, 0);
+
+        // Sync camera state from main viewer if available
+        if (camera) {
+            simCamera.position.copy(camera.position);
+            simCamera.rotation.copy(camera.rotation);
+            simCamera.updateProjectionMatrix();
+        }
+
+        // Create renderer
+        simRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        simRenderer.setSize(width, height);
+        simRenderer.setPixelRatio(window.devicePixelRatio);
+        simRenderer.shadowMap.enabled = true;
+        simRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Create controls
+        simControls = new THREE.OrbitControls(simCamera, simRenderer.domElement);
+        simControls.enableDamping = true;
+        simControls.dampingFactor = 0.25;
+        simControls.screenSpacePanning = false;
+        simControls.minDistance = 1;
+        simControls.maxDistance = 500;
+        simControls.enableZoom = true;
+
+        // Sync controls target from main viewer if available
+        if (controls) {
+            simControls.target.copy(controls.target);
+        }
+
+        // Same mouse button configuration as main viewer
+        simControls.mouseButtons = {
+            LEFT: null,
+            MIDDLE: THREE.MOUSE.PAN,
+            RIGHT: null
+        };
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        simScene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 20, 10);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+        simScene.add(directionalLight);
+
+        // Add helpers
+        const axesHelper = new THREE.AxesHelper(5);
+        simScene.add(axesHelper);
+
+        const gridHelper = new THREE.GridHelper(20, 20);
+        simScene.add(gridHelper);
+
+        // Copy geometry from main scene if available (for simulation)
+        if (scene && geometryLoaded) {
+            syncGeometryToSimulation();
+        }
+
+        // Disable context menu on canvas
+        canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        }, false);
+
+        // Setup controls and event listeners
+        setupSimulationViewerControls();
+
+        // Start animation loop
+        animateSimulationViewer();
+
+        // ▼▼▼ [추가] 시뮬레이션 간트차트 표시 ▼▼▼
+        showSimulationGanttChart();
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        console.log("[Simulation 3D Viewer] Initialization complete");
+    };
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 리사이즈 함수 ▼▼▼
+    function resizeSimulationViewer() {
+        const canvas = document.getElementById('simulation-three-d-canvas');
+        if (!canvas || !simRenderer || !simCamera) return;
+
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+
+        simCamera.aspect = width / height;
+        simCamera.updateProjectionMatrix();
+        simRenderer.setSize(width, height);
+
+        console.log("[Simulation 3D Viewer] Resized to", width, "x", height);
+    }
+
+    // ▼▼▼ [추가] 메인 scene에서 시뮬레이션 scene으로 geometry 동기화 ▼▼▼
+    function syncGeometryToSimulation() {
+        if (!scene || !simScene) {
+            console.warn("[Simulation Viewer] Cannot sync geometry: scene not initialized");
+            return;
+        }
+
+        console.log("[Simulation Viewer] Syncing geometry from main scene...");
+
+        // Remove existing BIM meshes from sim scene
+        const existingBimMeshes = [];
+        simScene.traverse((obj) => {
+            if (obj.userData && obj.userData.rawElementId) {
+                existingBimMeshes.push(obj);
+            }
+        });
+        existingBimMeshes.forEach(mesh => simScene.remove(mesh));
+
+        // Copy BIM meshes from main scene
+        const bimMeshes = [];
+        scene.traverse((obj) => {
+            if (obj.userData && obj.userData.rawElementId && obj.isMesh) {
+                bimMeshes.push(obj);
+            }
+        });
+
+        console.log("[Simulation Viewer] Found", bimMeshes.length, "BIM meshes to copy");
+
+        bimMeshes.forEach((mesh) => {
+            const clonedMesh = mesh.clone();
+            clonedMesh.material = mesh.material.clone();
+            simScene.add(clonedMesh);
+        });
+
+        console.log("[Simulation Viewer] Geometry sync complete");
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 애니메이션 루프 ▼▼▼
+    function animateSimulationViewer() {
+        if (!simRenderer || !simScene || !simCamera || !simControls) return;
+
+        requestAnimationFrame(animateSimulationViewer);
+
+        simControls.update();
+        simRenderer.render(simScene, simCamera);
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 컨트롤 설정 ▼▼▼
+    function setupSimulationViewerControls() {
+        const canvas = document.getElementById('simulation-three-d-canvas');
+        if (!canvas || !simScene || !simCamera) {
+            console.error("[Simulation Controls] Cannot setup controls: viewer not initialized");
+            return;
+        }
+
+        console.log("[Simulation Controls] Setting up viewer controls...");
+
+        // Initialize raycaster and mouse
+        simRaycaster = new THREE.Raycaster();
+        simMouse = new THREE.Vector2();
+
+        // Add mouse event listeners for selection
+        canvas.addEventListener('click', handleSimulationViewerClick, false);
+        canvas.addEventListener('mousemove', handleSimulationViewerMouseMove, false);
+
+        // ▼▼▼ [추가] 시뮬레이션 버튼 핸들러 ▼▼▼
+        const simCutoffDateInput = document.getElementById('sim-cutoff-date');
+        const applySimDateBtn = document.getElementById('apply-sim-date-btn');
+        const resetSimDateBtn = document.getElementById('reset-sim-date-btn');
+        const simPlayBtn = document.getElementById('sim-play-btn');
+        const simPauseBtn = document.getElementById('sim-pause-btn');
+        const simStopBtn = document.getElementById('sim-stop-btn');
+
+        // 적용 버튼
+        if (applySimDateBtn) {
+            applySimDateBtn.onclick = async function() {
+                const selectedDate = simCutoffDateInput?.value;
+                if (!selectedDate) {
+                    showToast('날짜를 선택해주세요', 'warning');
+                    return;
+                }
+                console.log("[Simulation Viewer] Applying date filter to simScene:", selectedDate);
+                await applyConstructionScheduleFilterWithColors(selectedDate, simScene);
+
+                // 상태 표시 패널 업데이트 (시뮬레이션 전용)
+                const statusDisplay = document.getElementById('simulation-schedule-status-display');
+                const statusText = document.getElementById('simulation-schedule-status-text');
+                if (statusDisplay && statusText) {
+                    statusDisplay.style.display = 'block';
+                }
+            };
+        }
+
+        // 전체 보기 버튼
+        if (resetSimDateBtn) {
+            resetSimDateBtn.onclick = function() {
+                console.log("[Simulation Viewer] Resetting date filter on simScene");
+                if (simCutoffDateInput) {
+                    simCutoffDateInput.value = '';
+                }
+
+                // simScene의 모든 객체를 원래 재질로 복원하고 표시
+                simScene.traverse((obj) => {
+                    if (obj.isMesh && obj.userData && obj.userData.rawElementId) {
+                        obj.visible = true;
+                        if (simOriginalMaterials.has(obj.id)) {
+                            obj.material = simOriginalMaterials.get(obj.id);
+                            simOriginalMaterials.delete(obj.id);
+                        }
+                    }
+                });
+
+                simHiddenObjectIds.clear();
+
+                // 상태 표시 패널 숨기기
+                const statusDisplay = document.getElementById('simulation-schedule-status-display');
+                if (statusDisplay) {
+                    statusDisplay.style.display = 'none';
+                }
+
+                showToast('전체 객체가 표시됩니다', 'success');
+            };
+        }
+
+        // 재생 버튼
+        if (simPlayBtn) {
+            simPlayBtn.onclick = function() {
+                console.log("[Simulation Viewer] Starting simulation on simScene");
+                startSimulation(simScene);
+            };
+        }
+
+        // 일시정지 버튼
+        if (simPauseBtn) {
+            simPauseBtn.onclick = function() {
+                console.log("[Simulation Viewer] Pausing simulation");
+                pauseSimulation();
+            };
+        }
+
+        // 정지 버튼
+        if (simStopBtn) {
+            simStopBtn.onclick = function() {
+                console.log("[Simulation Viewer] Stopping simulation");
+                stopSimulation();
+            };
+        }
+
+        // ▼▼▼ [추가] 시뮬레이션 스플릿바 설정 ▼▼▼
+        const simResizeHandle = document.getElementById('simulation-resize-handle');
+        const simViewportSection = document.getElementById('simulation-viewport-section');
+
+        if (simResizeHandle && simViewportSection) {
+            let isSimResizing = false;
+            let startY = 0;
+            let startHeight = 0;
+
+            simResizeHandle.addEventListener('mousedown', function(e) {
+                isSimResizing = true;
+                startY = e.clientY;
+                startHeight = simViewportSection.offsetHeight;
+                document.body.style.cursor = 'ns-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isSimResizing) return;
+
+                const deltaY = e.clientY - startY;
+                const newHeight = startHeight + deltaY;
+                const minHeight = 200; // 최소 높이
+                const container = document.getElementById('simulation-viewer-container');
+                const maxHeight = container ? container.offsetHeight - 300 : 1000; // 여유 공간 확보
+
+                if (newHeight >= minHeight && newHeight <= maxHeight) {
+                    simViewportSection.style.flex = `0 0 ${newHeight}px`;
+
+                    // 캔버스 및 렌더러 리사이즈
+                    if (simRenderer && simCamera) {
+                        resizeSimulationViewer();
+                    }
+                }
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isSimResizing) {
+                    isSimResizing = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+
+            console.log('[Simulation Controls] Split bar initialized');
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        console.log("[Simulation Controls] Controls setup complete");
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 클릭 핸들러 ▼▼▼
+    function handleSimulationViewerClick(event) {
+        const canvas = document.getElementById('simulation-three-d-canvas');
+        if (!canvas || !simScene || !simCamera || !simRaycaster) return;
+
+        const rect = canvas.getBoundingClientRect();
+
+        // Calculate mouse position in normalized device coordinates
+        simMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        simMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        // Update raycaster
+        simRaycaster.setFromCamera(simMouse, simCamera);
+
+        // Get BIM meshes
+        const bimMeshes = [];
+        simScene.traverse((obj) => {
+            if (obj.userData && obj.userData.rawElementId && obj.isMesh && obj.visible) {
+                bimMeshes.push(obj);
+            }
+        });
+
+        const intersects = simRaycaster.intersectObjects(bimMeshes, true);
+
+        if (intersects.length > 0) {
+            const selectedMesh = intersects[0].object;
+            const elementId = selectedMesh.userData.rawElementId;
+
+            // Handle multi-select with Ctrl/Cmd
+            const isMultiSelect = event.ctrlKey || event.metaKey;
+
+            if (!isMultiSelect) {
+                // Clear previous selection in simulation viewer
+                clearSimulationSelection();
+            }
+
+            // Toggle selection
+            const alreadySelected = simSelectedObjects.includes(selectedMesh);
+            if (alreadySelected) {
+                // Deselect
+                const index = simSelectedObjects.indexOf(selectedMesh);
+                simSelectedObjects.splice(index, 1);
+                restoreSimulationMaterial(selectedMesh);
+            } else {
+                // Select
+                simSelectedObjects.push(selectedMesh);
+                highlightSimulationObject(selectedMesh);
+            }
+
+            // Sync selection to main viewer
+            syncSelectionFromSimToMain();
+
+            console.log("[Simulation Viewer] Selected element:", elementId, "Total selected:", simSelectedObjects.length);
+        } else {
+            // Clicked empty space - clear selection
+            clearSimulationSelection();
+            syncSelectionFromSimToMain();
+        }
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 마우스 이동 핸들러 (호버 효과) ▼▼▼
+    function handleSimulationViewerMouseMove(event) {
+        const canvas = document.getElementById('simulation-three-d-canvas');
+        if (!canvas || !simScene || !simCamera || !simRaycaster) return;
+
+        const rect = canvas.getBoundingClientRect();
+
+        simMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        simMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        simRaycaster.setFromCamera(simMouse, simCamera);
+
+        const bimMeshes = [];
+        simScene.traverse((obj) => {
+            if (obj.userData && obj.userData.rawElementId && obj.isMesh && obj.visible) {
+                bimMeshes.push(obj);
+            }
+        });
+
+        const intersects = simRaycaster.intersectObjects(bimMeshes, true);
+
+        // Clear previous hover
+        if (simHoveredObject && !simSelectedObjects.includes(simHoveredObject)) {
+            restoreSimulationMaterial(simHoveredObject);
+        }
+
+        if (intersects.length > 0) {
+            const hoveredMesh = intersects[0].object;
+            if (hoveredMesh !== simHoveredObject && !simSelectedObjects.includes(hoveredMesh)) {
+                simHoveredObject = hoveredMesh;
+                // Apply hover effect (lighter highlight than selection)
+                if (!simOriginalMaterials.has(hoveredMesh.id)) {
+                    simOriginalMaterials.set(hoveredMesh.id, hoveredMesh.material);
+                }
+                hoveredMesh.material = hoveredMesh.material.clone();
+                hoveredMesh.material.emissive = new THREE.Color(0x555555);
+                canvas.style.cursor = 'pointer';
+            }
+        } else {
+            simHoveredObject = null;
+            canvas.style.cursor = 'default';
+        }
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 객체 하이라이트 ▼▼▼
+    function highlightSimulationObject(mesh) {
+        if (!simOriginalMaterials.has(mesh.id)) {
+            simOriginalMaterials.set(mesh.id, mesh.material);
+        }
+        mesh.material = mesh.material.clone();
+        mesh.material.emissive = new THREE.Color(0xff9800); // Orange highlight
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 재질 복원 ▼▼▼
+    function restoreSimulationMaterial(mesh) {
+        if (simOriginalMaterials.has(mesh.id)) {
+            mesh.material = simOriginalMaterials.get(mesh.id);
+            simOriginalMaterials.delete(mesh.id);
+        }
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션 뷰어 선택 초기화 ▼▼▼
+    function clearSimulationSelection() {
+        simSelectedObjects.forEach(mesh => {
+            restoreSimulationMaterial(mesh);
+        });
+        simSelectedObjects = [];
+    }
+
+    // ▼▼▼ [추가] 시뮬레이션→메인 뷰어 선택 동기화 ▼▼▼
+    function syncSelectionFromSimToMain() {
+        if (!scene || !simScene) return;
+
+        // Get element IDs from simulation selection
+        const elementIds = simSelectedObjects.map(mesh => mesh.userData.rawElementId);
+
+        console.log("[Selection Sync] Syncing from simulation to main:", elementIds);
+
+        // Clear main viewer selection
+        selectedObjects.forEach(mesh => {
+            if (originalMaterials.has(mesh.id)) {
+                mesh.material = originalMaterials.get(mesh.id);
+                originalMaterials.delete(mesh.id);
+            }
+        });
+        selectedObjects = [];
+
+        // Select corresponding objects in main viewer
+        scene.traverse((obj) => {
+            if (obj.userData && obj.userData.rawElementId && elementIds.includes(obj.userData.rawElementId) && obj.isMesh) {
+                selectedObjects.push(obj);
+                if (!originalMaterials.has(obj.id)) {
+                    originalMaterials.set(obj.id, obj.material);
+                }
+                obj.material = obj.material.clone();
+                obj.material.emissive = new THREE.Color(0xff9800);
+            }
+        });
+
+        console.log("[Selection Sync] Main viewer selection updated:", selectedObjects.length);
+    }
+
+    // ▼▼▼ [추가] 메인→시뮬레이션 뷰어 선택 동기화 ▼▼▼
+    function syncSelectionFromMainToSim() {
+        if (!scene || !simScene) return;
+
+        // Get element IDs from main selection
+        const elementIds = selectedObjects.map(mesh => mesh.userData.rawElementId);
+
+        console.log("[Selection Sync] Syncing from main to simulation:", elementIds);
+
+        // Clear simulation viewer selection
+        clearSimulationSelection();
+
+        // Select corresponding objects in simulation viewer
+        simScene.traverse((obj) => {
+            if (obj.userData && obj.userData.rawElementId && elementIds.includes(obj.userData.rawElementId) && obj.isMesh) {
+                simSelectedObjects.push(obj);
+                highlightSimulationObject(obj);
+            }
+        });
+
+        console.log("[Selection Sync] Simulation viewer selection updated:", simSelectedObjects.length);
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // ▼▼▼ [추가] 데이터 관리 뷰어 컨트롤 설정 ▼▼▼
     function setupDataMgmtViewerControls() {
@@ -10247,6 +11262,61 @@
         setTimeout(setupViewerQmButtonListeners, 100);
     }
 
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [추가] 시뮬레이션 간트차트 표시 함수 ▼▼▼
+    function showSimulationGanttChart() {
+        console.log('[Simulation Viewer] Showing Gantt chart in simulation tab...');
+
+        const simGanttSection = document.getElementById('simulation-gantt-section');
+        const simGanttContainer = document.getElementById('simulation-gantt-container');
+
+        if (!simGanttSection || !simGanttContainer) {
+            console.warn('[Simulation Viewer] Simulation gantt containers not found');
+            return;
+        }
+
+        // 시뮬레이션 간트차트 섹션 표시
+        simGanttSection.style.display = 'flex';
+
+        // 간트차트 데이터가 있으면 시뮬레이션 컨테이너에 직접 렌더링
+        setTimeout(() => {
+            if (window.ganttData && window.ganttData.length > 0) {
+                console.log('[Simulation Viewer] Rendering gantt chart directly to simulation container');
+                console.log('[Simulation Viewer] Gantt data:', window.ganttData.length, 'tasks');
+
+                // 시뮬레이션 컨테이너에 직접 렌더링 (HTML 복사 대신)
+                if (typeof window.renderGanttChart === 'function') {
+                    window.renderGanttChart(window.ganttData, 'simulation-gantt-container');
+                    console.log('[Simulation Viewer] Gantt chart rendered successfully');
+                } else {
+                    console.warn('[Simulation Viewer] renderGanttChart function not available');
+                }
+            } else {
+                console.log('[Simulation Viewer] No gantt data yet, will load now');
+                // 간트차트 데이터가 없으면 로드
+                if (typeof window.loadGanttChart === 'function') {
+                    window.loadGanttChart().then(() => {
+                        // 로드 후 렌더링
+                        setTimeout(() => {
+                            if (window.ganttData && window.ganttData.length > 0 && typeof window.renderGanttChart === 'function') {
+                                window.renderGanttChart(window.ganttData, 'simulation-gantt-container');
+                                console.log('[Simulation Viewer] Gantt chart rendered after loading');
+                            } else {
+                                console.warn('[Simulation Viewer] Gantt data still not available after loading');
+                            }
+                        }, 300);
+                    }).catch(err => {
+                        console.error('[Simulation Viewer] Failed to load gantt chart:', err);
+                    });
+                } else {
+                    console.warn('[Simulation Viewer] loadGanttChart function not available');
+                }
+            }
+        }, 300); // 300ms 지연
+
+        console.log('[Simulation Viewer] Gantt chart section visible');
+    }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 })();

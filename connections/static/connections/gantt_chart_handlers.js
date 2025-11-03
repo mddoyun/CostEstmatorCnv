@@ -7,7 +7,7 @@ let ganttData = [];
 let projectStartDate = null;
 let selectedTaskId = null; // 선택된 태스크 ID
 let ganttCostItems = []; // 간트차트용 산출항목 데이터
-let selectedCostItemId = null; // 선택된 산출항목 ID
+let selectedActivityObjectId = null; // 선택된 액티비티 객체 ID
 let costCutoffDate = null; // 내역집계 기준일
 let ganttActivities = []; // 간트차트용 액티비티 데이터
 let ganttUnitPrices = {}; // 단가 정보 (costCodeId: unitPriceData)
@@ -145,24 +145,51 @@ async function loadAndRenderGanttChart() {
             document.getElementById('project-start-date').value = dateString;
         }
 
-        // 액티비티가 할당된 산출항목(CostItem) 데이터 가져오기
-        const response = await fetch(`/connections/api/cost-items/${currentProjectId}/`);
-        if (!response.ok) throw new Error('산출항목 데이터를 불러오는데 실패했습니다.');
+        // ActivityObject 데이터 가져오기 (새로운 방식)
+        const aoResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`);
+        if (!aoResponse.ok) throw new Error('액티비티 객체 데이터를 불러오는데 실패했습니다.');
 
-        const costItems = await response.json();
+        const activityObjects = await aoResponse.json();
 
-        // 액티비티가 할당된 항목만 필터링
-        const itemsWithActivities = costItems.filter(item => item.activities && item.activities.length > 0);
+        if (activityObjects.length === 0) {
+            document.getElementById('gantt-chart-container').innerHTML =
+                '<p style="padding: 20px; text-align: center; color: #999;">액티비티 객체가 없습니다. 먼저 액티비티 객체를 생성해주세요.</p>';
+            document.getElementById('gantt-detail-container').innerHTML = '';
+            ganttData = [];
+            window.ganttData = [];
+            return;
+        }
+
+        console.log('[Gantt Chart] Loaded activity objects:', activityObjects.length);
+
+        // ActivityObject를 CostItem으로 그룹핑 (기존 로직 호환성 유지)
+        const costItemMap = new Map();
+        activityObjects.forEach(ao => {
+            if (!ao.cost_item || !ao.activity) return;
+
+            const ciId = ao.cost_item.id;
+            if (!costItemMap.has(ciId)) {
+                costItemMap.set(ciId, {
+                    ...ao.cost_item,
+                    activities: [],
+                    activity_objects: []
+                });
+            }
+            const ci = costItemMap.get(ciId);
+            ci.activities.push(ao.activity.id);  // Activity ID를 push (generateGanttData가 ID를 기대함)
+            ci.activity_objects.push(ao);
+        });
+
+        console.log('[Gantt Chart] Grouped into', costItemMap.size, 'cost items');
+        if (costItemMap.size > 0) {
+            const firstCi = Array.from(costItemMap.values())[0];
+            console.log('[Gantt Chart] Sample grouped CI:', firstCi.id, 'activities:', firstCi.activities);
+        }
+
+        const itemsWithActivities = Array.from(costItemMap.values());
 
         // 전역 변수에 저장 (상세 정보 표시용)
         ganttCostItems = itemsWithActivities;
-
-        if (itemsWithActivities.length === 0) {
-            document.getElementById('gantt-chart-container').innerHTML =
-                '<p style="padding: 20px; text-align: center; color: #999;">액티비티가 할당된 산출항목이 없습니다. 먼저 액티비티를 할당해주세요.</p>';
-            document.getElementById('gantt-detail-container').innerHTML = '';
-            return;
-        }
 
         // 액티비티 데이터 가져오기
         const activityResponse = await fetch(`/connections/api/activities/${currentProjectId}/`);
@@ -172,6 +199,7 @@ async function loadAndRenderGanttChart() {
 
         // 전역 변수에 저장
         ganttActivities = activities;
+        window.loadedActivityObjects = activityObjects; // 3D 뷰어용
 
         // 의존성 데이터 가져오기
         const dependencyResponse = await fetch(`/connections/api/activity-dependencies/${currentProjectId}/`);
@@ -390,12 +418,14 @@ function formatDateForGantt(date) {
 
 /**
  * HTML/CSS 기반 간트차트 렌더링
+ * @param {Array} tasks - 간트차트 작업 목록
+ * @param {string} containerId - 렌더링할 컨테이너 ID (기본값: 'gantt-chart-container')
  */
-function renderGanttChart(tasks) {
-    const chartContainer = document.getElementById('gantt-chart-container');
+function renderGanttChart(tasks, containerId = 'gantt-chart-container') {
+    const chartContainer = document.getElementById(containerId);
 
     if (!chartContainer) {
-        console.error('[Gantt Chart] Container element not found');
+        console.error('[Gantt Chart] Container element not found:', containerId);
         return;
     }
 
@@ -420,7 +450,10 @@ function renderGanttChart(tasks) {
         return;
     }
 
-    console.log('[Gantt Chart] Rendering', validTasks.length, 'valid tasks');
+    // 표시 모드 가져오기
+    const viewModeSelect = document.getElementById('gantt-view-mode');
+    const viewMode = viewModeSelect ? viewModeSelect.value : 'Week';
+    console.log('[Gantt Chart] Rendering', validTasks.length, 'valid tasks in', viewMode, 'mode');
 
     try {
         // 날짜 범위 계산
@@ -433,74 +466,173 @@ function renderGanttChart(tasks) {
         ganttMinDate = minDate;
         ganttMaxDate = maxDate;
 
-        // ▼▼▼ [추가] 날짜 배열 생성 및 월별 그룹화 ▼▼▼
-        const dateArray = [];
-        const monthGroups = [];
-        let currentMonth = null;
-        let monthDayCount = 0;
+        // 요일 한글 변환
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
-        for (let i = 0; i < totalDays; i++) {
-            const date = new Date(minDate);
-            date.setDate(date.getDate() + i);
-            dateArray.push(date);
+        // ▼▼▼ 표시 모드에 따라 날짜 배열 및 그룹화 생성 ▼▼▼
+        let dateArray = [];
+        let headerGroups = [];
+        let cellData = [];
 
-            const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
-            if (currentMonth !== monthKey) {
-                if (currentMonth !== null) {
-                    monthGroups.push({ month: currentMonth, days: monthDayCount });
+        if (viewMode === 'Day') {
+            // 일 단위: 기존 방식
+            const monthGroups = [];
+            let currentMonth = null;
+            let monthDayCount = 0;
+
+            for (let i = 0; i <= totalDays; i++) {
+                const date = new Date(minDate);
+                date.setDate(date.getDate() + i);
+                dateArray.push(date);
+
+                const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+                if (currentMonth !== monthKey) {
+                    if (currentMonth !== null) {
+                        monthGroups.push({ month: currentMonth, count: monthDayCount });
+                    }
+                    currentMonth = monthKey;
+                    monthDayCount = 1;
+                } else {
+                    monthDayCount++;
                 }
-                currentMonth = monthKey;
-                monthDayCount = 1;
-            } else {
-                monthDayCount++;
             }
-        }
-        // 마지막 월 추가
-        if (currentMonth !== null) {
-            monthGroups.push({ month: currentMonth, days: monthDayCount });
+            if (currentMonth !== null) {
+                monthGroups.push({ month: currentMonth, count: monthDayCount });
+            }
+            headerGroups = monthGroups;
+            cellData = dateArray;
+
+        } else if (viewMode === 'Week') {
+            // 주 단위
+            const weekGroups = [];
+            let weekStart = new Date(minDate);
+            let weekIndex = 0;
+
+            while (weekStart <= maxDate) {
+                const weekEnd = new Date(weekStart);
+                weekEnd.setDate(weekEnd.getDate() + 6);
+
+                weekGroups.push({
+                    index: weekIndex++,
+                    start: new Date(weekStart),
+                    end: weekEnd > maxDate ? new Date(maxDate) : weekEnd,
+                    days: Math.min(7, Math.ceil((Math.min(weekEnd, maxDate) - weekStart) / (1000 * 60 * 60 * 24)) + 1)
+                });
+
+                weekStart.setDate(weekStart.getDate() + 7);
+            }
+
+            headerGroups = weekGroups;
+            cellData = weekGroups;
+
+        } else if (viewMode === 'Month') {
+            // 월 단위
+            const monthGroups = [];
+            let currentDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+
+            while (currentDate <= maxDate) {
+                const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                const actualEnd = monthEnd > maxDate ? maxDate : monthEnd;
+                const daysInMonth = Math.ceil((actualEnd - Math.max(currentDate, minDate)) / (1000 * 60 * 60 * 24)) + 1;
+
+                monthGroups.push({
+                    year: currentDate.getFullYear(),
+                    month: currentDate.getMonth() + 1,
+                    start: new Date(Math.max(currentDate, minDate)),
+                    end: actualEnd,
+                    days: daysInMonth
+                });
+
+                currentDate.setMonth(currentDate.getMonth() + 1);
+            }
+
+            headerGroups = monthGroups;
+            cellData = monthGroups;
         }
 
         // 전역 변수에 저장
         ganttDateArray = dateArray;
+        // ▲▲▲ 표시 모드 처리 끝 ▲▲▲
 
-        // 요일 한글 변환
-        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // HTML 헤더 생성 (viewMode에 따라 다르게)
+        let headerHtml = '';
+
+        if (viewMode === 'Day') {
+            headerHtml = `
+                <!-- 첫 번째 헤더 행: 월 표시 -->
+                <tr style="background: #e8e8e8; border-bottom: 1px solid #ccc;">
+                    <th rowspan="2" style="padding: 10px; text-align: left; min-width: 250px; position: sticky; left: 0; background: #e8e8e8; z-index: 11; border-right: 2px solid #ccc;">태스크명</th>
+                    <th rowspan="2" style="padding: 10px; text-align: center; min-width: 150px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">작업 캘린더</th>
+                    <th rowspan="2" style="padding: 10px; text-align: center; min-width: 80px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">기간(일)</th>
+                    <th rowspan="2" style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">시작일</th>
+                    <th rowspan="2" style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">종료일</th>
+                    ${headerGroups.map(mg => {
+                        const [year, month] = mg.month.split('-');
+                        return `<th colspan="${mg.count}" style="padding: 5px; text-align: center; background: #d0d0d0; border-right: 1px solid #999;">${year}년 ${month}월</th>`;
+                    }).join('')}
+                </tr>
+                <!-- 두 번째 헤더 행: 일/요일 표시 -->
+                <tr style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
+                    ${cellData.map((date, idx) => {
+                        const day = date.getDate();
+                        const dayOfWeek = dayNames[date.getDay()];
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                        const dateString = date.toISOString().split('T')[0];
+                        const isSelectedDate = costCutoffDate && dateString === costCutoffDate.toISOString().split('T')[0];
+                        let bgColor = isWeekend ? '#ffe0e0' : '#f5f5f5';
+                        if (isSelectedDate) bgColor = '#ffd700';
+                        const textColor = isWeekend ? '#d32f2f' : '#333';
+                        return `<th class="gantt-date-cell" data-date="${dateString}" style="padding: 5px 2px; text-align: center; min-width: 30px; max-width: 40px; font-size: 11px; background: ${bgColor}; color: ${textColor}; border-right: 1px solid #ddd; cursor: pointer;">
+                            <div>${day}</div>
+                            <div style="font-size: 10px; font-weight: normal;">${dayOfWeek}</div>
+                        </th>`;
+                    }).join('')}
+                </tr>`;
+        } else if (viewMode === 'Week') {
+            headerHtml = `
+                <tr style="background: #e8e8e8; border-bottom: 2px solid #ddd;">
+                    <th style="padding: 10px; text-align: left; min-width: 250px; position: sticky; left: 0; background: #e8e8e8; z-index: 11; border-right: 2px solid #ccc;">태스크명</th>
+                    <th style="padding: 10px; text-align: center; min-width: 150px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">작업 캘린더</th>
+                    <th style="padding: 10px; text-align: center; min-width: 80px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">기간(일)</th>
+                    <th style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">시작일</th>
+                    <th style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">종료일</th>
+                    ${cellData.map((week, idx) => {
+                        const startStr = `${week.start.getMonth()+1}/${week.start.getDate()}`;
+                        const endStr = `${week.end.getMonth()+1}/${week.end.getDate()}`;
+                        const weekEndDate = week.end.toISOString().split('T')[0];
+                        const isSelectedDate = costCutoffDate && weekEndDate === costCutoffDate.toISOString().split('T')[0];
+                        const bgColor = isSelectedDate ? '#ffd700' : '#d0d0d0';
+                        return `<th class="gantt-date-cell" data-date="${weekEndDate}" style="padding: 5px; text-align: center; min-width: 60px; background: ${bgColor}; border-right: 1px solid #999; font-size: 11px; cursor: pointer;">
+                            <div>W${idx+1}</div>
+                            <div style="font-size: 10px; font-weight: normal;">${startStr}~${endStr}</div>
+                        </th>`;
+                    }).join('')}
+                </tr>`;
+        } else if (viewMode === 'Month') {
+            headerHtml = `
+                <tr style="background: #e8e8e8; border-bottom: 2px solid #ddd;">
+                    <th style="padding: 10px; text-align: left; min-width: 250px; position: sticky; left: 0; background: #e8e8e8; z-index: 11; border-right: 2px solid #ccc;">태스크명</th>
+                    <th style="padding: 10px; text-align: center; min-width: 150px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">작업 캘린더</th>
+                    <th style="padding: 10px; text-align: center; min-width: 80px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">기간(일)</th>
+                    <th style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">시작일</th>
+                    <th style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">종료일</th>
+                    ${cellData.map(month => {
+                        const monthEndDate = month.end.toISOString().split('T')[0];
+                        const isSelectedDate = costCutoffDate && monthEndDate === costCutoffDate.toISOString().split('T')[0];
+                        const bgColor = isSelectedDate ? '#ffd700' : '#d0d0d0';
+                        return `<th class="gantt-date-cell" data-date="${monthEndDate}" style="padding: 5px; text-align: center; min-width: 80px; background: ${bgColor}; border-right: 1px solid #999; cursor: pointer;">
+                            ${month.year}년 ${month.month}월
+                        </th>`;
+                    }).join('')}
+                </tr>`;
+        }
 
         // HTML 생성
         let html = `
             <div style="overflow-x: auto; background: white; border-radius: 8px; padding: 20px;">
                 <table class="gantt-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
                     <thead>
-                        <!-- 첫 번째 헤더 행: 월 표시 -->
-                        <tr style="background: #e8e8e8; border-bottom: 1px solid #ccc;">
-                            <th rowspan="2" style="padding: 10px; text-align: left; min-width: 250px; position: sticky; left: 0; background: #e8e8e8; z-index: 11; border-right: 2px solid #ccc;">태스크명</th>
-                            <th rowspan="2" style="padding: 10px; text-align: center; min-width: 150px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">작업 캘린더</th>
-                            <th rowspan="2" style="padding: 10px; text-align: center; min-width: 80px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">기간(일)</th>
-                            <th rowspan="2" style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">시작일</th>
-                            <th rowspan="2" style="padding: 10px; text-align: center; min-width: 100px; background: #e8e8e8; z-index: 10; border-right: 2px solid #ccc;">종료일</th>
-                            ${monthGroups.map(mg => {
-                                const [year, month] = mg.month.split('-');
-                                return `<th colspan="${mg.days}" style="padding: 5px; text-align: center; background: #d0d0d0; border-right: 1px solid #999;">${year}년 ${month}월</th>`;
-                            }).join('')}
-                        </tr>
-                        <!-- 두 번째 헤더 행: 일/요일 표시 -->
-                        <tr style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
-                            ${dateArray.map((date, idx) => {
-                                const day = date.getDate();
-                                const dayOfWeek = dayNames[date.getDay()];
-                                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                                const dateString = date.toISOString().split('T')[0];
-                                const isSelectedDate = costCutoffDate && dateString === costCutoffDate.toISOString().split('T')[0];
-                                let bgColor = isWeekend ? '#ffe0e0' : '#f5f5f5';
-                                if (isSelectedDate) bgColor = '#ffd700';
-                                const textColor = isWeekend ? '#d32f2f' : '#333';
-                                return `<th class="gantt-date-cell" data-date="${dateString}" style="padding: 5px 2px; text-align: center; min-width: 30px; max-width: 40px; font-size: 11px; background: ${bgColor}; color: ${textColor}; border-right: 1px solid #ddd; cursor: pointer;">
-                                    <div>${day}</div>
-                                    <div style="font-size: 10px; font-weight: normal;">${dayOfWeek}</div>
-                                </th>`;
-                            }).join('')}
-                        </tr>
+                        ${headerHtml}
                     </thead>
                     <tbody>
         `;
@@ -540,73 +672,107 @@ function renderGanttChart(tasks) {
                     <td style="padding: 10px; text-align: center; font-size: 12px; background: ${rowBgColor}; border-right: 2px solid #ccc;">${task.end}</td>
             `;
 
-            // ▼▼▼ [수정] 날짜별 셀 생성 및 태스크 바 표시 ▼▼▼
-            dateArray.forEach((date, dayIndex) => {
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                const dateString = date.toISOString().split('T')[0];
-                const isSelectedDate = costCutoffDate && dateString === costCutoffDate.toISOString().split('T')[0];
+            // 날짜/주/월별 셀 생성 및 태스크 바 표시 (viewMode에 따라 다름)
+            if (viewMode === 'Day') {
+                // Day 모드: 일 단위 셀
+                cellData.forEach((date, dayIndex) => {
+                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                    const dateString = date.toISOString().split('T')[0];
+                    const isSelectedDate = costCutoffDate && dateString === costCutoffDate.toISOString().split('T')[0];
 
-                let cellBgColor;
-                if (isSelectedDate) {
-                    cellBgColor = '#ffd700';
-                } else if (isSelected) {
-                    cellBgColor = isWeekend ? '#d1e7fd' : '#e3f2fd';
-                } else {
-                    cellBgColor = isWeekend ? '#fff5f5' : bgColor;
-                }
-                const isTaskDay = dayIndex >= taskStartDay && dayIndex < taskEndDay;
-
-                let cellContent = '';
-                let cellStyle = `padding: 5px 2px; text-align: center; min-width: 30px; max-width: 40px; background: ${cellBgColor}; border-right: 1px solid #ddd; position: relative; cursor: pointer;`;
-
-                if (isTaskDay) {
-                    // 태스크 기간에 포함되는 날짜
-                    const isFirstDay = dayIndex === taskStartDay;
-                    const isLastDay = dayIndex === taskEndDay - 1;
-
-                    // ▼▼▼ [추가] 캘린더 기준 작업일 확인 ▼▼▼
-                    const taskCalendar = task.calendar || mainCalendar;
-                    const isWorkDay = isWorkingDay(date, taskCalendar);
-                    // ▲▲▲ [추가] 여기까지 ▲▲▲
-
-                    let barStyle;
-                    if (isWorkDay) {
-                        // 작업일: 배경색 채우기
-                        barStyle = `background: ${barColor}; height: 30px; margin: 5px 0;`;
+                    let cellBgColor;
+                    if (isSelectedDate) {
+                        cellBgColor = '#ffd700';
+                    } else if (isSelected) {
+                        cellBgColor = isWeekend ? '#d1e7fd' : '#e3f2fd';
                     } else {
-                        // 휴일: 테두리만 색상, 배경은 흰색
-                        barStyle = `background: white; border: 2px solid ${barColor}; height: 26px; margin: 5px 0; box-sizing: border-box;`;
+                        cellBgColor = isWeekend ? '#fff5f5' : bgColor;
                     }
+                    const isTaskDay = dayIndex >= taskStartDay && dayIndex < taskEndDay;
 
-                    // 첫날과 마지막날에만 둥근 모서리
-                    if (isFirstDay && isLastDay) {
-                        barStyle += ' border-radius: 4px;';
-                    } else if (isFirstDay) {
-                        barStyle += ' border-radius: 4px 0 0 4px;';
-                    } else if (isLastDay) {
-                        barStyle += ' border-radius: 0 4px 4px 0;';
-                    }
+                    let cellContent = '';
+                    let cellStyle = `padding: 5px 2px; text-align: center; min-width: 30px; max-width: 40px; background: ${cellBgColor}; border-right: 1px solid #ddd; position: relative; cursor: pointer;`;
 
-                    // 중간에 일수 표시 (태스크 중간 날짜에만)
-                    const middleDay = Math.floor((taskStartDay + taskEndDay) / 2);
-                    const showDuration = dayIndex === middleDay && task.durationDays >= 3;
+                    if (isTaskDay) {
+                        const isFirstDay = dayIndex === taskStartDay;
+                        const isLastDay = dayIndex === taskEndDay - 1;
+                        const taskCalendar = task.calendar || mainCalendar;
+                        const isWorkDay = isWorkingDay(date, taskCalendar);
 
-                    // 휴일 표시 추가
-                    const holidayMark = !isWorkDay ? '<div style="font-size: 10px; color: #999;">휴</div>' : '';
+                        let barStyle;
+                        if (isWorkDay) {
+                            barStyle = `background: ${barColor}; height: 30px; margin: 5px 0;`;
+                        } else {
+                            barStyle = `background: white; border: 2px solid ${barColor}; height: 26px; margin: 5px 0; box-sizing: border-box;`;
+                        }
 
-                    cellContent = `<div style="${barStyle}" title="액티비티: ${activity.code} - ${activity.name}
+                        if (isFirstDay && isLastDay) {
+                            barStyle += ' border-radius: 4px;';
+                        } else if (isFirstDay) {
+                            barStyle += ' border-radius: 4px 0 0 4px;';
+                        } else if (isLastDay) {
+                            barStyle += ' border-radius: 0 4px 4px 0;';
+                        }
+
+                        const middleDay = Math.floor((taskStartDay + taskEndDay) / 2);
+                        const showDuration = dayIndex === middleDay && task.durationDays >= 3;
+                        const holidayMark = !isWorkDay ? '<div style="font-size: 10px; color: #999;">휴</div>' : '';
+
+                        cellContent = `<div style="${barStyle}" title="액티비티: ${activity.code} - ${activity.name}
 총 작업기간: ${task.durationDays}일
 단위수량당 소요일수: ${activity.duration_per_unit || 0}일
 ${!isWorkDay ? '※ 캘린더상 휴일' : ''}
 ${activity.responsible_person ? '담당자: ' + activity.responsible_person : ''}">
-                        ${showDuration ? `<span style="color: ${isWorkDay ? 'white' : barColor}; font-size: 11px; font-weight: bold;">${task.durationDays}일</span>` : ''}
-                        ${!showDuration && !isWorkDay ? holidayMark : ''}
-                    </div>`;
-                }
+                            ${showDuration ? `<span style="color: ${isWorkDay ? 'white' : barColor}; font-size: 11px; font-weight: bold;">${task.durationDays}일</span>` : ''}
+                            ${!showDuration && !isWorkDay ? holidayMark : ''}
+                        </div>`;
+                    }
 
-                html += `<td class="gantt-date-cell" data-date="${dateString}" style="${cellStyle}">${cellContent}</td>`;
-            });
-            // ▲▲▲ [수정] 여기까지 ▲▲▲
+                    html += `<td class="gantt-date-cell" data-date="${dateString}" style="${cellStyle}">${cellContent}</td>`;
+                });
+
+            } else if (viewMode === 'Week') {
+                // Week 모드: 주 단위 셀
+                cellData.forEach((week, weekIndex) => {
+                    const weekStart = week.start;
+                    const weekEnd = week.end;
+
+                    // 태스크가 이 주에 걸쳐있는지 확인
+                    const taskOverlapsWeek = !(endDate < weekStart || startDate > weekEnd);
+
+                    let cellBgColor = isSelected ? '#e3f2fd' : bgColor;
+                    let cellContent = '';
+                    let cellStyle = `padding: 5px; text-align: center; min-width: 60px; background: ${cellBgColor}; border-right: 1px solid #ddd; position: relative;`;
+
+                    if (taskOverlapsWeek) {
+                        let barStyle = `background: ${barColor}; height: 30px; margin: 5px; border-radius: 4px;`;
+                        cellContent = `<div style="${barStyle}" title="액티비티: ${activity.code} - ${activity.name}"></div>`;
+                    }
+
+                    html += `<td style="${cellStyle}">${cellContent}</td>`;
+                });
+
+            } else if (viewMode === 'Month') {
+                // Month 모드: 월 단위 셀
+                cellData.forEach((month, monthIndex) => {
+                    const monthStart = month.start;
+                    const monthEnd = month.end;
+
+                    // 태스크가 이 월에 걸쳐있는지 확인
+                    const taskOverlapsMonth = !(endDate < monthStart || startDate > monthEnd);
+
+                    let cellBgColor = isSelected ? '#e3f2fd' : bgColor;
+                    let cellContent = '';
+                    let cellStyle = `padding: 5px; text-align: center; min-width: 80px; background: ${cellBgColor}; border-right: 1px solid #ddd; position: relative;`;
+
+                    if (taskOverlapsMonth) {
+                        let barStyle = `background: ${barColor}; height: 30px; margin: 5px; border-radius: 4px;`;
+                        cellContent = `<div style="${barStyle}" title="액티비티: ${activity.code} - ${activity.name}"></div>`;
+                    }
+
+                    html += `<td style="${cellStyle}">${cellContent}</td>`;
+                });
+            }
 
             html += `</tr>`;
         });
@@ -734,6 +900,24 @@ function selectGanttTask(taskId) {
 
     // 상세 정보 표시
     renderTaskDetail(taskId);
+
+    // 상단 Activity 단위 3D 연동 컨트롤 표시
+    const activityTask = ganttData.find(t => t.id === taskId);
+    const controlsDiv = document.getElementById('gantt-activity-3d-controls');
+    const activityNameSpan = document.getElementById('selected-activity-name');
+
+    if (controlsDiv && activityTask && activityTask.activity) {
+        controlsDiv.style.display = 'block';
+        if (activityNameSpan) {
+            const displayName = activityTask.activity.code
+                ? `${activityTask.activity.code} - ${activityTask.activity.name || ''}`
+                : activityTask.activity.name || `Activity ID: ${activityTask.activity.id}`;
+            activityNameSpan.textContent = displayName;
+        }
+    } else if (controlsDiv) {
+        // 선택 해제 시 숨김
+        controlsDiv.style.display = 'none';
+    }
 }
 
 /**
@@ -773,7 +957,7 @@ function renderTaskDetail(taskId) {
 
     if (!taskId) {
         detailContainer.innerHTML = '';
-        selectedCostItemId = null;
+        selectedActivityObjectId = null;
         return;
     }
 
@@ -784,57 +968,71 @@ function renderTaskDetail(taskId) {
         return;
     }
 
-    // 해당 액티비티에 할당된 모든 CostItem 찾기
-    const relatedItems = ganttCostItems.filter(item =>
-        item.activities && item.activities.includes(taskId)
-    );
+    // 해당 액티비티에 할당된 모든 ActivityObject 찾기
+    const relatedActivityObjects = window.loadedActivityObjects?.filter(ao =>
+        ao.activity && ao.activity.id === taskId
+    ) || [];
 
-    if (relatedItems.length === 0) {
-        detailContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">할당된 산출항목이 없습니다.</p>';
-        selectedCostItemId = null;
+    if (relatedActivityObjects.length === 0) {
+        detailContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">할당된 액티비티 객체가 없습니다.</p>';
+        selectedActivityObjectId = null;
         return;
     }
 
     const activity = selectedTask.activity;
 
     // 기본적으로 첫 번째 항목 선택 (이전에 선택된 항목이 없으면)
-    if (!selectedCostItemId || !relatedItems.find(item => item.id === selectedCostItemId)) {
-        selectedCostItemId = relatedItems[0].id;
+    if (!selectedActivityObjectId || !relatedActivityObjects.find(ao => ao.id === selectedActivityObjectId)) {
+        selectedActivityObjectId = relatedActivityObjects[0].id;
     }
 
-    // ▼▼▼ [수정] 좌우 분할 레이아웃 ▼▼▼
+    // 좌우 분할 레이아웃
     let html = `
         <div style="background: white; border-radius: 8px; padding: 20px; height: 100%; display: flex; flex-direction: column;">
-            <h3 style="margin: 0 0 15px 0; padding-bottom: 10px; border-bottom: 2px solid #1976d2; color: #1976d2; flex-shrink: 0;">
-                ${activity.code} - ${activity.name} (상세 정보)
+            <h3 style="margin: 0 0 15px 0; padding-bottom: 10px; border-bottom: 2px solid #6a1b9a; color: #6a1b9a; flex-shrink: 0;">
+                ${activity.code} - ${activity.name} (액티비티 객체 상세)
             </h3>
+            <!-- ActivityObject 단위 3D 연동 버튼 -->
+            <div id="gantt-ao-3d-controls" style="margin-bottom: 15px; padding: 10px; background: #f3e5f5; border-radius: 4px; border: 1px solid #9c27b0; flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px;">
+                    <span style="font-weight: bold; color: #6a1b9a;">선택한 객체:</span>
+                    <span id="selected-ao-name" style="color: #6a1b9a;">없음</span>
+                    <div style="margin-left: auto; display: flex; gap: 6px;">
+                        <button id="gantt-ao-select-in-client-btn" style="padding: 5px 10px; background: #9c27b0; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;" disabled>BIM 저작도구에서 확인</button>
+                        <button id="gantt-ao-select-in-3d-btn" style="padding: 5px 10px; background: #673ab7; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;" disabled>3D 뷰포트에서 확인</button>
+                    </div>
+                </div>
+            </div>
             <div style="display: grid; grid-template-columns: 350px 1fr; gap: 20px; flex: 1; min-height: 0;">
-                <!-- 좌측: 산출항목 목록 -->
+                <!-- 좌측: 액티비티 객체 목록 -->
                 <div style="border-right: 2px solid #e0e0e0; padding-right: 20px; overflow: hidden; display: flex; flex-direction: column;">
-                    <h4 style="margin: 0 0 10px 0; color: #666; font-size: 14px; flex-shrink: 0;">산출항목 목록 (${relatedItems.length}개)</h4>
-                    <div id="cost-item-list" style="overflow-y: scroll; overflow-x: hidden; flex: 1; min-height: 0;">
+                    <h4 style="margin: 0 0 10px 0; color: #666; font-size: 14px; flex-shrink: 0;">액티비티 객체 목록 (${relatedActivityObjects.length}개)</h4>
+                    <div id="activity-object-list" style="overflow-y: scroll; overflow-x: hidden; flex: 1; min-height: 0;">
     `;
 
-    // 좌측 산출항목 리스트
-    relatedItems.forEach((item, index) => {
-        const isSelected = item.id === selectedCostItemId;
-        const bgColor = isSelected ? '#e3f2fd' : (index % 2 === 0 ? '#ffffff' : '#f9f9f9');
-        const borderColor = isSelected ? '#1976d2' : '#e0e0e0';
-        const durationDays = Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(item.quantity || 0)));
+    // 좌측 액티비티 객체 리스트
+    relatedActivityObjects.forEach((ao, index) => {
+        const isSelected = ao.id === selectedActivityObjectId;
+        const bgColor = isSelected ? '#f3e5f5' : (index % 2 === 0 ? '#ffffff' : '#f9f9f9');
+        const borderColor = isSelected ? '#6a1b9a' : '#e0e0e0';
+        const durationDays = ao.actual_duration || Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(ao.quantity || 0)));
 
         html += `
-            <div class="cost-item-card" data-item-id="${item.id}"
+            <div class="activity-object-card" data-ao-id="${ao.id}"
                  style="padding: 12px; margin-bottom: 8px; background: ${bgColor}; border: 2px solid ${borderColor}; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
-                <div style="font-weight: bold; color: #1976d2; margin-bottom: 4px; font-size: 13px;">
-                    ${item.cost_code || '-'}
-                    ${item.cost_code_detail_code ? ' / ' + item.cost_code_detail_code : ''}
+                <div style="font-weight: bold; color: #6a1b9a; margin-bottom: 4px; font-size: 13px;">
+                    ${ao.cost_code?.code || '-'}
+                    ${ao.cost_code?.detail_code ? ' / ' + ao.cost_code.detail_code : ''}
                 </div>
                 <div style="font-size: 12px; color: #666; margin-bottom: 4px;">
-                    ${item.cost_code_name || '-'}
+                    ${ao.cost_code?.name || '-'}
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #999;">
-                    <span>${item.quantity ? parseFloat(item.quantity).toFixed(2) : '-'} ${item.cost_code_unit || ''}</span>
-                    <span style="font-weight: bold; color: #1976d2;">${durationDays}일</span>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 4px;">
+                    <span>수량: ${ao.quantity ? parseFloat(ao.quantity).toFixed(2) : '-'}</span>
+                    <span style="font-weight: bold; color: #6a1b9a;">${durationDays}일</span>
+                </div>
+                <div style="font-size: 10px; color: #999;">
+                    ${ao.start_date || '-'} ~ ${ao.end_date || '-'}
                 </div>
             </div>
         `;
@@ -843,13 +1041,13 @@ function renderTaskDetail(taskId) {
     html += `
                     </div>
                 </div>
-                <!-- 우측: 선택된 산출항목의 상세 정보 -->
+                <!-- 우측: 선택된 액티비티 객체의 상세 정보 -->
                 <div style="padding-left: 10px; overflow: hidden; display: flex; flex-direction: column;">
-                    <div id="cost-item-detail" style="overflow-y: scroll; overflow-x: hidden; flex: 1; min-height: 0;">
+                    <div id="activity-object-detail" style="overflow-y: scroll; overflow-x: hidden; flex: 1; min-height: 0;">
     `;
 
     // 우측 상세 정보
-    html += renderCostItemDetail(selectedCostItemId, activity);
+    html += renderActivityObjectDetail(selectedActivityObjectId);
 
     html += `
                     </div>
@@ -857,236 +1055,224 @@ function renderTaskDetail(taskId) {
             </div>
         </div>
     `;
-    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     detailContainer.innerHTML = html;
 
-    // 산출항목 카드 클릭 이벤트 등록
-    document.querySelectorAll('.cost-item-card').forEach(card => {
+    // 액티비티 객체 카드 클릭 이벤트 등록
+    document.querySelectorAll('.activity-object-card').forEach(card => {
         card.addEventListener('click', function() {
-            const itemId = this.getAttribute('data-item-id');
-            selectCostItem(itemId);
+            const aoId = this.getAttribute('data-ao-id');
+            selectActivityObject(aoId);
         });
 
         // 호버 효과
         card.addEventListener('mouseenter', function() {
-            if (this.getAttribute('data-item-id') !== selectedCostItemId) {
+            if (this.getAttribute('data-ao-id') !== selectedActivityObjectId) {
                 this.style.background = '#f5f5f5';
             }
         });
 
         card.addEventListener('mouseleave', function() {
-            if (this.getAttribute('data-item-id') !== selectedCostItemId) {
+            if (this.getAttribute('data-ao-id') !== selectedActivityObjectId) {
                 const index = Array.from(this.parentNode.children).indexOf(this);
                 this.style.background = index % 2 === 0 ? '#ffffff' : '#f9f9f9';
             }
         });
     });
-
-    // 탭 전환 이벤트 등록
-    document.querySelectorAll('.detail-tab-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const targetTab = this.getAttribute('data-tab');
-
-            // 모든 탭 버튼 비활성화
-            document.querySelectorAll('.detail-tab-btn').forEach(b => {
-                b.style.background = '#f5f5f5';
-                b.style.color = '#666';
-                b.classList.remove('active');
-            });
-
-            // 클릭된 탭 버튼 활성화
-            this.style.background = '#1976d2';
-            this.style.color = 'white';
-            this.classList.add('active');
-
-            // 모든 탭 콘텐츠 숨기기
-            document.querySelectorAll('.detail-tab-content').forEach(content => {
-                content.style.display = 'none';
-            });
-
-            // 선택된 탭 콘텐츠 표시
-            const targetContent = document.querySelector(`.detail-tab-content[data-tab="${targetTab}"]`);
-            if (targetContent) {
-                targetContent.style.display = 'block';
-            }
-        });
-    });
 }
 
 /**
- * 산출항목 선택
+ * 액티비티 객체 선택
  */
-function selectCostItem(itemId) {
-    selectedCostItemId = itemId;
+function selectActivityObject(aoId) {
+    selectedActivityObjectId = aoId;
     // 상세 정보만 다시 렌더링
     renderTaskDetail(selectedTaskId);
-}
 
-/**
- * 산출항목 상세 정보 렌더링 (탭 형태)
- */
-function renderCostItemDetail(itemId, activity) {
-    if (!itemId) {
-        return '<p style="padding: 20px; text-align: center; color: #999;">산출항목을 선택해주세요.</p>';
+    // 하단 ActivityObject 단위 3D 연동 버튼 활성화 및 이름 표시
+    const ao = window.loadedActivityObjects?.find(obj => obj.id === aoId);
+    const aoNameSpan = document.getElementById('selected-ao-name');
+    const clientBtn = document.getElementById('gantt-ao-select-in-client-btn');
+    const viewer3dBtn = document.getElementById('gantt-ao-select-in-3d-btn');
+
+    if (ao && aoNameSpan) {
+        const displayName = ao.cost_code?.code
+            ? `${ao.cost_code.code} - ${ao.cost_code.name || ''}`
+            : `AO ID: ${aoId}`;
+        aoNameSpan.textContent = displayName;
     }
 
-    const item = ganttCostItems.find(i => i.id === itemId);
-    if (!item) {
-        return '<p style="padding: 20px; text-align: center; color: #999;">산출항목을 찾을 수 없습니다.</p>';
+    // 버튼 활성화
+    if (clientBtn) clientBtn.disabled = false;
+    if (viewer3dBtn) viewer3dBtn.disabled = false;
+}
+
+/**
+ * 액티비티 객체 상세 정보 렌더링 (Activity Object 탭과 동일한 형식)
+ */
+function renderActivityObjectDetail(aoId) {
+    if (!aoId) {
+        return '<p style="padding: 20px; text-align: center; color: #999;">액티비티 객체를 선택해주세요.</p>';
     }
 
-    const durationDays = Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(item.quantity || 0)));
+    const ao = window.loadedActivityObjects?.find(obj => obj.id === aoId);
+    if (!ao) {
+        return '<p style="padding: 20px; text-align: center; color: #999;">액티비티 객체를 찾을 수 없습니다.</p>';
+    }
 
-    return `
-        <div style="display: flex; flex-direction: column; height: 100%;">
-            <!-- 탭 헤더 -->
-            <div style="display: flex; border-bottom: 2px solid #ddd; margin-bottom: 15px; flex-shrink: 0;">
-                <button class="detail-tab-btn active" data-tab="cost-item" style="padding: 10px 20px; border: none; background: #1976d2; color: white; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 4px 4px 0 0; margin-right: 2px;">
-                    산출항목 정보
-                </button>
-                <button class="detail-tab-btn" data-tab="quantity-member" style="padding: 10px 20px; border: none; background: #f5f5f5; color: #666; cursor: pointer; font-size: 13px; border-radius: 4px 4px 0 0; margin-right: 2px;">
-                    수량산출부재 정보
-                </button>
-                <button class="detail-tab-btn" data-tab="raw-element" style="padding: 10px 20px; border: none; background: #f5f5f5; color: #666; cursor: pointer; font-size: 13px; border-radius: 4px 4px 0 0;">
-                    BIM 원본객체 정보
-                </button>
-            </div>
+    let html = '';
 
-            <!-- 탭 내용 -->
-            <div style="flex: 1; overflow-y: auto; min-height: 0;">
-                ${renderCostItemTab(item, activity, durationDays)}
-                ${renderQuantityMemberTab(item)}
-                ${renderRawElementTab(item)}
-            </div>
-        </div>
-    `;
-}
+    // ============ 1. AO 기본 속성 ============
+    html += '<div class="property-section" style="margin-bottom: 20px;">';
+    html += '<h4 style="color: #6a1b9a; border-bottom: 2px solid #6a1b9a; padding-bottom: 5px; margin-bottom: 10px;">📅 액티비티 객체 기본 속성</h4>';
+    html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">AO.id</td><td style="padding: 8px;">${ao.id || 'N/A'}</td></tr>`;
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.start_date</td><td style="padding: 8px;">${ao.start_date || 'N/A'}</td></tr>`;
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.end_date</td><td style="padding: 8px;">${ao.end_date || 'N/A'}</td></tr>`;
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.actual_duration</td><td style="padding: 8px;">${ao.actual_duration || 'N/A'}</td></tr>`;
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.quantity</td><td style="padding: 8px;">${ao.quantity}</td></tr>`;
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.is_manual</td><td style="padding: 8px;">${ao.is_manual ? 'true' : 'false'}</td></tr>`;
+    if (ao.manual_formula) {
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.manual_formula</td><td style="padding: 8px;">${ao.manual_formula}</td></tr>`;
+    }
+    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">AO.progress</td><td style="padding: 8px;">${ao.progress}%</td></tr>`;
+    html += '</tbody></table>';
+    html += '</div>';
 
-/**
- * 산출항목 정보 탭
- */
-function renderCostItemTab(item, activity, durationDays) {
-    return `
-        <div class="detail-tab-content active" data-tab="cost-item">
-            <h4 style="margin: 0 0 15px 0; color: #666; font-size: 14px;">산출항목 상세 정보</h4>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
-                <tbody>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold; width: 200px;">ID</td>
-                        <td style="padding: 12px;">${item.id || '-'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">공사코드</td>
-                        <td style="padding: 12px;">${item.cost_code || '-'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">세부코드</td>
-                        <td style="padding: 12px;">${item.cost_code_detail_code || '-'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">이름</td>
-                        <td style="padding: 12px;">${item.cost_code_name || '-'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">수량</td>
-                        <td style="padding: 12px;">${item.quantity ? parseFloat(item.quantity).toFixed(2) : '-'} ${item.cost_code_unit || ''}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">단위</td>
-                        <td style="padding: 12px;">${item.cost_code_unit || '-'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">활성 상태</td>
-                        <td style="padding: 12px;">${item.is_active ? '활성' : '비활성'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">설명</td>
-                        <td style="padding: 12px;">${item.description || '-'}</td>
-                    </tr>
-                    <tr style="border-bottom: 1px solid #e0e0e0;">
-                        <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">단위수량당 소요일수</td>
-                        <td style="padding: 12px;">${activity.duration_per_unit || 0}일</td>
-                    </tr>
-                    <tr style="border-bottom: 2px solid #1976d2; background: #e3f2fd;">
-                        <td style="padding: 12px; font-weight: bold; color: #1976d2;">총 소요일수</td>
-                        <td style="padding: 12px; font-weight: bold; color: #1976d2; font-size: 16px;">${durationDays}일</td>
-                    </tr>
-                </tbody>
-            </table>
-            <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px; font-size: 12px; color: #666;">
-                <p style="margin: 0 0 5px 0;"><strong>액티비티 정보:</strong></p>
-                <p style="margin: 0 0 5px 0;">• 액티비티 코드: ${activity.code}</p>
-                <p style="margin: 0 0 5px 0;">• 액티비티 이름: ${activity.name}</p>
-                <p style="margin: 0; margin-bottom: 20px;">• 담당자: ${activity.responsible_person || '미지정'}</p>
-            </div>
-        </div>
-    `;
-}
+    // ============ 2. Activity 속성 ============
+    if (ao.activity) {
+        html += '<div class="property-section" style="margin-bottom: 20px;">';
+        html += '<h4 style="color: #d84315; border-bottom: 2px solid #d84315; padding-bottom: 5px; margin-bottom: 10px;">⚙️ 액티비티 코드 속성</h4>';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">Activity.code</td><td style="padding: 8px;">${ao.activity.code || 'N/A'}</td></tr>`;
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">Activity.name</td><td style="padding: 8px;">${ao.activity.name || 'N/A'}</td></tr>`;
+        if (ao.activity.duration_per_unit !== null && ao.activity.duration_per_unit !== undefined) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">Activity.duration_per_unit</td><td style="padding: 8px;">${ao.activity.duration_per_unit}</td></tr>`;
+        }
+        if (ao.activity.responsible_person) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">Activity.responsible_person</td><td style="padding: 8px;">${ao.activity.responsible_person}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+    }
 
-/**
- * 수량산출부재 정보 탭
- */
-function renderQuantityMemberTab(item) {
-    const qmProps = item.quantity_member_properties || {};
-    const mmProps = item.member_mark_properties || {};
+    // ============ 3. CI 속성 (상속) ============
+    if (ao.cost_item) {
+        html += '<div class="property-section" style="margin-bottom: 20px;">';
+        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px; margin-bottom: 10px;">📊 산출항목 속성 (상속 from CI)</h4>';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">CI.id</td><td style="padding: 8px;">${ao.cost_item.id || 'N/A'}</td></tr>`;
+        if (ao.cost_item.quantity !== undefined) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">CI.quantity</td><td style="padding: 8px;">${ao.cost_item.quantity}</td></tr>`;
+        }
+        if (ao.cost_item.description) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">CI.description</td><td style="padding: 8px;">${ao.cost_item.description}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+    }
 
-    return `
-        <div class="detail-tab-content" data-tab="quantity-member" style="display: none;">
-            <h4 style="margin: 0 0 15px 0; color: #666; font-size: 14px;">수량산출부재 속성</h4>
-            ${Object.keys(qmProps).length > 0 ? `
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
-                    <tbody>
-                        ${Object.entries(qmProps).map(([key, value]) => `
-                            <tr style="border-bottom: 1px solid #e0e0e0;">
-                                <td style="padding: 12px; background: #f5f5f5; font-weight: bold; width: 200px;">${key}</td>
-                                <td style="padding: 12px;">${typeof value === 'object' ? JSON.stringify(value, null, 2) : (value || '-')}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            ` : '<p style="padding: 20px; text-align: center; color: #999;">수량산출부재 속성이 없습니다.</p>'}
+    // ============ 4. CostCode 속성 (상속) ============
+    if (ao.cost_code) {
+        html += '<div class="property-section" style="margin-bottom: 20px;">';
+        html += '<h4 style="color: #c62828; border-bottom: 2px solid #c62828; padding-bottom: 5px; margin-bottom: 10px;">💰 공사코드 속성 (상속 from CostCode)</h4>';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">CostCode.code</td><td style="padding: 8px;">${ao.cost_code.code || 'N/A'}</td></tr>`;
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">CostCode.name</td><td style="padding: 8px;">${ao.cost_code.name || 'N/A'}</td></tr>`;
+        if (ao.cost_code.detail_code) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">CostCode.detail_code</td><td style="padding: 8px;">${ao.cost_code.detail_code}</td></tr>`;
+        }
+        if (ao.cost_code.note) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">CostCode.note</td><td style="padding: 8px;">${ao.cost_code.note}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+    }
 
-            ${Object.keys(mmProps).length > 0 ? `
-                <h4 style="margin: 20px 0 15px 0; color: #666; font-size: 14px;">부재마크 속성</h4>
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
-                    <tbody>
-                        ${Object.entries(mmProps).map(([key, value]) => `
-                            <tr style="border-bottom: 1px solid #e0e0e0;">
-                                <td style="padding: 12px; background: #f5f5f5; font-weight: bold; width: 200px;">${key}</td>
-                                <td style="padding: 12px;">${typeof value === 'object' ? JSON.stringify(value, null, 2) : (value || '-')}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            ` : ''}
-        </div>
-    `;
-}
+    // ============ 5. QM 속성 (상속) ============
+    if (ao.quantity_member) {
+        html += '<div class="property-section" style="margin-bottom: 20px;">';
+        html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px; margin-bottom: 10px;">📌 수량산출부재 기본 속성 (상속 from QM)</h4>';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+        html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">QM.id</td><td style="padding: 8px;">${ao.quantity_member.id || 'N/A'}</td></tr>`;
+        if (ao.quantity_member.name) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold;">QM.name</td><td style="padding: 8px;">${ao.quantity_member.name}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        html += '</div>';
 
-/**
- * BIM 원본객체 정보 탭
- */
-function renderRawElementTab(item) {
-    const rawProps = item.raw_element_properties || {};
+        // QM properties
+        if (ao.quantity_member.properties && Object.keys(ao.quantity_member.properties).length > 0) {
+            html += '<div class="property-section" style="margin-bottom: 20px;">';
+            html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px; margin-bottom: 10px;">🔢 부재 속성 (상속 from QM)</h4>';
+            html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+            for (const [key, value] of Object.entries(ao.quantity_member.properties)) {
+                if (value !== null && value !== undefined) {
+                    const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
+                    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">QM.properties.${key}</td><td style="padding: 8px;">${displayValue}</td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+    }
 
-    return `
-        <div class="detail-tab-content" data-tab="raw-element" style="display: none;">
-            <h4 style="margin: 0 0 15px 0; color: #666; font-size: 14px;">BIM 원본객체 속성</h4>
-            ${Object.keys(rawProps).length > 0 ? `
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
-                    <tbody>
-                        ${Object.entries(rawProps).map(([key, value]) => `
-                            <tr style="border-bottom: 1px solid #e0e0e0;">
-                                <td style="padding: 12px; background: #f5f5f5; font-weight: bold; width: 200px;">${key}</td>
-                                <td style="padding: 12px; word-break: break-all;">${typeof value === 'object' ? JSON.stringify(value, null, 2) : (value || '-')}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            ` : '<p style="padding: 20px; text-align: center; color: #999;">BIM 원본객체 속성이 없습니다.</p>'}
-        </div>
-    `;
+    // ============ 6. MM 속성 (상속) ============
+    if (ao.member_mark) {
+        html += '<div class="property-section" style="margin-bottom: 20px;">';
+        html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px; margin-bottom: 10px;">📋 일람부호 (상속 from MM)</h4>';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+        if (ao.member_mark.mark) {
+            html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">MM.mark</td><td style="padding: 8px;">${ao.member_mark.mark}</td></tr>`;
+        }
+        if (ao.member_mark.properties && Object.keys(ao.member_mark.properties).length > 0) {
+            for (const [key, value] of Object.entries(ao.member_mark.properties)) {
+                if (value !== null && value !== undefined) {
+                    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">MM.properties.${key}</td><td style="padding: 8px;">${value}</td></tr>`;
+                }
+            }
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // ============ 7. BIM 속성 (상속) - 축약 버전 ============
+    if (ao.raw_data) {
+        // BIM 시스템 속성
+        html += '<div class="property-section" style="margin-bottom: 20px;">';
+        html += '<h4 style="color: #00796b; border-bottom: 2px solid #00796b; padding-bottom: 5px; margin-bottom: 10px;">🏗️ BIM 시스템 속성 (상속 from BIM)</h4>';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+
+        const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId'];
+        basicAttrs.forEach(attr => {
+            if (ao.raw_data[attr] !== undefined && ao.raw_data[attr] !== null) {
+                html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">BIM.Attributes.${attr}</td><td style="padding: 8px;">${ao.raw_data[attr]}</td></tr>`;
+            }
+        });
+        html += '</tbody></table>';
+        html += '</div>';
+
+        // BIM Parameters (최대 10개만 표시)
+        if (ao.raw_data.Parameters && typeof ao.raw_data.Parameters === 'object' && Object.keys(ao.raw_data.Parameters).length > 0) {
+            html += '<div class="property-section" style="margin-bottom: 20px;">';
+            html += '<h4 style="color: #00897b; border-bottom: 2px solid #00897b; padding-bottom: 5px; margin-bottom: 10px;">🔧 BIM 파라메터 (상속, 최대 10개)</h4>';
+            html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;"><tbody>';
+            const params = Object.entries(ao.raw_data.Parameters).slice(0, 10);
+            for (const [key, value] of params) {
+                if (key === 'Geometry') continue;
+                if (value !== null && value !== undefined) {
+                    const displayValue = (typeof value === 'object')
+                        ? JSON.stringify(value).substring(0, 50)
+                        : String(value).substring(0, 100);
+                    html += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; background: #f5f5f5; font-weight: bold; width: 40%;">BIM.Parameters.${key}</td><td style="padding: 8px; word-break: break-all;">${displayValue}</td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+    }
+
+    return html;
 }
 
 /**
@@ -1156,6 +1342,106 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // ▼▼▼ 공정표 3D 연동 버튼 이벤트 리스너 ▼▼▼
+    // 상단: Activity 단위 연동
+    document.getElementById('gantt-activity-select-in-client-btn')?.addEventListener('click', ganttActivitySelectInClient);
+    document.getElementById('gantt-activity-select-in-3d-btn')?.addEventListener('click', ganttActivitySelectIn3D);
+
+    // 하단: ActivityObject 단위 연동 (delegated events - renderTaskDetail에서 동적 생성되므로)
+    document.addEventListener('click', function(e) {
+        if (e.target.id === 'gantt-ao-select-in-client-btn') {
+            ganttAoSelectInClient();
+        } else if (e.target.id === 'gantt-ao-select-in-3d-btn') {
+            ganttAoSelectIn3D();
+        }
+    });
+    // ▲▲▲ 공정표 3D 연동 버튼 이벤트 리스너 끝 ▲▲▲
+
+    // ▼▼▼ 공정표 스플릿바 드래그 기능 ▼▼▼
+    const ganttTopSection = document.getElementById('gantt-top-section');
+    const ganttBottomSection = document.getElementById('gantt-bottom-section');
+    const ganttResizeHandle = document.getElementById('gantt-resize-handle');
+
+    if (ganttResizeHandle && ganttTopSection && ganttBottomSection) {
+        let isResizing = false;
+        let startY = 0;
+        let startTopHeight = 0;
+        let startBottomHeight = 0;
+
+        ganttResizeHandle.addEventListener('mousedown', function(e) {
+            // 하단이 접혀있으면 드래그 불가
+            const ganttBottomContent = document.getElementById('gantt-bottom-content');
+            if (!ganttBottomContent || ganttBottomContent.style.display === 'none') {
+                return;
+            }
+
+            isResizing = true;
+            startY = e.clientY;
+            startTopHeight = ganttTopSection.offsetHeight;
+            startBottomHeight = ganttBottomSection.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+
+            const deltaY = e.clientY - startY;
+            let newTopHeight = startTopHeight + deltaY;
+            let newBottomHeight = startBottomHeight - deltaY;
+
+            // 최소 높이 제한
+            if (newTopHeight < 200) newTopHeight = 200;
+            if (newBottomHeight < 100) newBottomHeight = 100;
+
+            // 최소 높이를 만족하면 크기 조정
+            if (newTopHeight >= 200 && newBottomHeight >= 100) {
+                ganttTopSection.style.flex = `1 1 ${newTopHeight}px`;
+                ganttBottomSection.style.flex = `0 0 ${newBottomHeight}px`;
+            }
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+    }
+    // ▲▲▲ 공정표 스플릿바 드래그 기능 끝 ▲▲▲
+
+    // ▼▼▼ 공정표 하단 섹션 토글 기능 ▼▼▼
+    const ganttBottomToggleHeader = document.getElementById('gantt-bottom-toggle-header');
+    const ganttBottomContent = document.getElementById('gantt-bottom-content');
+    const ganttBottomToggleIcon = document.getElementById('gantt-bottom-toggle-icon');
+
+    if (ganttBottomToggleHeader && ganttBottomContent && ganttBottomToggleIcon && ganttTopSection && ganttBottomSection) {
+        ganttBottomToggleHeader.addEventListener('click', function() {
+            const isCurrentlyOpen = ganttBottomContent.style.display !== 'none';
+
+            if (isCurrentlyOpen) {
+                // 접기
+                ganttBottomContent.style.display = 'none';
+                ganttBottomToggleIcon.textContent = '▼';
+                ganttBottomSection.style.flex = '0 0 50px';
+                ganttTopSection.style.flex = '1 1 auto';
+            } else {
+                // 펼치기 - 전체 높이의 40% 정도로 설정
+                const ganttContainer = ganttTopSection.parentElement;
+                const totalHeight = ganttContainer.offsetHeight;
+                const bottomHeight = Math.max(300, Math.floor(totalHeight * 0.4)); // 최소 300px
+
+                ganttBottomContent.style.display = 'flex';
+                ganttBottomToggleIcon.textContent = '▲';
+                ganttBottomSection.style.flex = `0 0 ${bottomHeight}px`;
+                ganttTopSection.style.flex = '1 1 auto';
+            }
+        });
+    }
+    // ▲▲▲ 공정표 하단 섹션 토글 기능 끝 ▲▲▲
 
     console.log('[Gantt Chart] Event listeners registered');
 });
@@ -1422,3 +1708,204 @@ function renderGanttBoqTable(boqData) {
 
     boqContainer.innerHTML = html;
 }
+
+// =====================================================================
+// 공정표 3D 연동 핸들러 함수들
+// =====================================================================
+
+// ▼▼▼ Activity 단위 (상단 공정표) 3D 연동 ▼▼▼
+
+/**
+ * Activity 단위: 선택한 Activity의 모든 ActivityObject를 BIM 저작도구에서 선택
+ */
+function ganttActivitySelectInClient() {
+    if (!selectedTaskId) {
+        showToast('공정표에서 액티비티를 먼저 선택하세요.', 'warning');
+        return;
+    }
+
+    // 선택된 Activity의 모든 ActivityObject 찾기
+    const relatedActivityObjects = window.loadedActivityObjects?.filter(ao =>
+        ao.activity && ao.activity.id === selectedTaskId
+    ) || [];
+
+    if (relatedActivityObjects.length === 0) {
+        showToast('선택한 액티비티에 연결된 액티비티 객체가 없습니다.', 'warning');
+        return;
+    }
+
+    // ActivityObject들의 element_unique_id를 수집
+    const uniqueIdsToSend = [];
+    relatedActivityObjects.forEach(ao => {
+        if (ao.quantity_member && ao.quantity_member.id) {
+            const qm = window.loadedQuantityMembers?.find(q => q.id === ao.quantity_member.id);
+            if (qm) {
+                const elementId = qm.split_element_id || qm.raw_element_id;
+                if (elementId) {
+                    const rawElement = allRevitData.find(item => item.id === elementId);
+                    if (rawElement && rawElement.element_unique_id) {
+                        uniqueIdsToSend.push(rawElement.element_unique_id);
+                    }
+                }
+            }
+        }
+    });
+
+    if (uniqueIdsToSend.length === 0) {
+        showToast('선택한 액티비티에 연결된 BIM 요소가 없습니다.', 'warning');
+        return;
+    }
+
+    const targetGroup = currentMode === 'revit' ? 'revit_broadcast_group' : 'blender_broadcast_group';
+    frontendSocket.send(JSON.stringify({
+        type: 'command_to_client',
+        payload: {
+            command: 'select_elements',
+            unique_ids: uniqueIdsToSend,
+            target_group: targetGroup,
+        },
+    }));
+    showToast(`${currentMode === 'revit' ? 'Revit' : 'Blender'}에서 ${uniqueIdsToSend.length}개 요소를 선택하도록 요청했습니다.`, 'success');
+}
+
+
+/**
+ * Activity 단위: 선택한 Activity의 모든 ActivityObject를 3D 뷰어에서 선택
+ */
+function ganttActivitySelectIn3D() {
+    if (!selectedTaskId) {
+        showToast('공정표에서 액티비티를 먼저 선택하세요.', 'warning');
+        return;
+    }
+
+    if (typeof window.selectObjectsIn3DViewer !== 'function') {
+        showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
+        return;
+    }
+
+    // 선택된 Activity의 모든 ActivityObject 찾기
+    const relatedActivityObjects = window.loadedActivityObjects?.filter(ao =>
+        ao.activity && ao.activity.id === selectedTaskId
+    ) || [];
+
+    if (relatedActivityObjects.length === 0) {
+        showToast('선택한 액티비티에 연결된 액티비티 객체가 없습니다.', 'warning');
+        return;
+    }
+
+    // ActivityObject들의 raw_element_id를 수집
+    const bimIdsToSelect = [];
+    relatedActivityObjects.forEach(ao => {
+        if (ao.quantity_member && ao.quantity_member.id) {
+            const qm = window.loadedQuantityMembers?.find(q => q.id === ao.quantity_member.id);
+            if (qm) {
+                const elementId = qm.split_element_id || qm.raw_element_id;
+                if (elementId) {
+                    bimIdsToSelect.push(elementId);
+                }
+            }
+        }
+    });
+
+    if (bimIdsToSelect.length === 0) {
+        showToast('선택한 액티비티에 연결된 BIM 요소가 없습니다.', 'warning');
+        return;
+    }
+
+    window.selectObjectsIn3DViewer(bimIdsToSelect);
+    showToast(`3D 뷰포트에서 ${bimIdsToSelect.length}개 객체를 선택했습니다.`, 'success');
+}
+
+// ▼▼▼ ActivityObject 단위 (하단 상세정보) 3D 연동 ▼▼▼
+
+
+/**
+ * ActivityObject 단위: 선택한 ActivityObject를 BIM 저작도구에서 선택
+ */
+function ganttAoSelectInClient() {
+    if (!selectedActivityObjectId) {
+        showToast('상세정보에서 액티비티 객체를 먼저 선택하세요.', 'warning');
+        return;
+    }
+
+    const ao = window.loadedActivityObjects?.find(obj => obj.id === selectedActivityObjectId);
+    if (!ao) {
+        showToast('선택한 액티비티 객체를 찾을 수 없습니다.', 'error');
+        return;
+    }
+
+    const uniqueIdsToSend = [];
+    if (ao.quantity_member && ao.quantity_member.id) {
+        const qm = window.loadedQuantityMembers?.find(q => q.id === ao.quantity_member.id);
+        if (qm) {
+            const elementId = qm.split_element_id || qm.raw_element_id;
+            if (elementId) {
+                const rawElement = allRevitData.find(item => item.id === elementId);
+                if (rawElement && rawElement.element_unique_id) {
+                    uniqueIdsToSend.push(rawElement.element_unique_id);
+                }
+            }
+        }
+    }
+
+    if (uniqueIdsToSend.length === 0) {
+        showToast('선택한 액티비티 객체에 연결된 BIM 요소가 없습니다.', 'warning');
+        return;
+    }
+
+    const targetGroup = currentMode === 'revit' ? 'revit_broadcast_group' : 'blender_broadcast_group';
+    frontendSocket.send(JSON.stringify({
+        type: 'command_to_client',
+        payload: {
+            command: 'select_elements',
+            unique_ids: uniqueIdsToSend,
+            target_group: targetGroup,
+        },
+    }));
+    showToast(`${currentMode === 'revit' ? 'Revit' : 'Blender'}에서 ${uniqueIdsToSend.length}개 요소를 선택하도록 요청했습니다.`, 'success');
+}
+
+
+/**
+ * ActivityObject 단위: 선택한 ActivityObject를 3D 뷰어에서 선택
+ */
+function ganttAoSelectIn3D() {
+    if (!selectedActivityObjectId) {
+        showToast('상세정보에서 액티비티 객체를 먼저 선택하세요.', 'warning');
+        return;
+    }
+
+    if (typeof window.selectObjectsIn3DViewer !== 'function') {
+        showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
+        return;
+    }
+
+    const ao = window.loadedActivityObjects?.find(obj => obj.id === selectedActivityObjectId);
+    if (!ao) {
+        showToast('선택한 액티비티 객체를 찾을 수 없습니다.', 'error');
+        return;
+    }
+
+    const bimIdsToSelect = [];
+    if (ao.quantity_member && ao.quantity_member.id) {
+        const qm = window.loadedQuantityMembers?.find(q => q.id === ao.quantity_member.id);
+        if (qm) {
+            const elementId = qm.split_element_id || qm.raw_element_id;
+            if (elementId) {
+                bimIdsToSelect.push(elementId);
+            }
+        }
+    }
+
+    if (bimIdsToSelect.length === 0) {
+        showToast('선택한 액티비티 객체에 연결된 BIM 요소가 없습니다.', 'warning');
+        return;
+    }
+
+    window.selectObjectsIn3DViewer(bimIdsToSelect);
+    showToast(`3D 뷰포트에서 ${bimIdsToSelect.length}개 객체를 선택했습니다.`, 'success');
+}
+
+// ▼▼▼ [추가] 전역으로 노출 (시뮬레이션 탭에서 사용) ▼▼▼
+window.renderGanttChart = renderGanttChart;
+// ▲▲▲ [추가] 여기까지 ▲▲▲

@@ -151,6 +151,17 @@ function handleProjectChange(e) {
             loadActivities();
         }
         // --- 3D 뷰어용 데이터 로드 끝 ---
+
+        // --- 홈 탭 UI 업데이트 ---
+        if (typeof updateHomeProjectListSelection === 'function') {
+            updateHomeProjectListSelection(currentProjectId);
+        }
+        if (typeof updateHomeCurrentProjectInfo === 'function') {
+            updateHomeCurrentProjectInfo();
+        }
+        if (typeof enableHomeProjectButtons === 'function') {
+            enableHomeProjectButtons();
+        }
     } else {
         // --- 프로젝트 선택 해제 시 UI 초기화 ---
         console.log(
@@ -158,6 +169,17 @@ function handleProjectChange(e) {
         ); // 디버깅
         showToast('프로젝트 선택이 해제되었습니다.', 'info');
         clearAllTabData(); // UI 초기화 함수 호출
+
+        // --- 홈 탭 UI 업데이트 ---
+        if (typeof updateHomeProjectListSelection === 'function') {
+            updateHomeProjectListSelection(null);
+        }
+        if (typeof updateHomeCurrentProjectInfo === 'function') {
+            updateHomeCurrentProjectInfo();
+        }
+        if (typeof enableHomeProjectButtons === 'function') {
+            enableHomeProjectButtons();
+        }
     }
 }
 

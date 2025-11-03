@@ -9,7 +9,9 @@ urlpatterns = [
     path('export-tags/<uuid:project_id>/', views.export_tags, name='export_tags'),
     path('import-tags/<uuid:project_id>/', views.import_tags, name='import_tags'),
     # --- 기본 프로젝트 및 태그 관리 ---
+    path('api/projects/', views.get_all_projects, name='get_all_projects'),
     path('create-project/', views.create_project, name='create_project'),
+    path('delete-project/<uuid:project_id>/', views.delete_project, name='delete_project'),
     path('export-tags/<uuid:project_id>/', views.export_tags, name='export_tags'),
     path('import-tags/<uuid:project_id>/', views.import_tags, name='import_tags'),
 

@@ -40,6 +40,7 @@ from .models import (
     Project,
     RawElement,
     QuantityClassificationTag,
+    ElementClassificationAssignment,  # <--- 분류 할당 중간 테이블 추가
     ClassificationRule,
     QuantityMember,
     CostItem,
@@ -84,6 +85,56 @@ def create_project(request):
     # 디버깅: 잘못된 요청
     print("[ERROR][create_project] Invalid request method or missing name")
     return JsonResponse({'status': 'error', 'message': 'Invalid request'}, status=400)
+
+def get_all_projects(request):
+    """
+    모든 프로젝트 목록을 반환하는 API
+    """
+    print("[DEBUG][get_all_projects] Fetching all projects")
+    if request.method == 'GET':
+        projects = Project.objects.all().order_by('-created_at')
+        project_list = [
+            {
+                'id': str(project.id),
+                'name': project.name,
+                'created_at': project.created_at.isoformat() if project.created_at else None,
+            }
+            for project in projects
+        ]
+        print(f"[DEBUG][get_all_projects] Returning {len(project_list)} projects")
+        return JsonResponse(project_list, safe=False)
+    print("[ERROR][get_all_projects] Invalid request method")
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
+
+def delete_project(request, project_id):
+    """
+    프로젝트를 삭제하는 API
+    """
+    print(f"[DEBUG][delete_project] Received request to delete project ID: {project_id}")
+    if request.method == 'DELETE':
+        try:
+            project = Project.objects.get(id=project_id)
+            project_name = project.name
+            project.delete()  # CASCADE로 관련된 모든 데이터가 함께 삭제됨
+            print(f"[DEBUG][delete_project] Project '{project_name}' (ID: {project_id}) deleted successfully")
+            return JsonResponse({
+                'status': 'success',
+                'message': f'프로젝트 "{project_name}"가 삭제되었습니다.'
+            })
+        except Project.DoesNotExist:
+            print(f"[ERROR][delete_project] Project with ID {project_id} not found")
+            return JsonResponse({
+                'status': 'error',
+                'message': '프로젝트를 찾을 수 없습니다.'
+            }, status=404)
+        except Exception as e:
+            print(f"[ERROR][delete_project] Error deleting project: {e}")
+            return JsonResponse({
+                'status': 'error',
+                'message': f'프로젝트 삭제 중 오류가 발생했습니다: {str(e)}'
+            }, status=500)
+    print("[ERROR][delete_project] Invalid request method")
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
 
 def trigger_revit_data_fetch(request, project_id):
     # 디버깅: 데이터 가져오기 명령 트리거
@@ -3577,16 +3628,18 @@ def export_project(request, project_id):
         project = Project.objects.get(id=project_id)
         print(f"[DEBUG][export_project] 프로젝트 '{project.name}' 확인됨.")
 
-        # 직렬화할 모델과 쿼리셋 정의 (UnitPriceType, UnitPrice, AIModel 포함 확인)
+        # 직렬화할 모델과 쿼리셋 정의 (UnitPriceType, UnitPrice, AIModel, Activity 관련 포함)
         models_to_serialize = {
             'Project': Project.objects.filter(id=project_id),
             'QuantityClassificationTag': QuantityClassificationTag.objects.filter(project=project),
+            'ElementClassificationAssignment': ElementClassificationAssignment.objects.filter(raw_element__project=project),  # 분류 할당
             'CostCode': CostCode.objects.filter(project=project),
             'MemberMark': MemberMark.objects.filter(project=project),
             'UnitPriceType': UnitPriceType.objects.filter(project=project), # 단가 구분
             'UnitPrice': UnitPrice.objects.filter(project=project),         # 개별 단가
             'AIModel': AIModel.objects.filter(project=project),             # AI 모델
             'RawElement': RawElement.objects.filter(project=project),
+            'SplitElement': SplitElement.objects.filter(project=project),   # 분할 객체
             'SpaceClassification': SpaceClassification.objects.filter(project=project),
             'ClassificationRule': ClassificationRule.objects.filter(project=project),
             'PropertyMappingRule': PropertyMappingRule.objects.filter(project=project),
@@ -3595,8 +3648,13 @@ def export_project(request, project_id):
             'CostCodeAssignmentRule': CostCodeAssignmentRule.objects.filter(project=project),
             'SpaceClassificationRule': SpaceClassificationRule.objects.filter(project=project),
             'SpaceAssignmentRule': SpaceAssignmentRule.objects.filter(project=project),
+            'ActivityAssignmentRule': ActivityAssignmentRule.objects.filter(project=project),  # Activity 할당 룰셋
             'QuantityMember': QuantityMember.objects.filter(project=project),
             'CostItem': CostItem.objects.filter(project=project),
+            'Activity': Activity.objects.filter(project=project),           # Activity (액티비티)
+            'ActivityDependency': ActivityDependency.objects.filter(project=project),  # 액티비티 의존성
+            'ActivityObject': ActivityObject.objects.filter(project=project),  # 액티비티 객체
+            'WorkCalendar': WorkCalendar.objects.filter(project=project),   # 작업 캘린더
         }
         print(f"[DEBUG][export_project] 직렬화 대상 모델 목록 정의 완료.")
 
@@ -3616,10 +3674,8 @@ def export_project(request, project_id):
 
         # ManyToMany 관계 데이터 추출
         print("[DEBUG][export_project] ManyToMany 관계 데이터 추출 중...")
-        export_data['M2M_RawElement_classification_tags'] = list(RawElement.classification_tags.through.objects.filter(rawelement__project=project).values('rawelement_id', 'quantityclassificationtag_id'))
-        # Mapped Elements는 SpaceClassification 모델의 source_element 또는 ManyToMany('RawElement', related_name='space_classifications') 필드로 관리되므로,
-        # SpaceClassification 직렬화 시 포함되거나 아래처럼 M2M 데이터를 별도로 추출해야 함. 모델 정의에 따라 선택.
-        # 만약 SpaceClassification.mapped_elements 필드가 있다면:
+        # ElementClassificationAssignment는 위에서 이미 직렬화됨 (커스텀 through 모델)
+        # SpaceClassification.mapped_elements는 자동 생성 through 테이블 사용
         export_data['M2M_SpaceClassification_mapped_elements'] = list(SpaceClassification.mapped_elements.through.objects.filter(spaceclassification__project=project).values('spaceclassification_id', 'rawelement_id'))
         export_data['M2M_QuantityMember_cost_codes'] = list(QuantityMember.cost_codes.through.objects.filter(quantitymember__project=project).values('quantitymember_id', 'costcode_id'))
         export_data['M2M_QuantityMember_space_classifications'] = list(QuantityMember.space_classifications.through.objects.filter(quantitymember__project=project).values('quantitymember_id', 'spaceclassification_id'))
@@ -3630,12 +3686,7 @@ def export_project(request, project_id):
         json_output = json.dumps(export_data, indent=2, cls=serializers.json.DjangoJSONEncoder)
         print("[DEBUG][export_project] JSON 데이터 생성 완료.")
 
-        response = HttpResponse(
-            json_output,
-            content_type='application/json'
-        )
-
-        # --- 파일명 생성 로직 수정 ---
+        # --- 파일명 생성 로직 ---
         print("[DEBUG][export_project] 파일명 생성 중...")
         base_filename = f"{project.name}_{datetime.date.today()}.json"
         # 파일 이름과 확장자 분리
@@ -3647,6 +3698,11 @@ def export_project(request, project_id):
         print(f"[DEBUG][export_project] 생성된 안전한 파일명: {safe_filename}")
         # --- 파일명 수정 끝 ---
 
+        # HttpResponse 생성 (다운로드 강제)
+        response = HttpResponse(
+            json_output,
+            content_type='application/octet-stream'  # 다운로드 강제
+        )
         response['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
 
         print(f"[DEBUG][export_project] --- 프로젝트 내보내기 완료: {safe_filename} ---")
@@ -6257,16 +6313,25 @@ def create_activity_objects_auto_view(request, project_id):
             activities = cost_item.activities.all()
 
             for activity in activities:
-                # 이미 존재하는지 확인
+                # 이미 존재하는지 확인 (is_active 관계없이 모두 확인)
                 existing = ActivityObject.objects.filter(
                     cost_item=cost_item,
-                    activity=activity,
-                    is_active=True
+                    activity=activity
                 ).first()
 
                 if existing:
-                    skipped_count += 1
-                    print(f"[DEBUG] Skipping existing ActivityObject for CI:{cost_item.id} + Activity:{activity.code}")
+                    # 비활성 상태면 재활성화
+                    if not existing.is_active:
+                        existing.is_active = True
+                        existing.quantity = cost_item.quantity
+                        existing.is_manual = False
+                        existing.actual_duration = existing.calculate_duration()
+                        existing.save()
+                        created_count += 1
+                        print(f"[DEBUG] Reactivated ActivityObject for CI:{cost_item.id} + Activity:{activity.code}")
+                    else:
+                        skipped_count += 1
+                        print(f"[DEBUG] Skipping existing active ActivityObject for CI:{cost_item.id} + Activity:{activity.code}")
                     continue
 
                 # 생성

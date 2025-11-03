@@ -107,42 +107,15 @@ window.handleMainNavClick = function handleMainNavClick(e) {
                 activeTab = null;
             }
         }
-        // [수정] DD, SD 탭처럼 보조 네비게이션이 없는 경우 명시적 처리
-    } else if (
-        targetContent &&
-        (primaryTabId === 'detailed-estimation-dd' ||
-            primaryTabId === 'schematic-estimation-sd' ||
-            primaryTabId === 'gantt-chart' ||
-            primaryTabId === 'three-d-viewer')
-    ) {
+        // [수정] home 탭은 보조 네비게이션이 없으므로 직접 처리
+    } else if (targetContent && primaryTabId === 'home') {
         console.log(
-            `[DEBUG][handleMainNavClick] Activating content directly for tab without secondary nav: ${primaryTabId}`
+            `[DEBUG][handleMainNavClick] Activating home tab content directly`
         );
         targetContent.classList.add('active');
-        activeTab = primaryTabId; // 전역 activeTab 업데이트
-        loadDataForActiveTab(); // 해당 탭 데이터 로드
-
-        if (primaryTabId === 'three-d-viewer') {
-            if (typeof window.initThreeDViewer === 'function') {
-                window.initThreeDViewer(); // 3D 뷰어 초기화
-            } else {
-                console.warn('[WARN] initThreeDViewer function not found');
-            }
-        }
+        activeTab = primaryTabId;
+        loadDataForActiveTab();
     } else {
-        // [추가] SD, DD, 간트차트 탭은 보조 네비게이션이 없는 것이 정상이므로 경고 제외
-        const noSecondaryNavTabs = [
-            'detailed-estimation-dd',
-            'schematic-estimation-sd',
-            'gantt-chart',
-            'three-d-viewer',
-        ];
-        if (!noSecondaryNavTabs.includes(primaryTabId)) {
-            console.warn(
-                `[WARN][handleMainNavClick] No sub-tab buttons found in secondary nav: secondary-nav-${primaryTabId}.`
-            );
-        }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
         // 보조 탭 버튼이 없으면, 해당 ID의 메인 컨텐츠를 직접 활성화 시도 (예외 케이스)
         if (targetContent) {
             console.log(
@@ -195,6 +168,22 @@ window.handleSubNavClick = function handleSubNavClick(e) {
 
     // ▼▼▼ [추가] 탭 전환 전 상태 동기화 ▼▼▼
     const previousTab = activeTab;
+
+    // ▼▼▼ [추가] 시뮬레이션 탭에서 나갈 때 레이아웃 복원 ▼▼▼
+    if (previousTab === 'three-d-viewer') {
+        // 상단 섹션 복원
+        const viewerTopSection = document.getElementById('viewer-top-section');
+        if (viewerTopSection) {
+            viewerTopSection.style.flex = '1';
+            viewerTopSection.style.minHeight = '300px';
+            viewerTopSection.style.height = '';
+            viewerTopSection.style.overflow = '';
+            console.log('[DEBUG][handleSubNavClick] Restored viewer-top-section height');
+        }
+        // 첫 번째 스플릿바는 HTML에서 제거됨
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     if (previousTab === 'data-management') {
         // 데이터 관리 탭에서 나갈 때 모든 상태를 메인 뷰어로 동기화
         if (typeof window.syncCameraStateFromDataMgmt === 'function') {
@@ -244,6 +233,46 @@ window.handleSubNavClick = function handleSubNavClick(e) {
         return;
     }
     // --- 탭 UI 처리 끝 ---
+
+    // ▼▼▼ [추가] 시뮬레이션 탭 진입 시 레이아웃 조정 ▼▼▼
+    if (targetTabId === 'three-d-viewer') {
+        // 상단 섹션 숨기기
+        const viewerTopSection = document.getElementById('viewer-top-section');
+        if (viewerTopSection) {
+            viewerTopSection.style.flex = '0';
+            viewerTopSection.style.minHeight = '0';
+            viewerTopSection.style.height = '0';
+            viewerTopSection.style.overflow = 'hidden';
+            console.log('[DEBUG][handleSubNavClick] Hiding viewer-top-section for simulation tab');
+        }
+        // 첫 번째 스플릿바는 HTML에서 제거됨
+
+        // 공정표 탭 자동 전환
+        setTimeout(() => {
+            const ganttTabBtn = document.querySelector('.viewer-bottom-tab-btn[data-tab="gantt-chart"]');
+            if (ganttTabBtn && !ganttTabBtn.classList.contains('active')) {
+                console.log('[DEBUG][handleSubNavClick] Switching to Gantt Chart tab for simulation');
+                ganttTabBtn.click();
+            }
+        }, 50);
+
+        // 내역집계표 펼치기
+        setTimeout(() => {
+            const boqSection = document.getElementById('viewer-boq-section');
+            const boqContent = document.getElementById('viewer-boq-content');
+            const boqToggleIcon = document.getElementById('viewer-boq-toggle-icon');
+
+            if (boqSection && boqContent) {
+                boqSection.style.flex = '1 1 300px';
+                boqContent.style.display = 'block';
+                if (boqToggleIcon) {
+                    boqToggleIcon.textContent = '▲';
+                }
+                console.log('[DEBUG][handleSubNavClick] BOQ section expanded for simulation tab');
+            }
+        }, 100);
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // --- 특정 탭 진입 시 하위 탭/데이터 로드 로직 ---
     if (targetTabId === 'ai-model-manager') {
@@ -395,6 +424,24 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
     console.log(
         `[DEBUG][loadDataForActiveTab] Loading data for active tab: ${activeTab}`
     ); // 디버깅
+
+    // --- 홈 탭은 프로젝트 선택 없이도 작동 ---
+    if (activeTab === 'home') {
+        console.log(
+            `[DEBUG][loadDataForActiveTab] Home tab activated. Loading project list.`
+        );
+        // 홈 탭 프로젝트 목록 로드
+        if (typeof loadHomeProjectList === 'function') {
+            loadHomeProjectList();
+        }
+        // 버튼 상태 업데이트
+        if (typeof enableHomeProjectButtons === 'function') {
+            enableHomeProjectButtons();
+        }
+        return; // 홈 탭 처리 완료
+    }
+
+    // --- 다른 탭들은 프로젝트 선택 필수 ---
     if (!currentProjectId) {
         console.warn(
             '[WARN][loadDataForActiveTab] No project selected. Clearing UI and aborting data load.'
@@ -616,12 +663,27 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
                 window.loadGanttChart();
             }
             break;
-        case 'three-d-viewer': // 3D 뷰어 탭
+        case 'three-d-viewer': // 3D 뷰어 탭 (시뮬레이션 탭)
             console.log(
                 `[DEBUG][loadDataForActiveTab] 3D Viewer tab activated. Keeping existing BIM data and loading quantity members and cost items with prices.`
             ); // 디버깅
             // 3D 뷰어는 기존 allRevitData를 사용하므로 데이터 클리어하지 않음
-            // 뷰어 초기화는 handleMainNavClick에서 이미 처리됨 (initThreeDViewer 호출)
+
+            // 3D 뷰어 초기화 (메인 뷰어 - 좌측)
+            if (typeof window.initThreeDViewer === 'function') {
+                window.initThreeDViewer();
+            }
+
+            // ▼▼▼ [추가] 간트차트 데이터 로드 (시뮬레이션을 위해 필요) ▼▼▼
+            if (typeof window.loadGanttChart === 'function') {
+                window.loadGanttChart();
+                console.log('[DEBUG][loadDataForActiveTab] Gantt chart data loading initiated for simulation');
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+            // ▼▼▼ [제거됨] 시뮬레이션 전용 뷰어는 사용하지 않음 - 왼쪽 작업용 뷰포트만 사용 ▼▼▼
+            // 간트차트만 오른쪽에 표시
+            // ▲▲▲ [제거됨] 여기까지 ▲▲▲
 
             // ▼▼▼ [추가] 데이터 관리 뷰어의 모든 상태를 가져오기 ▼▼▼
             setTimeout(() => {
@@ -669,6 +731,7 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
                 loadCostItems(); // 코스트 아이템 목록 로드 (참조용)
             }
             break;
+        // 'home' case removed - home tab is now handled before the switch statement
         default:
             console.log(
                 `[DEBUG][loadDataForActiveTab] No specific data loading function defined for currently active tab: ${activeTab}`
