@@ -2250,37 +2250,41 @@ function evaluateQuantityFormula(formula, context) {
             }
 
             // 속성 경로에서 실제 컨텍스트 키 찾기
-            // CI.name -> name, QM.volume -> qm_volume, BIM.Parameters.면적 -> bim_param_면적
+            // 먼저 원본 키로 시도 (ActivityObject용)
+            let value = context[propertyPath];
             let contextKey = propertyPath;
 
-            // 접두어 변환
-            if (propertyPath.startsWith('CI.')) {
-                contextKey = propertyPath.substring(3); // "CI." 제거
-            } else if (propertyPath.startsWith('QM.properties.')) {
-                // QM.properties.XXX -> qm_prop_XXX
-                contextKey = 'qm_prop_' + propertyPath.substring(14);
-            } else if (propertyPath.startsWith('QM.')) {
-                // QM.volume -> qm_volume
-                contextKey = 'qm_' + propertyPath.substring(3).toLowerCase();
-            } else if (propertyPath.startsWith('BIM.System.')) {
-                contextKey = 'bim_system_' + propertyPath.substring(11);
-            } else if (propertyPath.startsWith('BIM.Attributes.')) {
-                contextKey = 'bim_attr_' + propertyPath.substring(15);
-            } else if (propertyPath.startsWith('BIM.Parameters.')) {
-                contextKey = 'bim_param_' + propertyPath.substring(15);
-            } else if (propertyPath.startsWith('BIM.TypeParameters.')) {
-                contextKey = 'bim_tparam_' + propertyPath.substring(19);
-            } else if (propertyPath.startsWith('MM.properties.')) {
-                contextKey = 'mm_prop_' + propertyPath.substring(14);
-            } else if (propertyPath.startsWith('MM.mark')) {
-                contextKey = 'member_mark_mark';
-            } else if (propertyPath.startsWith('Space.name')) {
-                contextKey = 'space_name';
+            // 원본 키로 찾지 못하면 변환된 키로 시도 (CostItem용 레거시)
+            if (value === undefined || value === null) {
+                // CI.name -> name, QM.volume -> qm_volume, BIM.Parameters.면적 -> bim_param_면적
+                if (propertyPath.startsWith('CI.')) {
+                    contextKey = propertyPath.substring(3); // "CI." 제거
+                } else if (propertyPath.startsWith('QM.properties.')) {
+                    // QM.properties.XXX -> qm_prop_XXX
+                    contextKey = 'qm_prop_' + propertyPath.substring(14);
+                } else if (propertyPath.startsWith('QM.')) {
+                    // QM.volume -> qm_volume
+                    contextKey = 'qm_' + propertyPath.substring(3).toLowerCase();
+                } else if (propertyPath.startsWith('BIM.System.')) {
+                    contextKey = 'bim_system_' + propertyPath.substring(11);
+                } else if (propertyPath.startsWith('BIM.Attributes.')) {
+                    contextKey = 'bim_attr_' + propertyPath.substring(15);
+                } else if (propertyPath.startsWith('BIM.Parameters.')) {
+                    contextKey = 'bim_param_' + propertyPath.substring(15);
+                } else if (propertyPath.startsWith('BIM.TypeParameters.')) {
+                    contextKey = 'bim_tparam_' + propertyPath.substring(19);
+                } else if (propertyPath.startsWith('MM.properties.')) {
+                    contextKey = 'mm_prop_' + propertyPath.substring(14);
+                } else if (propertyPath.startsWith('MM.mark')) {
+                    contextKey = 'member_mark_mark';
+                } else if (propertyPath.startsWith('Space.name')) {
+                    contextKey = 'space_name';
+                }
+
+                value = context[contextKey];
             }
 
             console.log(`[DEBUG][evaluateQuantityFormula] Property: ${propertyPath} -> Context Key: ${contextKey}`);
-
-            const value = context[contextKey];
 
             if (value !== undefined && value !== null) {
                 // 숫자로 변환 시도

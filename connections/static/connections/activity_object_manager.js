@@ -90,6 +90,11 @@ function setupAoListeners() {
         .getElementById('ao-manual-quantity-input-btn')
         ?.addEventListener('click', showManualAoQuantityInputModal);
 
+    // 수동입력 해제 버튼
+    document
+        .getElementById('ao-reset-manual-btn')
+        ?.addEventListener('click', resetManualAoInput);
+
     // 좌측 패널 탭 전환
     const aoLeftPanelTabs = document.querySelector('#activity-objects .left-panel-tabs');
     if (aoLeftPanelTabs) {
@@ -2142,6 +2147,78 @@ async function recalculateAllAoQuantities() {
     } catch (error) {
         console.error('[ERROR][Auto Calc]', error);
         showToast('수량 재계산 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+/**
+ * 선택된 ActivityObject의 수동 입력 모드를 해제하고 자동 계산 모드로 전환
+ */
+async function resetManualAoInput() {
+    const selectedIds = Array.from(selectedAoIds || []);
+
+    if (!selectedIds || selectedIds.length === 0) {
+        showToast('항목을 먼저 선택하세요.', 'error');
+        return;
+    }
+
+    if (!confirm(`선택된 ${selectedIds.length}개 항목의 수동입력을 해제하고 자동 계산 모드로 전환하시겠습니까?`)) {
+        return;
+    }
+
+    console.log(`[DEBUG][resetManualAoInput] Resetting ${selectedIds.length} items`);
+
+    try {
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const aoId of selectedIds) {
+            const ao = window.loadedActivityObjects.find(item => item.id === aoId);
+            if (!ao) {
+                errorCount++;
+                continue;
+            }
+
+            // 자동 계산 값 산출
+            const durationPerUnit = ao.activity?.duration_per_unit || 0;
+            const ciQuantity = ao.cost_item?.quantity || 0;
+            const autoQuantity = durationPerUnit * ciQuantity;
+
+            const updateData = {
+                quantity: autoQuantity,
+                actual_duration: autoQuantity,
+                is_manual: false,
+                manual_formula: '',
+                quantity_expression: null
+            };
+
+            const response = await fetch(`/connections/api/activity-objects/${currentProjectId}/${aoId}/`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken,
+                },
+                body: JSON.stringify(updateData),
+            });
+
+            if (response.ok) {
+                successCount++;
+            } else {
+                const errorText = await response.text();
+                console.warn(`[WARN][resetManualAoInput] Failed to reset AO ${aoId}:`, errorText);
+                errorCount++;
+            }
+        }
+
+        await loadActivityObjects();
+
+        let message = `${successCount}개 항목이 자동 계산 모드로 전환되었습니다.`;
+        if (errorCount > 0) message += ` (${errorCount}개 오류)`;
+
+        showToast(message, successCount > 0 ? 'success' : 'error');
+
+    } catch (error) {
+        console.error('[ERROR][resetManualAoInput]', error);
+        showToast('수동입력 해제 중 오류가 발생했습니다.', 'error');
     }
 }
 
