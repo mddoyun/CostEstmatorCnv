@@ -80,6 +80,11 @@ function setupAoListeners() {
         .getElementById('ao-clear-selection-filter-btn-footer')
         ?.addEventListener('click', clearAoSelectionFilter);
 
+    // 자동 수량계산 버튼
+    document
+        .getElementById('ao-auto-quantity-calc-btn')
+        ?.addEventListener('click', recalculateAllAoQuantities);
+
     // 수동 수량입력 버튼
     document
         .getElementById('ao-manual-quantity-input-btn')
@@ -329,6 +334,8 @@ async function createManualActivityObject() {
 function populateAoFieldSelection(activityObjects) {
     if (!activityObjects || activityObjects.length === 0) {
         allAoFields = [];
+        // 빈 배열일 때도 체크박스 렌더링 (빈 테이블 표시를 위해)
+        renderAoFieldCheckboxes();
         return;
     }
 
@@ -618,9 +625,8 @@ function renderAoFieldCheckboxes() {
     });
 
     // 초기 렌더링: 기본 선택된 컬럼으로 테이블 표시
-    if (window.loadedActivityObjects && window.loadedActivityObjects.length > 0) {
-        renderActivityObjectsTable(window.loadedActivityObjects);
-    }
+    // 빈 배열일 때도 테이블 렌더링 (빈 테이블 헤더 표시)
+    renderActivityObjectsTable(window.loadedActivityObjects || []);
 }
 
 function toggleAllAoFields(checked) {
@@ -655,9 +661,15 @@ function renderActivityObjectsTable(activityObjects) {
     const container = document.getElementById('ao-table-container');
     if (!container) return;
 
-    if (!activityObjects || activityObjects.length === 0) {
-        container.innerHTML = '<p>액티비티 객체가 없습니다.</p>';
+    // window.currentAoColumns 사용
+    const selectedFields = window.currentAoColumns || [];
+    if (selectedFields.length === 0) {
+        container.innerHTML = '<p>표시할 필드를 선택하세요.</p>';
+        return;
+    }
 
+    // 빈 배열일 때: 테이블 헤더는 표시하고 빈 메시지 표시
+    if (!activityObjects || activityObjects.length === 0) {
         // Clear property panel
         const propertyPanel = document.getElementById('ao-properties-content');
         if (propertyPanel) {
@@ -668,13 +680,51 @@ function renderActivityObjectsTable(activityObjects) {
         selectedAoIds.clear();
 
         console.log('[DEBUG][renderActivityObjectsTable] Cleared property panel and selection state due to empty array');
-        return;
-    }
 
-    // window.currentAoColumns 사용
-    const selectedFields = window.currentAoColumns || [];
-    if (selectedFields.length === 0) {
-        container.innerHTML = '<p>표시할 필드를 선택하세요.</p>';
+        // 테이블 헤더는 표시하되 빈 메시지 표시 (다른 탭들과 일관성 유지)
+        const table = document.createElement('table');
+        table.className = 'data-table';
+
+        // 헤더
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+
+        // 선택 체크박스 컬럼
+        const checkboxTh = document.createElement('th');
+        checkboxTh.style.width = '40px';
+        checkboxTh.textContent = '';
+        headerRow.appendChild(checkboxTh);
+
+        // 선택된 필드 헤더들
+        selectedFields.forEach(fieldPath => {
+            const th = document.createElement('th');
+            th.textContent = fieldPath;
+            headerRow.appendChild(th);
+        });
+
+        // 삭제 버튼 컬럼
+        const deleteTh = document.createElement('th');
+        deleteTh.style.width = '80px';
+        deleteTh.textContent = '작업';
+        headerRow.appendChild(deleteTh);
+
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // 빈 tbody with message
+        const tbody = document.createElement('tbody');
+        const emptyRow = document.createElement('tr');
+        const emptyCell = document.createElement('td');
+        emptyCell.colSpan = selectedFields.length + 2; // +2 for checkbox and delete columns
+        emptyCell.style.textAlign = 'center';
+        emptyCell.style.padding = '20px';
+        emptyCell.textContent = '액티비티 객체가 없습니다.';
+        emptyRow.appendChild(emptyCell);
+        tbody.appendChild(emptyRow);
+        table.appendChild(tbody);
+
+        container.innerHTML = '';
+        container.appendChild(table);
         return;
     }
 
@@ -1344,13 +1394,294 @@ function renderAoPropertiesPanel() {
 // =====================================================================
 
 function showManualAoQuantityInputModal() {
-    if (selectedAoIds.size === 0) {
-        showToast('수량을 입력할 액티비티 객체를 선택하세요.', 'error');
+    const selectedActivityObjects = Array.from(selectedAoIds || []);
+    if (!selectedActivityObjects || selectedActivityObjects.length === 0) {
+        showToast('항목을 먼저 선택하세요.', 'error');
         return;
     }
 
-    // TODO: 모달 구현
-    showToast('수동 수량입력 기능은 아직 구현 중입니다.', 'info');
+    const selectedItems = window.loadedActivityObjects.filter(item => selectedActivityObjects.includes(item.id));
+    console.log('[DEBUG][showManualAoQuantityInputModal] Selected items:', selectedItems);
+
+    // 이전에 저장된 quantity_expression 확인
+    let previousExpression = null;
+    let previousMode = 'direct';
+    let previousValue = '';
+    let previousFormula = '';
+
+    // 첫 번째 선택 항목의 표현식 확인 (여러 항목이 선택된 경우 첫 번째 것 사용)
+    if (selectedItems.length > 0 && selectedItems[0].quantity_expression) {
+        previousExpression = selectedItems[0].quantity_expression;
+        if (previousExpression.mode === 'direct') {
+            previousMode = 'direct';
+            previousValue = previousExpression.value || '';
+        } else if (previousExpression.mode === 'formula') {
+            previousMode = 'formula';
+            previousFormula = previousExpression.formula || '';
+        }
+        console.log('[DEBUG][showManualAoQuantityInputModal] Previous expression:', previousExpression);
+    }
+
+    // 모달 HTML 생성
+    const modal = document.createElement('div');
+    modal.id = 'manual-ao-quantity-input-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+    `;
+
+    // 속성 옵션 생성 (ActivityObject에서 사용 가능한 필드들)
+    let propertyOptions = '<option value="">-- 속성 선택 --</option>';
+    propertyOptions += '<optgroup label="ActivityObject 속성">';
+    propertyOptions += '<option value="{AO.quantity}">{AO.quantity}</option>';
+    propertyOptions += '<option value="{AO.actual_duration}">{AO.actual_duration}</option>';
+    propertyOptions += '</optgroup>';
+    propertyOptions += '<optgroup label="Activity 속성">';
+    propertyOptions += '<option value="{Activity.duration_per_unit}">{Activity.duration_per_unit}</option>';
+    propertyOptions += '</optgroup>';
+    propertyOptions += '<optgroup label="CostItem 속성">';
+    propertyOptions += '<option value="{CI.quantity}">{CI.quantity}</option>';
+    propertyOptions += '</optgroup>';
+    propertyOptions += '<optgroup label="QuantityMember 속성">';
+    propertyOptions += '<option value="{QM.volume}">{QM.volume}</option>';
+    propertyOptions += '<option value="{QM.area}">{QM.area}</option>';
+    propertyOptions += '<option value="{QM.length}">{QM.length}</option>';
+    propertyOptions += '<option value="{QM.count}">{QM.count}</option>';
+    propertyOptions += '</optgroup>';
+
+    modal.innerHTML = `
+        <div style="background: white; border-radius: 8px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #333;">수동 수량입력</h3>
+            <p style="margin: 0 0 16px 0; font-size: 13px; color: #666;">선택된 ${selectedItems.length}개 항목의 수량을 입력합니다.</p>
+
+            <div style="margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-radius: 4px; border: 1px solid #dee2e6;">
+                <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: bold; color: #495057;">입력 방식 선택</h4>
+                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" name="input-mode" value="direct" ${previousMode === 'direct' ? 'checked' : ''} style="margin-right: 6px;">
+                        <span style="font-size: 13px;">직접 입력</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" name="input-mode" value="formula" ${previousMode === 'formula' ? 'checked' : ''} style="margin-right: 6px;">
+                        <span style="font-size: 13px;">산식 입력</span>
+                    </label>
+                </div>
+
+                <!-- 직접 입력 모드 -->
+                <div id="direct-input-mode" style="display: ${previousMode === 'direct' ? 'block' : 'none'};">
+                    <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #495057;">수량 값</label>
+                    <input type="number" id="direct-quantity-input" step="0.0001" placeholder="예: 100.5" value="${previousValue}"
+                           style="width: 100%; padding: 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 4px;">
+                    <small style="display: block; margin-top: 4px; font-size: 12px; color: #6c757d;">모든 선택 항목에 동일한 수량이 적용됩니다.</small>
+                </div>
+
+                <!-- 산식 입력 모드 -->
+                <div id="formula-input-mode" style="display: ${previousMode === 'formula' ? 'block' : 'none'};">
+                    <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #495057;">수량 산식</label>
+                    <textarea id="formula-quantity-input" placeholder="예: {CI.quantity} * 2.5 + {QM.volume} * 0.1"
+                              style="width: 100%; min-height: 80px; padding: 8px; font-size: 13px; font-family: 'Courier New', monospace; border: 1px solid #ced4da; border-radius: 4px; resize: vertical;">${previousFormula}</textarea>
+                    <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+                        <select id="formula-property-select" style="flex: 1; padding: 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 4px;">
+                            ${propertyOptions}
+                        </select>
+                        <button type="button" id="insert-formula-property-btn" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                            속성 삽입
+                        </button>
+                    </div>
+                    <small style="display: block; margin-top: 8px; font-size: 12px; color: #6c757d;">각 항목의 속성값을 기반으로 개별 계산됩니다.</small>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px; max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead style="background: #f8f9fa; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 8px; text-align: left; border-bottom: 2px solid #dee2e6;">Activity Code</th>
+                            <th style="padding: 8px; text-align: right; border-bottom: 2px solid #dee2e6;">현재 수량</th>
+                            <th style="padding: 8px; text-align: right; border-bottom: 2px solid #dee2e6;">기간</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${selectedItems.map(item => `
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">${item.activity?.code || '-'}</td>
+                                <td style="padding: 8px; text-align: right; border-bottom: 1px solid #f0f0f0;">${item.quantity || 0}</td>
+                                <td style="padding: 8px; text-align: right; border-bottom: 1px solid #f0f0f0;">${item.actual_duration || 0}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button id="manual-ao-quantity-cancel-btn" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                    취소
+                </button>
+                <button id="manual-ao-quantity-apply-btn" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                    적용
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // 입력 모드 전환 이벤트
+    const directMode = modal.querySelector('#direct-input-mode');
+    const formulaMode = modal.querySelector('#formula-input-mode');
+    modal.querySelectorAll('input[name="input-mode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.value === 'direct') {
+                directMode.style.display = 'block';
+                formulaMode.style.display = 'none';
+            } else {
+                directMode.style.display = 'none';
+                formulaMode.style.display = 'block';
+            }
+        });
+    });
+
+    // 속성 삽입 버튼
+    modal.querySelector('#insert-formula-property-btn')?.addEventListener('click', () => {
+        const textarea = modal.querySelector('#formula-quantity-input');
+        const select = modal.querySelector('#formula-property-select');
+        const selectedValue = select.value;
+
+        if (selectedValue) {
+            const startPos = textarea.selectionStart;
+            const endPos = textarea.selectionEnd;
+            const currentValue = textarea.value;
+            const newValue = currentValue.substring(0, startPos) + selectedValue + currentValue.substring(endPos);
+            textarea.value = newValue;
+
+            // 커서 위치 업데이트
+            const newCursorPos = startPos + selectedValue.length;
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+            textarea.focus();
+
+            // 선택 초기화
+            select.selectedIndex = 0;
+        }
+    });
+
+    // 취소 버튼
+    modal.querySelector('#manual-ao-quantity-cancel-btn')?.addEventListener('click', () => {
+        modal.remove();
+    });
+
+    // 적용 버튼
+    modal.querySelector('#manual-ao-quantity-apply-btn')?.addEventListener('click', async () => {
+        const inputMode = modal.querySelector('input[name="input-mode"]:checked').value;
+
+        try {
+            let updatedCount = 0;
+
+            if (inputMode === 'direct') {
+                // 직접 입력 모드
+                const directValue = parseFloat(modal.querySelector('#direct-quantity-input').value);
+
+                if (isNaN(directValue)) {
+                    showToast('유효한 숫자를 입력하세요.', 'error');
+                    return;
+                }
+
+                console.log(`[DEBUG][Manual AO Quantity] Direct mode: ${directValue}`);
+
+                for (const item of selectedItems) {
+                    item.quantity = directValue;
+                    item.is_manual = true;
+                    item.manual_formula = null;
+                    // 직접 입력 값을 quantity_expression에 저장
+                    item.quantity_expression = {
+                        mode: 'direct',
+                        value: directValue
+                    };
+
+                    const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrftoken,
+                        },
+                        body: JSON.stringify(item),
+                    });
+
+                    if (saveResponse.ok) {
+                        updatedCount++;
+                    } else {
+                        console.warn('[WARN] Failed to save item:', item.id);
+                    }
+                }
+            } else {
+                // 산식 입력 모드
+                const formula = modal.querySelector('#formula-quantity-input').value.trim();
+
+                if (!formula) {
+                    showToast('수량 산식을 입력하세요.', 'error');
+                    return;
+                }
+
+                console.log(`[DEBUG][Manual AO Quantity] Formula mode: ${formula}`);
+
+                for (const item of selectedItems) {
+                    const aoContext = buildActivityObjectContext(item);
+                    const calculatedQuantity = evaluateQuantityFormula(formula, aoContext);
+
+                    if (calculatedQuantity !== null && !isNaN(calculatedQuantity)) {
+                        item.quantity = calculatedQuantity;
+                        item.is_manual = true;
+                        item.manual_formula = formula;
+                        // 산식을 quantity_expression에 저장
+                        item.quantity_expression = {
+                            mode: 'formula',
+                            formula: formula
+                        };
+
+                        const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrftoken,
+                            },
+                            body: JSON.stringify(item),
+                        });
+
+                        if (saveResponse.ok) {
+                            updatedCount++;
+                        } else {
+                            console.warn('[WARN] Failed to save item:', item.id);
+                        }
+                    } else {
+                        console.warn('[WARN] Formula evaluation failed for item:', aoContext['Activity.code']);
+                    }
+                }
+            }
+
+            // 테이블 갱신
+            await loadActivityObjects();
+            showToast(`${updatedCount}개 항목의 수량이 업데이트되었습니다.`, 'success');
+            modal.remove();
+
+        } catch (error) {
+            console.error('[ERROR][Manual AO Quantity Input]', error);
+            showToast('수량 입력 중 오류가 발생했습니다.', 'error');
+        }
+    });
+
+    // 모달 배경 클릭 시 닫기
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
 }
 
 function clearManualInput(aoId) {
@@ -1683,6 +2014,205 @@ function initAoSplitBar() {
     console.log('[Activity Object Manager] Split bar initialized successfully');
 }
 
+// =====================================================================
+// 자동 수량계산
+// =====================================================================
+
+/**
+ * 모든 액티비티 객체의 수량을 자동 재계산
+ * - 자동 계산: Activity.duration_per_unit * CI.quantity
+ * - 수동 직접입력: 값 유지
+ * - 수동 산식입력: 산식 재평가
+ */
+async function recalculateAllAoQuantities() {
+    if (!currentProjectId) {
+        showToast('먼저 프로젝트를 선택하세요.', 'error');
+        return;
+    }
+
+    if (!confirm('모든 액티비티 객체의 수량을 재계산하시겠습니까?\n(수동 직접입력 값은 유지되고, 산식은 재평가됩니다.)')) {
+        return;
+    }
+
+    try {
+        let updatedCount = 0;
+        let skippedCount = 0;
+        let errorCount = 0;
+
+        const allAos = window.loadedActivityObjects || [];
+
+        for (const ao of allAos) {
+            try {
+                let newQuantity = null;
+
+                if (ao.is_manual && !ao.manual_formula) {
+                    // 케이스 2: 수동 직접입력 - 값 유지
+                    console.log(`[DEBUG][Auto Calc] Skipping AO ${ao.id} (manual direct input)`);
+                    skippedCount++;
+                    continue;
+
+                } else if (ao.is_manual && ao.manual_formula) {
+                    // 케이스 3: 수동 산식입력 - 산식 재평가
+                    const aoContext = buildActivityObjectContext(ao);
+                    newQuantity = evaluateQuantityFormula(ao.manual_formula, aoContext);
+                    console.log(`[DEBUG][Auto Calc] Evaluating formula for AO ${ao.id}: ${ao.manual_formula} = ${newQuantity}`);
+
+                    if (newQuantity === null || isNaN(newQuantity)) {
+                        console.warn(`[WARN][Auto Calc] Formula evaluation failed for AO ${ao.id}`);
+                        errorCount++;
+                        continue;
+                    }
+
+                } else {
+                    // 케이스 1: 자동 계산 - Activity.duration_per_unit * CI.quantity
+                    const durationPerUnit = ao.activity?.duration_per_unit || 0;
+                    const ciQuantity = ao.cost_item?.quantity || 0;
+                    newQuantity = durationPerUnit * ciQuantity;
+                    console.log(`[DEBUG][Auto Calc] Auto calculating for AO ${ao.id}: ${durationPerUnit} * ${ciQuantity} = ${newQuantity}`);
+                }
+
+                // AO.quantity 업데이트
+                ao.quantity = newQuantity;
+
+                // 서버에 저장
+                const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: JSON.stringify(ao),
+                });
+
+                if (saveResponse.ok) {
+                    updatedCount++;
+                } else {
+                    console.warn(`[WARN][Auto Calc] Failed to save AO ${ao.id}`);
+                    errorCount++;
+                }
+
+            } catch (itemError) {
+                console.error(`[ERROR][Auto Calc] Error processing AO ${ao.id}:`, itemError);
+                errorCount++;
+            }
+        }
+
+        // 테이블 갱신
+        await loadActivityObjects();
+
+        let message = `${updatedCount}개 항목이 재계산되었습니다.`;
+        if (skippedCount > 0) message += ` (${skippedCount}개 수동입력 유지)`;
+        if (errorCount > 0) message += ` (${errorCount}개 오류)`;
+
+        showToast(message, updatedCount > 0 ? 'success' : 'info');
+
+    } catch (error) {
+        console.error('[ERROR][Auto Calc]', error);
+        showToast('수량 재계산 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+/**
+ * ActivityObject의 컨텍스트를 빌드 (산식 평가용)
+ */
+function buildActivityObjectContext(ao) {
+    const context = {};
+
+    // ActivityObject 속성
+    context['AO.id'] = ao.id;
+    context['AO.quantity'] = ao.quantity || 0;
+    context['AO.actual_duration'] = ao.actual_duration || 0;
+    context['AO.start_date'] = ao.start_date || null;
+    context['AO.end_date'] = ao.end_date || null;
+    context['AO.progress'] = ao.progress || 0;
+    context['AO.is_manual'] = ao.is_manual || false;
+
+    // Activity 속성
+    if (ao.activity) {
+        context['Activity.code'] = ao.activity.code || '';
+        context['Activity.name'] = ao.activity.name || '';
+        context['Activity.duration_per_unit'] = ao.activity.duration_per_unit || 0;
+        context['Activity.responsible_person'] = ao.activity.responsible_person || '';
+    }
+
+    // CostItem 속성
+    if (ao.cost_item) {
+        context['CI.id'] = ao.cost_item.id;
+        context['CI.name'] = ao.cost_item.name || '';
+        context['CI.quantity'] = ao.cost_item.quantity || 0;
+        context['CI.unit'] = ao.cost_item.unit || '';
+        context['CI.description'] = ao.cost_item.description || '';
+    }
+
+    // CostCode 속성
+    if (ao.cost_code) {
+        context['CostCode.code'] = ao.cost_code.code || '';
+        context['CostCode.name'] = ao.cost_code.name || '';
+        context['CostCode.detail_code'] = ao.cost_code.detail_code || '';
+        context['CostCode.note'] = ao.cost_code.note || '';
+    }
+
+    // QuantityMember 속성
+    if (ao.quantity_member) {
+        const qm = ao.quantity_member;
+        context['QM.id'] = qm.id;
+        context['QM.name'] = qm.name || '';
+        context['QM.volume'] = qm.volume || 0;
+        context['QM.area'] = qm.area || 0;
+        context['QM.length'] = qm.length || 0;
+        context['QM.count'] = qm.count || 0;
+
+        // QM properties
+        if (qm.properties) {
+            Object.keys(qm.properties).forEach(key => {
+                context[`QM.properties.${key}`] = qm.properties[key];
+            });
+        }
+    }
+
+    // MemberMark 속성
+    if (ao.member_mark) {
+        const mm = ao.member_mark;
+        context['MM.mark'] = mm.mark || '';
+        context['MM.description'] = mm.description || '';
+
+        // MM properties
+        if (mm.properties) {
+            Object.keys(mm.properties).forEach(key => {
+                context[`MM.properties.${key}`] = mm.properties[key];
+            });
+        }
+    }
+
+    // BIM Raw Data 속성
+    if (ao.raw_data) {
+        // System properties
+        Object.keys(ao.raw_data).forEach(key => {
+            if (key === 'Parameters' || key === 'TypeParameters') return;
+            if (typeof ao.raw_data[key] !== 'object') {
+                context[`BIM.Attributes.${key}`] = ao.raw_data[key];
+            }
+        });
+
+        // Parameters
+        if (ao.raw_data.Parameters) {
+            Object.keys(ao.raw_data.Parameters).forEach(key => {
+                context[`BIM.Parameters.${key}`] = ao.raw_data.Parameters[key];
+            });
+        }
+
+        // TypeParameters
+        if (ao.raw_data.TypeParameters) {
+            Object.keys(ao.raw_data.TypeParameters).forEach(key => {
+                context[`BIM.TypeParameters.${key}`] = ao.raw_data.TypeParameters[key];
+            });
+        }
+    }
+
+    return context;
+}
+
 // Window에 함수 노출
 window.setupAoListeners = setupAoListeners;
 window.initAoSplitBar = initAoSplitBar;
+window.recalculateAllAoQuantities = recalculateAllAoQuantities;
