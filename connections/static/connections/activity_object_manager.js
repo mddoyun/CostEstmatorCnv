@@ -1719,9 +1719,77 @@ function showManualAoQuantityInputModal() {
     });
 }
 
-function clearManualInput(aoId) {
-    // TODO: API 호출
-    showToast('수동입력 해제 기능은 아직 구현 중입니다.', 'info');
+async function clearManualInput(aoId) {
+    console.log('[DEBUG][clearManualInput] Called with aoId:', aoId);
+
+    if (!aoId) {
+        showToast('액티비티 객체 ID가 없습니다.', 'error');
+        return;
+    }
+
+    try {
+        // 현재 객체 정보 가져오기
+        const ao = window.loadedActivityObjects.find(item => item.id === aoId);
+        if (!ao) {
+            showToast('액티비티 객체를 찾을 수 없습니다.', 'error');
+            return;
+        }
+
+        // 자동 계산 값 계산
+        const durationPerUnit = ao.activity?.duration_per_unit || 0;
+        const ciQuantity = ao.cost_item?.quantity || 0;
+        const autoQuantity = durationPerUnit * ciQuantity;
+
+        console.log('[DEBUG][clearManualInput] Calculated auto quantity:', autoQuantity);
+        console.log('[DEBUG][clearManualInput] From: duration_per_unit =', durationPerUnit, ', ci_quantity =', ciQuantity);
+
+        // 자동 계산 모드로 변경하는 데이터
+        const updateData = {
+            quantity: autoQuantity,
+            actual_duration: autoQuantity,
+            is_manual: false,
+            manual_formula: '',
+            quantity_expression: null
+        };
+
+        console.log('[DEBUG][clearManualInput] Update data:', updateData);
+
+        // API 요청
+        const response = await fetch(`/connections/api/activity-objects/${currentProjectId}/${aoId}/`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[ERROR][clearManualInput] Failed to update:', response.status, errorText);
+            showToast('수동입력 해제 실패: ' + response.status, 'error');
+            return;
+        }
+
+        const updatedAo = await response.json();
+        console.log('[DEBUG][clearManualInput] Updated AO:', updatedAo);
+
+        // 전역 데이터 업데이트
+        const index = window.loadedActivityObjects.findIndex(item => item.id === aoId);
+        if (index !== -1) {
+            window.loadedActivityObjects[index] = updatedAo;
+        }
+
+        // UI 리프레시
+        await loadActivityObjects();
+
+        showToast('수동입력이 해제되었습니다.', 'success');
+        console.log('[DEBUG][clearManualInput] Manual input cleared successfully');
+
+    } catch (error) {
+        console.error('[ERROR][clearManualInput] Exception:', error);
+        showToast('수동입력 해제 중 오류 발생', 'error');
+    }
 }
 
 // =====================================================================

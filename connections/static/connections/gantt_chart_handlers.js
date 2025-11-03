@@ -206,7 +206,7 @@ async function loadAndRenderGanttChart() {
         const dependencies = dependencyResponse.ok ? await dependencyResponse.json() : [];
 
         // 간트차트 데이터 생성
-        ganttData = generateGanttData(itemsWithActivities, activities, dependencies);
+        ganttData = generateGanttData(itemsWithActivities, activities, dependencies, activityObjects);
         window.ganttData = ganttData; // ▼▼▼ [추가] 전역으로 노출 ▼▼▼
         window.ganttCostItems = ganttCostItems; // ▼▼▼ [추가] 전역으로 노출 ▼▼▼
 
@@ -229,7 +229,7 @@ async function loadAndRenderGanttChart() {
 /**
  * 간트차트 데이터 생성
  */
-function generateGanttData(costItems, activities, dependencies) {
+function generateGanttData(costItems, activities, dependencies, activityObjects) {
     const activityMap = new Map();
     const activityDurationMap = new Map(); // activityId별 총 duration 누적
 
@@ -238,17 +238,22 @@ function generateGanttData(costItems, activities, dependencies) {
         activityMap.set(act.id, act);
     });
 
-    // ▼▼▼ [수정] 같은 액티비티 코드별로 duration 합산 ▼▼▼
-    // CostItem별로 duration을 계산하고 activityId별로 누적
-    costItems.forEach(item => {
-        if (!item.activities || item.activities.length === 0) return;
+    // ▼▼▼ [수정] ActivityObject의 actual_duration을 사용하여 액티비티별 duration 합산 ▼▼▼
+    if (activityObjects && activityObjects.length > 0) {
+        // ActivityObject를 사용하여 duration 계산
+        activityObjects.forEach(ao => {
+            if (!ao.activity || !ao.activity.id) return;
 
-        item.activities.forEach(activityId => {
+            const activityId = ao.activity.id;
             const activity = activityMap.get(activityId);
             if (!activity) return;
 
-            // 실제 소요일수 계산: duration_per_unit * quantity
-            const durationDays = Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(item.quantity || 0)));
+            // AO.actual_duration 사용 (없으면 자동 계산 값 사용)
+            const durationDays = Math.max(
+                1,
+                Math.ceil(parseFloat(ao.actual_duration) ||
+                    (parseFloat(activity.duration_per_unit || 0) * parseFloat(ao.quantity || 0)))
+            );
 
             // 같은 activityId의 duration을 누적
             if (!activityDurationMap.has(activityId)) {
@@ -256,7 +261,27 @@ function generateGanttData(costItems, activities, dependencies) {
             }
             activityDurationMap.set(activityId, activityDurationMap.get(activityId) + durationDays);
         });
-    });
+    } else {
+        // Fallback: ActivityObject가 없으면 기존 방식 (CostItem 기반) 사용
+        costItems.forEach(item => {
+            if (!item.activities || item.activities.length === 0) return;
+
+            item.activities.forEach(activityId => {
+                const activity = activityMap.get(activityId);
+                if (!activity) return;
+
+                // 실제 소요일수 계산: duration_per_unit * quantity
+                const durationDays = Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(item.quantity || 0)));
+
+                // 같은 activityId의 duration을 누적
+                if (!activityDurationMap.has(activityId)) {
+                    activityDurationMap.set(activityId, 0);
+                }
+                activityDurationMap.set(activityId, activityDurationMap.get(activityId) + durationDays);
+            });
+        });
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // activityId별로 하나의 태스크만 생성 (duration은 합산된 값)
     const tasks = [];
