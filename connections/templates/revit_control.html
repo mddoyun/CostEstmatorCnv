@@ -190,8 +190,8 @@
                     >
                         💰 코스트아이템
                     </button>
-                    <button class="sub-nav-button" data-tab="activity-assignment">
-                        📅 액티비티
+                    <button class="sub-nav-button" data-tab="activity-objects">
+                        📅 액티비티 객체
                     </button>
                 </nav>
                 <nav
@@ -570,7 +570,7 @@
                                 >
                                     <span class="ruleset-icon">💰</span>
                                     <span class="ruleset-text"
-                                        ><strong>공사코드 룰셋</strong
+                                        ><strong>수량산출룰셋</strong
                                         ><small
                                             >CostItem 수량 산출 기준</small
                                         ></span
@@ -694,7 +694,7 @@
                             </div>
                             <div id="costcode-ruleset" class="ruleset-content">
                                 <div class="ruleset-header">
-                                    <h2>공사코드 룰셋 관리</h2>
+                                    <h2>수량산출룰셋 관리</h2>
                                     <div class="ruleset-actions">
                                         <button id="import-costcode-rules-btn">
                                             가져오기
@@ -1186,90 +1186,211 @@
 
                 <div id="cost-item-management" class="tab-content">
                     <div class="qm-container">
-                        <div class="qm-header">
-                            <h2>산출항목 관리</h2>
-                            <div class="qm-actions">
-                                <button id="create-ci-manual-btn">
-                                    수동 생성
-                                </button>
-                                <button id="create-ci-auto-btn">
-                                    자동 생성 (공사코드 기준)
-                                </button>
-                            </div>
-                        </div>
-                        <div class="main-split-layout">
-                            <div class="table-area">
-                                <div class="table-controls">
-                                    <div id="ci-grouping-controls-container">
-                                        <button id="add-ci-group-level-btn">
-                                            그룹핑 추가
+                        <div class="split-layout-container">
+                            <aside class="left-panel">
+                                <div class="control-box">
+                                    <h3>BIM 저작도구 연동</h3>
+                                    <button id="ci-get-from-client-btn">
+                                        선택 객체 가져오기
+                                    </button>
+                                    <button id="ci-select-in-client-btn">
+                                        선택한 객체 확인
+                                    </button>
+                                </div>
+                                <div class="control-box">
+                                    <h3>3D 뷰포트 연동</h3>
+                                    <button id="ci-get-from-3d-viewer-btn">
+                                        3D 선택 객체 가져오기
+                                    </button>
+                                    <button id="ci-select-in-3d-viewer-btn">
+                                        3D에서 선택한 객체 확인
+                                    </button>
+                                </div>
+
+                                <div class="left-panel-tab-container">
+                                    <div class="left-panel-tabs">
+                                        <button
+                                            class="left-panel-tab-button active"
+                                            data-tab="field-selection"
+                                        >
+                                            필드 선택
                                         </button>
-                                        <div id="ci-grouping-controls"></div>
+                                        <button
+                                            class="left-panel-tab-button"
+                                            data-tab="ci-properties"
+                                        >
+                                            산출항목 속성
+                                        </button>
+                                        <button
+                                            class="left-panel-tab-button"
+                                            data-tab="assigned-info"
+                                        >
+                                            할당 정보
+                                        </button>
+                                    </div>
+
+                                    <div
+                                        class="left-panel-tab-content active"
+                                        id="ci-field-selection-content"
+                                    >
+                                        <div class="control-box">
+                                            <div class="field-selection-wrapper">
+                                                <div class="field-container-box">
+                                                    <div class="field-selection-controls">
+                                                        <button
+                                                            id="ci-select-all-fields-btn"
+                                                            style="margin-bottom: 8px; width: 100%;"
+                                                        >
+                                                            모두 선택
+                                                        </button>
+                                                        <button
+                                                            id="ci-deselect-all-fields-btn"
+                                                            style="margin-bottom: 8px; width: 100%;"
+                                                        >
+                                                            모두 해제
+                                                        </button>
+                                                    </div>
+                                                    <div
+                                                        id="ci-field-checkboxes-container"
+                                                        class="field-container"
+                                                    >
+                                                        <!-- 필드 체크박스가 동적으로 생성됩니다 -->
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button id="ci-render-table-btn">
+                                                테이블에 선택 적용
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="left-panel-tab-content"
+                                        id="ci-properties-content"
+                                    >
+                                        <div class="control-box">
+                                            <div id="ci-selected-properties-container">
+                                                <p>산출항목을 하나만 선택하세요.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="left-panel-tab-content"
+                                        id="ci-assigned-info-content"
+                                    >
+                                        <div class="control-box" style="flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid #ddd; border-radius: 4px; padding: 8px;">
+                                            <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">액티비티 (공정)</h4>
+                                            <div id="ci-assigned-activities-container" style="flex: 1; min-height: 0; overflow-y: auto; font-size: 12px; margin-bottom: 8px; padding: 4px; background: #f9f9f9; border-radius: 3px;">
+                                                산출항목을 선택하세요.
+                                            </div>
+                                            <div class="assignment-controls" style="display: flex; gap: 4px; align-items: stretch;">
+                                                <select
+                                                    id="ci-activity-assign-select"
+                                                    class="control-element"
+                                                    style="flex: 1; height: 28px; font-size: 12px; padding: 2px 4px; margin: 0; border: 1px solid #ccc; border-radius: 3px;"
+                                                >
+                                                    <option value="">-- 선택 --</option>
+                                                </select>
+                                                <button id="ci-assign-activity-btn" style="height: 28px; padding: 0 10px; font-size: 12px; white-space: nowrap; margin: 0; line-height: 28px; border: 1px solid #007bff; background: #007bff; color: white; border-radius: 3px; cursor: pointer;">
+                                                    할당
+                                                </button>
+                                                <button id="ci-clear-activities-btn" style="height: 28px; padding: 0 10px; font-size: 12px; white-space: nowrap; margin: 0; line-height: 28px; border: 1px solid #dc3545; background: #dc3545; color: white; border-radius: 3px; cursor: pointer;">
+                                                    제거
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
+                            </aside>
+
+                            <div class="ci-split-bar"></div>
+
+                            <main class="right-panel">
+                                <div class="qm-header">
+                                    <h2>산출항목 관리</h2>
+                                    <div class="qm-actions">
+                                        <button id="create-ci-manual-btn">
+                                            수동 생성
+                                        </button>
+                                        <button id="create-ci-auto-btn">
+                                            자동 생성 (공사코드 기준)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="view-tabs">
+                                    <button
+                                        class="view-tab-button active"
+                                        data-view="cost-item-view"
+                                    >
+                                        코스트아이템 뷰
+                                    </button>
+                                    <button
+                                        class="view-tab-button"
+                                        data-view="activity-view"
+                                    >
+                                        액티비티별 뷰
+                                    </button>
+                                </div>
+
+                                <div class="table-controls-grid">
+                                    <div class="control-section">
+                                        <h4 class="control-section-title">그룹핑</h4>
+                                        <button id="add-ci-group-level-btn" style="width: 100%; margin-bottom: 8px;">
+                                            그룹핑 추가
+                                        </button>
+                                        <div id="ci-grouping-controls" style="margin-bottom: 8px;"></div>
+                                        <button id="apply-ci-grouping-btn" style="width: 100%; background-color: #28a745; color: white; border: 1px solid #28a745;">
+                                            그룹핑 적용
+                                        </button>
+                                    </div>
+
+                                    <div class="control-section">
+                                        <h4 class="control-section-title">필터</h4>
+                                        <button id="apply-ci-filter-btn" style="width: 100%; margin-bottom: 4px;">
+                                            필터 적용
+                                        </button>
+                                        <button id="clear-ci-filter-btn" style="width: 100%;">
+                                            필터 초기화
+                                        </button>
+                                    </div>
+
+                                    <div class="control-section">
+                                        <h4 class="control-section-title">수량속성 할당</h4>
+                                        <button id="ci-apply-quantity-rules-btn" style="width: 100%; margin-bottom: 4px; background-color: #007bff; color: white; border: 1px solid #007bff;">
+                                            룰셋수량계산 (전체)
+                                        </button>
+                                        <button id="ci-apply-quantity-rules-selected-btn" style="width: 100%; margin-bottom: 4px; background-color: #17a2b8; color: white; border: 1px solid #17a2b8;">
+                                            룰셋수량계산 (선택)
+                                        </button>
+                                        <button id="ci-manual-quantity-input-btn" style="width: 100%; margin-bottom: 4px; background-color: #28a745; color: white; border: 1px solid #28a745;">
+                                            수동 수량입력
+                                        </button>
+                                        <button id="ci-apply-activity-rules-btn" style="width: 100%; margin-bottom: 4px; background-color: #6f42c1; color: white; border: 1px solid #6f42c1;">
+                                            액티비티 룰셋 적용
+                                        </button>
+                                        <button id="ci-clear-selection-filter-btn" style="width: 100%; display: none; background-color: #dc3545; color: white; border: 1px solid #dc3545;">
+                                            선택 필터 해제
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div
                                     id="ci-table-container"
                                     class="qm-table-container"
                                 >
                                     <p>프로젝트를 선택하세요.</p>
                                 </div>
-                            </div>
-                            <div class="details-panel">
-                                <div class="details-panel-tabs">
+                                <div class="table-footer-controls">
                                     <button
-                                        class="detail-tab-button active"
-                                        data-tab="linked-properties"
+                                        id="ci-clear-selection-filter-btn-footer"
+                                        style="display: none"
                                     >
-                                        연관된 부재의 속성
-                                    </button>
-                                    <button
-                                        class="detail-tab-button"
-                                        data-tab="ruleset-helper"
-                                    >
-                                        룰셋 작성 도우미
+                                        선택 필터 해제
                                     </button>
                                 </div>
-                                <div
-                                    class="detail-tab-content active"
-                                    data-tab="linked-properties"
-                                >
-                                    <div class="control-box">
-                                        <h3>연관된 부재의 속성</h3>
-                                        <div id="ci-linked-member-info-header">
-                                            <p>
-                                                산출항목을 선택하면 정보가
-                                                표시됩니다.
-                                            </p>
-                                        </div>
-                                        <div id="ci-linked-properties-wrapper">
-                                            <div
-                                                id="ci-linked-member-properties-container"
-                                                class="properties-sub-container"
-                                            ></div>
-                                            <div
-                                                id="ci-linked-mark-properties-container"
-                                                class="properties-sub-container"
-                                            ></div>
-                                            <div
-                                                id="ci-linked-raw-element-properties-container"
-                                                class="properties-sub-container"
-                                            ></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div
-                                    class="detail-tab-content"
-                                    data-tab="ruleset-helper"
-                                >
-                                    <div class="control-box" style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
-                                        <h4>📋 룰셋 작성 도우미</h4>
-                                        <p style="font-size: 12px; color: #666; margin-bottom: 15px;">산출항목을 선택하면 룰셋 작성에 활용할 수 있는 속성 목록이 표시됩니다.</p>
-                                        <div id="ci-ruleset-properties-content" style="flex: 1; overflow-y: auto; overflow-x: hidden;">
-                                            <p style="color: #999; text-align: center; padding: 20px;">산출항목을 선택해주세요</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            </main>
                         </div>
                     </div>
                 </div>
@@ -2398,86 +2519,161 @@
                 </div>
                 <!-- ▲▲▲ [추가] 액티비티 관리 탭 끝 ▲▲▲ -->
 
-                <!-- ▼▼▼ [추가] 액티비티 할당 탭 (산출 탭 하위) ▼▼▼ -->
-                <div id="activity-assignment" class="tab-content">
-                    <!-- Inner Tab 네비게이션 -->
-                    <div class="inner-tab-nav">
-                        <button class="inner-tab-button active" data-inner-tab="activity-assign">
-                            액티비티 할당
-                        </button>
-                        <button class="inner-tab-button" data-inner-tab="activity-objects">
-                            액티비티 객체 목록
-                        </button>
-                    </div>
-
-                    <!-- Inner Tab 1: 액티비티 할당 -->
-                    <div id="activity-assign" class="inner-tab-content active">
-                        <div class="activity-assignment-section panel-box">
-                            <div class="panel-header">
-                                <h3>산출항목별 액티비티 할당</h3>
-                                <div class="panel-header-buttons">
-                                    <button
-                                        class="btn btn-primary"
-                                        id="apply-activity-rules-from-assignment-tab"
-                                        title="액티비티 할당 룰셋을 모든 산출항목에 일괄 적용합니다."
-                                    >
-                                        룰셋 일괄 적용
+                <!-- ▼▼▼ [추가] 액티비티 객체 탭 ▼▼▼ -->
+                <div id="activity-objects" class="tab-content">
+                    <div class="qm-container">
+                        <div class="split-layout-container">
+                            <aside class="left-panel">
+                                <div class="control-box">
+                                    <h3>BIM 저작도구 연동</h3>
+                                    <button id="ao-get-from-client-btn">
+                                        선택 객체 가져오기
+                                    </button>
+                                    <button id="ao-select-in-client-btn">
+                                        선택한 객체 확인
                                     </button>
                                 </div>
-                            </div>
-                            <div class="panel-content">
-                                <div style="display: flex; gap: 20px; height: 100%;">
-                                    <!-- 왼쪽: 테이블 영역 -->
-                                    <div style="flex: 1; display: flex; flex-direction: column;">
-                                        <div class="activity-assignment-filter">
-                                            <label>
-                                                <input type="checkbox" id="filter-unassigned-items" />
-                                                미할당 항목만 표시
-                                            </label>
-                                            <label>
-                                                액티비티 필터:
-                                                <select id="activity-filter-assign-select">
-                                                    <option value="">전체</option>
-                                                </select>
-                                            </label>
-                                        </div>
-                                        <div id="activity-assign-table-container" class="table-container" style="flex: 1;">
-                                            <p>프로젝트를 선택하고 산출항목을 생성하면 액티비티 할당 목록이 표시됩니다.</p>
-                                        </div>
-                                    </div>
-                                    <!-- 오른쪽: 속성 패널 -->
-                                    <div id="activity-item-properties-panel" style="width: 400px; border-left: 1px solid #ddd; padding-left: 20px; overflow-y: auto; max-height: 700px;">
-                                        <h4>산출항목 속성</h4>
-                                        <p style="color: #999;">항목을 선택하면 룰셋에 적용할 수 있는 속성 목록이 표시됩니다.</p>
-                                    </div>
+                                <div class="control-box">
+                                    <h3>3D 뷰포트 연동</h3>
+                                    <button id="ao-get-from-3d-viewer-btn">
+                                        3D 선택 객체 가져오기
+                                    </button>
+                                    <button id="ao-select-in-3d-viewer-btn">
+                                        3D에서 선택한 객체 확인
+                                    </button>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- Inner Tab 2: 액티비티 객체 목록 -->
-                    <div id="activity-objects" class="inner-tab-content">
-                        <div class="activity-objects-section panel-box">
-                            <div class="panel-header">
-                                <h3>액티비티 객체 목록 (할당된 작업)</h3>
-                            </div>
-                            <div class="panel-content">
-                                <div class="activity-objects-filter">
-                                    <label>
-                                        액티비티 필터:
-                                        <select id="activity-filter-objects-select">
-                                            <option value="">전체</option>
-                                        </select>
-                                    </label>
+                                <div class="left-panel-tab-container">
+                                    <div class="left-panel-tabs">
+                                        <button
+                                            class="left-panel-tab-button active"
+                                            data-tab="ao-field-selection"
+                                        >
+                                            필드 선택
+                                        </button>
+                                        <button
+                                            class="left-panel-tab-button"
+                                            data-tab="ao-properties"
+                                        >
+                                            액티비티 객체 속성
+                                        </button>
+                                    </div>
+
+                                    <div
+                                        class="left-panel-tab-content active"
+                                        id="ao-field-selection-content"
+                                    >
+                                        <div class="control-box">
+                                            <div class="field-selection-wrapper">
+                                                <div class="field-container-box">
+                                                    <div class="field-selection-controls">
+                                                        <button
+                                                            id="ao-select-all-fields-btn"
+                                                            style="margin-bottom: 8px; width: 100%;"
+                                                        >
+                                                            모두 선택
+                                                        </button>
+                                                        <button
+                                                            id="ao-deselect-all-fields-btn"
+                                                            style="margin-bottom: 8px; width: 100%;"
+                                                        >
+                                                            모두 해제
+                                                        </button>
+                                                    </div>
+                                                    <div
+                                                        id="ao-field-checkboxes-container"
+                                                        class="field-container"
+                                                    >
+                                                        <!-- 필드 체크박스가 동적으로 생성됩니다 -->
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button id="ao-render-table-btn">
+                                                테이블에 선택 적용
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="left-panel-tab-content"
+                                        id="ao-properties-content"
+                                    >
+                                        <div class="control-box">
+                                            <div id="ao-selected-properties-container">
+                                                <p>액티비티 객체를 하나만 선택하세요.</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div id="activity-objects-table-container" class="table-container">
-                                    <p>액티비티가 할당된 산출항목이 없습니다.</p>
+                            </aside>
+
+                            <div class="ao-split-bar"></div>
+
+                            <main class="right-panel">
+                                <div class="qm-header">
+                                    <h2>액티비티 객체 관리</h2>
+                                    <div class="qm-actions">
+                                        <button id="create-ao-manual-btn">
+                                            수동 생성
+                                        </button>
+                                        <button id="create-ao-auto-btn">
+                                            자동 생성 (액티비티코드 기준)
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+
+                                <div class="table-controls-grid">
+                                    <div class="control-section">
+                                        <h4 class="control-section-title">그룹핑</h4>
+                                        <button id="add-ao-group-level-btn" style="width: 100%; margin-bottom: 8px;">
+                                            그룹핑 추가
+                                        </button>
+                                        <div id="ao-grouping-controls" style="margin-bottom: 8px;"></div>
+                                        <button id="apply-ao-grouping-btn" style="width: 100%; background-color: #28a745; color: white; border: 1px solid #28a745;">
+                                            그룹핑 적용
+                                        </button>
+                                    </div>
+
+                                    <div class="control-section">
+                                        <h4 class="control-section-title">필터</h4>
+                                        <button id="apply-ao-filter-btn" style="width: 100%; margin-bottom: 4px;">
+                                            필터 적용
+                                        </button>
+                                        <button id="clear-ao-filter-btn" style="width: 100%;">
+                                            필터 초기화
+                                        </button>
+                                    </div>
+
+                                    <div class="control-section">
+                                        <h4 class="control-section-title">수량속성 할당</h4>
+                                        <button id="ao-manual-quantity-input-btn" style="width: 100%; margin-bottom: 4px; background-color: #28a745; color: white; border: 1px solid #28a745;">
+                                            수동 수량입력
+                                        </button>
+                                        <button id="ao-clear-selection-filter-btn" style="width: 100%; display: none; background-color: #dc3545; color: white; border: 1px solid #dc3545;">
+                                            선택 필터 해제
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div
+                                    id="ao-table-container"
+                                    class="qm-table-container"
+                                >
+                                    <p>프로젝트를 선택하세요.</p>
+                                </div>
+                                <div class="table-footer-controls">
+                                    <button
+                                        id="ao-clear-selection-filter-btn-footer"
+                                        style="display: none"
+                                    >
+                                        선택 필터 해제
+                                    </button>
+                                </div>
+                            </main>
                         </div>
                     </div>
                 </div>
-                <!-- ▲▲▲ [추가] 액티비티 할당 탭 끝 ▲▲▲ -->
+                <!-- ▲▲▲ [추가] 액티비티 객체 탭 끝 ▲▲▲ -->
                 <div id="schematic-estimation-sd" class="tab-content">
                     <div class="sd-container">
                         <div class="sd-top-panel">
@@ -2910,10 +3106,11 @@
 
         <script src="{% static 'connections/app_core.js' %}?v=2"></script>
         <script src="{% static 'connections/boq_detailed_estimation_handlers.js' %}"></script>
-        <script src="{% static 'connections/app.js' %}"></script>
-    </body>
         <script src="{% static 'connections/quantity_members_manager.js' %}"></script>
         <script src="{% static 'connections/cost_item_manager.js' %}"></script>
+        <script src="{% static 'connections/activity_object_manager.js' %}"></script>
+        <script src="{% static 'connections/app.js' %}"></script>
+    </body>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script
             src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"

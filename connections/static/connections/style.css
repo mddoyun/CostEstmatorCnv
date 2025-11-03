@@ -3833,3 +3833,270 @@ div[id$='-grouping-controls'] {
 #split-bar:hover div {
     background: #777;
 }
+
+/* Cost Item Management - Grouping Controls */
+#ci-grouping-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#ci-grouping-controls select {
+    width: 100%;
+    display: block;
+}
+
+/* Cost Item Management - Split Bar */
+.ci-split-bar {
+    width: 5px;
+    background: #ddd;
+    cursor: col-resize;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.ci-split-bar:hover {
+    background: #ccc;
+}
+
+.ci-split-bar::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    background: #999;
+    border-radius: 2px;
+}
+
+.ci-split-bar:hover::after {
+    background: #777;
+}
+/* ▼▼▼ Cost Item Properties Table - QM과 동일한 스타일 적용 ▼▼▼ */
+#ci-selected-properties-container .properties-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+}
+
+#ci-selected-properties-container .properties-table td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#ci-selected-properties-container .properties-table td::-webkit-scrollbar {
+    height: 6px;
+}
+
+#ci-selected-properties-container .properties-table td::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 3px;
+}
+
+#ci-selected-properties-container .properties-table tr:last-child td {
+    border-bottom: none;
+}
+
+#ci-selected-properties-container .properties-table .prop-name {
+    width: 40%;
+    font-weight: 600;
+    color: #555;
+    background-color: #f8f9fa;
+}
+
+#ci-selected-properties-container .properties-table .prop-value {
+    width: 60%;
+    color: #333;
+}
+
+#ci-selected-properties-container .property-section {
+    background: white;
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+#ci-selected-properties-container .property-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    padding-bottom: 5px;
+}
+
+/* ▼▼▼ Activity Object Properties Table - QM과 동일한 스타일 적용 ▼▼▼ */
+#ao-selected-properties-container .properties-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+}
+
+#ao-selected-properties-container .properties-table td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#ao-selected-properties-container .properties-table td::-webkit-scrollbar {
+    height: 6px;
+}
+
+#ao-selected-properties-container .properties-table td::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 3px;
+}
+
+#ao-selected-properties-container .properties-table tr:last-child td {
+    border-bottom: none;
+}
+
+#ao-selected-properties-container .properties-table .prop-name {
+    width: 40%;
+    font-weight: 600;
+    color: #555;
+    background-color: #f8f9fa;
+}
+
+#ao-selected-properties-container .properties-table .prop-value {
+    width: 60%;
+    color: #333;
+}
+
+#ao-selected-properties-container .property-section {
+    background: white;
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+#ao-selected-properties-container .property-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    padding-bottom: 5px;
+}
+
+/* ▼▼▼ 통합 그룹핑 컨트롤 스타일 (모든 탭에 적용) ▼▼▼ */
+#data-management-grouping-controls,
+#qm-grouping-controls,
+#ci-grouping-controls,
+#ao-grouping-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#data-management-grouping-controls .group-level,
+#qm-grouping-controls .group-level,
+#ci-grouping-controls .group-level,
+#ao-grouping-controls .group-level {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#data-management-grouping-controls .group-level select,
+#qm-grouping-controls .group-level select,
+#ci-grouping-controls .group-level select,
+#ao-grouping-controls .group-level select {
+    flex: 1;
+    min-width: 0;
+}
+
+#data-management-grouping-controls .group-level .remove-group-level-btn,
+#qm-grouping-controls .group-level .remove-group-level-btn,
+#ci-grouping-controls .group-level .remove-group-level-btn,
+#ao-grouping-controls .group-level .remove-group-level-btn {
+    padding: 2px 8px;
+    font-size: 14px;
+    line-height: 1;
+    min-width: auto;
+    background-color: #dc3545;
+    color: white;
+    border: 1px solid #dc3545;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+#data-management-grouping-controls .group-level .remove-group-level-btn:hover,
+#qm-grouping-controls .group-level .remove-group-level-btn:hover,
+#ci-grouping-controls .group-level .remove-group-level-btn:hover,
+#ao-grouping-controls .group-level .remove-group-level-btn:hover {
+    background-color: #c82333;
+    border-color: #bd2130;
+}
+
+/* ▼▼▼ 통합 필터 컨트롤 스타일 ▼▼▼ */
+.control-section {
+    margin-bottom: 15px;
+}
+
+.control-section-title {
+    margin: 0 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e9ecef;
+    font-size: 14px;
+    font-weight: bold;
+    color: #495057;
+}
+
+/* ▼▼▼ 스플릿바 통합 스타일 ▼▼▼ */
+.panel-resizer,
+.qm-split-bar,
+.ci-split-bar,
+.ao-split-bar {
+    width: 5px;
+    background: #ddd;
+    cursor: col-resize;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.panel-resizer:hover,
+.qm-split-bar:hover,
+.ci-split-bar:hover,
+.ao-split-bar:hover {
+    background: #ccc;
+}
+
+.panel-resizer::after,
+.qm-split-bar::after,
+.ci-split-bar::after,
+.ao-split-bar::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    background: #999;
+    border-radius: 2px;
+}
+
+.panel-resizer:hover::after,
+.qm-split-bar:hover::after,
+.ci-split-bar:hover::after,
+.ao-split-bar:hover::after {
+    background: #777;
+}
+
+/* 테이블 행 클릭 커서 (액티비티 객체, 수량산출부재, BIM원본데이터, 코스트아이템 탭) */
+#qm-table-container tr[data-id]:not(.qm-edit-row),
+#re-data-table tbody tr[data-id],
+.data-table tbody tr[data-id]:not(.ci-edit-row) {
+    cursor: pointer;
+}

@@ -63,6 +63,8 @@
     window.ciCollapsedGroups = {};
     window.currentCiGroupByFields = [];
     window.lastCiRowIndex = -1;
+    window.isCiFilterToSelectionActive = false; // 선택 필터 활성화 여부
+    window.ciFilteredIds = new Set(); // 필터링할 산출항목 ID
 
     // --- UI 상태 (Unit Price Management) ---
     window.selectedCostCodeIdForUnitPrice = null;

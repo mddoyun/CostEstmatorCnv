@@ -60,6 +60,10 @@ urlpatterns = [
     path('api/cost-items/<uuid:project_id>/', views.cost_items_api, name='cost_items_api'),
     path('api/cost-items/<uuid:project_id>/<uuid:item_id>/', views.cost_items_api, name='cost_item_detail_api'),
     path('api/cost-items/auto-create/<uuid:project_id>/', views.create_cost_items_auto_view, name='create_cost_items_auto'),
+    path('api/cost-items/manage-activities/<uuid:project_id>/', views.manage_cost_item_activities_api, name='manage_ci_activities'),
+    path('api/cost-items/clear-activities/<uuid:project_id>/', views.clear_cost_item_activities_api, name='clear_ci_activities'),
+    path('api/cost-items/toggle-activity-lock/<uuid:project_id>/', views.toggle_cost_item_activity_lock_api, name='toggle_ci_activity_lock'),
+    path('api/cost-items/apply-activity-rules/<uuid:project_id>/', views.apply_cost_item_activity_rules_api, name='apply_ci_activity_rules'),
 
     # --- BOQ API ---
     path('api/boq/grouping-fields/<uuid:project_id>/', views.get_boq_grouping_fields_api, name='get_boq_grouping_fields'),
@@ -147,6 +151,12 @@ urlpatterns = [
     path('api/activities/detail/<uuid:activity_id>/', views.activities_api, name='activity_detail_api'),
     path('api/activity-dependencies/<uuid:project_id>/', views.activity_dependencies_api, name='activity_dependencies_api'),
     path('api/activity-dependencies/detail/<uuid:dependency_id>/', views.activity_dependencies_api, name='activity_dependency_detail_api'),
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    # ▼▼▼ [추가] 액티비티 객체 관리 API ▼▼▼
+    path('api/activity-objects/<uuid:project_id>/', views.activity_objects_api, name='activity_objects_api'),
+    path('api/activity-objects/<uuid:project_id>/<uuid:ao_id>/', views.activity_objects_api, name='activity_object_detail_api'),
+    path('api/activity-objects/auto-create/<uuid:project_id>/', views.create_activity_objects_auto_view, name='create_activity_objects_auto'),
     # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     # ▼▼▼ [추가] 작업 캘린더 API ▼▼▼

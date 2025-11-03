@@ -141,6 +141,20 @@ async function loadQuantityMembers() {
         const allMembers = await response.json();
         loadedQuantityMembers = allMembers.filter(qm => qm.is_active !== false);
         console.log(`[QM Manager] Loaded ${loadedQuantityMembers.length} active QuantityMembers (filtered ${allMembers.length - loadedQuantityMembers.length} inactive)`);
+
+        // 디버깅: 첫 번째 수량산출부재의 데이터 구조 확인
+        if (loadedQuantityMembers.length > 0) {
+            const firstMember = loadedQuantityMembers[0];
+            console.log('[DEBUG] First QuantityMember structure:', {
+                id: firstMember.id,
+                name: firstMember.name,
+                raw_element_id: firstMember.raw_element_id,
+                split_element_id: firstMember.split_element_id,
+                has_raw_element_object: !!firstMember.raw_element,
+                raw_element_keys: firstMember.raw_element ? Object.keys(firstMember.raw_element) : null
+            });
+        }
+
         renderActiveQmView();
 
         populateQmFieldSelection(loadedQuantityMembers);
@@ -219,23 +233,79 @@ async function createAutoQuantityMembers(skipConfirmation = false) {
 
 function addQmGroupingLevel() {
     const container = document.getElementById('qm-grouping-controls');
-    const newIndex = container.children.length + 1;
     const newLevelDiv = document.createElement('div');
     newLevelDiv.className = 'group-level';
-    newLevelDiv.innerHTML = `
-        <label>${newIndex}차:</label>
-        <select class="qm-group-by-select"></select>
-        <button class="remove-group-level-btn">-</button>
-    `;
-    container.appendChild(newLevelDiv);
-    populateQmFieldSelection(loadedQuantityMembers); // QM 필드 목록으로 채웁니다.
 
-    newLevelDiv
-        .querySelector('.remove-group-level-btn')
-        .addEventListener('click', function () {
-            this.parentElement.remove();
-            renderActiveQmView();
-        });
+    const select = document.createElement('select');
+    select.className = 'group-by-select';
+    select.innerHTML = '<option value="">-- 필드 선택 --</option>';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-group-level-btn';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', function() {
+        newLevelDiv.remove();
+        renderActiveQmView();
+    });
+
+    newLevelDiv.appendChild(select);
+    newLevelDiv.appendChild(removeBtn);
+    container.appendChild(newLevelDiv);
+
+    populateQmGroupingDropdowns(); // QM 그룹핑 드롭다운 채우기
+}
+
+function populateQmGroupingDropdowns() {
+    // QM 기본 필드들
+    const qmFields = [
+        'QM.id',
+        'QM.name',
+        'QM.classification_tag',
+        'QM.raw_element_id',
+        'QM.is_active',
+        'QM.member_mark'
+    ];
+
+    // 공사코드 필드
+    if (loadedCostCodes && loadedCostCodes.length > 0) {
+        qmFields.push('QM.cost_codes');
+    }
+
+    // BIM 원본 속성 수집
+    const bimFields = collectBimFieldsFromQuantityMembers();
+    const bimFieldNames = bimFields.map(f => f.label);
+
+    // 일람부호 속성 수집
+    const mmFields = collectMemberMarkFieldsFromQuantityMembers();
+    const mmFieldNames = mmFields.map(f => f.label);
+
+    // 공간분류 속성 수집
+    const spaceFields = collectSpaceFieldsFromQuantityMembers();
+    const spaceFieldNames = spaceFields.map(f => f.label);
+
+    // QM.properties 속성 수집
+    const qmPropertiesFields = collectQmPropertiesFields();
+    const qmPropertiesFieldNames = qmPropertiesFields.map(f => f.label);
+
+    // 모든 필드를 하나의 배열로 합치기
+    const allFields = [
+        ...qmFields,
+        ...qmPropertiesFieldNames,
+        ...mmFieldNames,
+        ...spaceFieldNames,
+        ...bimFieldNames
+    ].sort();
+
+    // 모든 QM 그룹핑 드롭다운 업데이트
+    const allGroupBySelects = document.querySelectorAll('#quantity-members .group-by-select');
+    const optionsHtml = '<option value="">-- 필드 선택 --</option>' +
+        allFields.map(field => `<option value="${field}">${field}</option>`).join('');
+
+    allGroupBySelects.forEach(select => {
+        const selectedValue = select.value;
+        select.innerHTML = optionsHtml;
+        select.value = selectedValue;
+    });
 }
 
 function handleQmColumnFilter(event) {
@@ -261,6 +331,7 @@ function handleQmRowSelection(event, clickedRow) {
     if (!memberId) return;
 
     if (event.shiftKey && lastSelectedQmRowIndex > -1) {
+        // Shift+클릭: 범위 선택
         const start = Math.min(lastSelectedQmRowIndex, clickedRowIndex);
         const end = Math.max(lastSelectedQmRowIndex, clickedRowIndex);
         if (!event.ctrlKey) selectedQmIds.clear();
@@ -268,14 +339,24 @@ function handleQmRowSelection(event, clickedRow) {
             const rowId = allVisibleRows[i].dataset.id;
             if (rowId) selectedQmIds.add(rowId);
         }
-    } else if (event.ctrlKey) {
-        if (selectedQmIds.has(memberId)) selectedQmIds.delete(memberId);
-        else selectedQmIds.add(memberId);
     } else {
-        selectedQmIds.clear();
-        selectedQmIds.add(memberId);
+        // 단순 클릭: 토글 (Activity Objects 방식)
+        if (selectedQmIds.has(memberId)) {
+            selectedQmIds.delete(memberId);
+        } else {
+            selectedQmIds.add(memberId);
+        }
     }
     lastSelectedQmRowIndex = clickedRowIndex;
+
+    // 선택된 행 시각적 표시 업데이트
+    allVisibleRows.forEach((row) => {
+        if (selectedQmIds.has(row.dataset.id)) {
+            row.classList.add('selected-row');
+        } else {
+            row.classList.remove('selected-row');
+        }
+    });
 }
 
 async function handleQuantityMemberActions(event) {
@@ -1499,19 +1580,13 @@ function collectBimFieldsFromQuantityMembers() {
     const typeParameterFields = new Set();
     const systemFields = new Set();
 
-    // 모든 수량산출부재의 raw_element 데이터 분석
-    loadedQuantityMembers.forEach(member => {
-        if (!member.raw_element) return;
-        const rawData = member.raw_element;
+    // BIM원본데이터 탭과 동일하게 allRevitData를 스캔하여 모든 필드 수집
+    // 이렇게 하면 수량산출부재에 연결되지 않은 속성도 모두 표시됩니다
+    if (!allRevitData || allRevitData.length === 0) return [];
 
-        // BIM.Attributes.* - 기본 속성
-        const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description',
-                           'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
-        basicAttrs.forEach(attr => {
-            if (rawData[attr] !== undefined && rawData[attr] !== null) {
-                attributeFields.add(attr);
-            }
-        });
+    allRevitData.forEach(item => {
+        const rawData = item.raw_data;
+        if (!rawData) return;
 
         // BIM.Parameters.* - 파라미터
         if (rawData.Parameters && typeof rawData.Parameters === 'object') {
@@ -1529,13 +1604,18 @@ function collectBimFieldsFromQuantityMembers() {
             });
         }
 
-        // BIM.System.* - 시스템 속성
-        const sysProps = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
-        sysProps.forEach(prop => {
-            if (rawData[prop] !== undefined && rawData[prop] !== null) {
-                systemFields.add(prop);
+        // BIM 원본 데이터의 다른 모든 속성 (BIM원본데이터 탭과 동일)
+        Object.keys(rawData).forEach(k => {
+            if (k !== 'Parameters' && k !== 'TypeParameters' && typeof rawData[k] !== 'object') {
+                attributeFields.add(k);
             }
         });
+    });
+
+    // BIM.System.* - 시스템 속성 (항상 추가)
+    const sysProps = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
+    sysProps.forEach(prop => {
+        systemFields.add(prop);
     });
 
     // BIM.Attributes.* 필드 추가
@@ -1702,13 +1782,13 @@ function collectQmPropertiesFields() {
 window.getAllQmFieldsForConditionBuilder = function() {
     // 기본 QM 필드
     const qmFields = [
-        { value: 'name', label: 'QM.name (부재명)' },
-        { value: 'classification_tag', label: 'QM.classification_tag (분류 태그)' }
+        { value: 'QM.name', label: 'QM.name (부재명)' },
+        { value: 'QM.classification_tag', label: 'QM.classification_tag (분류 태그)' }
     ];
 
     // QM.properties.* 필드
     const qmPropertiesFields = collectQmPropertiesFields().map(field => ({
-        value: `properties.${field.qmProperty}`,
+        value: field.label,  // "QM.properties.체적" 형식으로 저장 (조건 매칭을 위해)
         label: field.label
     }));
 
@@ -2141,13 +2221,43 @@ function renderQmSelectedProperties() {
         html += '</div>';
     }
 
-    // BIM 원본 요소 (BIM 원본데이터 탭과 동일한 형식으로 모든 속성 표시)
-    if (member.raw_element && Object.keys(member.raw_element).length > 0) {
+    // BIM 원본 요소 (allRevitData에서 실제 RawElement 객체 찾기)
+    const elementId = member.split_element_id || member.raw_element_id;
+    const fullBimObject = elementId && allRevitData ?
+        allRevitData.find(item => item.id === elementId) : null;
+
+    console.log('[DEBUG] renderQmSelectedProperties - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
+    console.log('[DEBUG] allRevitData available:', !!allRevitData, 'count:', allRevitData ? allRevitData.length : 0);
+
+    if (fullBimObject && fullBimObject.raw_data) {
         html += '<div class="property-section">';
-        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 원본</h4>';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 시스템 속성 (BIM.System.*)</h4>';
         html += '<table class="properties-table"><tbody>';
 
-        const rawData = member.raw_element;
+        // System Properties (BIM.System.*) - 먼저 표시!
+        const idDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('id') : 'BIM.System.id';
+        const uniqueIdDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('element_unique_id') : 'BIM.System.element_unique_id';
+        const volumeDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('geometry_volume') : 'BIM.System.geometry_volume';
+        const tagsDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('classification_tags') : 'BIM.System.classification_tags';
+
+        html += `<tr><td class="prop-name">${idDisplayName}</td><td class="prop-value">${fullBimObject.id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${uniqueIdDisplayName}</td><td class="prop-value">${fullBimObject.element_unique_id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">${volumeDisplayName}</td><td class="prop-value">${fullBimObject.geometry_volume || 'N/A'}</td></tr>`;
+
+        const tagsDisplay = Array.isArray(fullBimObject.classification_tags) && fullBimObject.classification_tags.length > 0
+            ? fullBimObject.classification_tags.join(', ')
+            : 'N/A';
+        html += `<tr><td class="prop-name">${tagsDisplayName}</td><td class="prop-value">${tagsDisplay}</td></tr>`;
+
+        html += '</tbody></table>';
+        html += '</div>';
+
+        // BIM 기본 속성 (BIM.Attributes.*)
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (BIM.Attributes.*)</h4>';
+        html += '<table class="properties-table"><tbody>';
+
+        const rawData = fullBimObject.raw_data;
 
         // Basic Information (BIM.Attributes.*)
         const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description', 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
@@ -2158,52 +2268,47 @@ function renderQmSelectedProperties() {
             }
         });
 
+        html += '</tbody></table>';
+        html += '</div>';
+
         // Parameters (BIM.Parameters.*)
-        if (rawData.Parameters && typeof rawData.Parameters === 'object') {
+        if (rawData.Parameters && typeof rawData.Parameters === 'object' && Object.keys(rawData.Parameters).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 파라메터 (BIM.Parameters.*)</h4>';
+            html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(rawData.Parameters)) {
                 if (key === 'Geometry') continue; // Skip Geometry (too large)
                 if (value !== null && value !== undefined) {
                     const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(key) : `BIM.Parameters.${key}`;
-                    const displayValue = typeof value === 'object' ? JSON.stringify(value).substring(0, 100) : String(value).substring(0, 100);
-                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                    // nested object/array 지원
+                    const displayValue = (typeof value === 'object')
+                        ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
+                        : String(value).substring(0, 200);
+                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
                 }
             }
+            html += '</tbody></table>';
+            html += '</div>';
         }
 
         // TypeParameters (BIM.TypeParameters.*)
-        if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
+        if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object' && Object.keys(rawData.TypeParameters).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 타입 파라메터 (BIM.TypeParameters.*)</h4>';
+            html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(rawData.TypeParameters)) {
                 if (value !== null && value !== undefined) {
                     const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(`TypeParameters.${key}`) : `BIM.TypeParameters.${key}`;
-                    const displayValue = typeof value === 'object' ? JSON.stringify(value).substring(0, 100) : String(value).substring(0, 100);
-                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                    // nested object/array 지원
+                    const displayValue = (typeof value === 'object')
+                        ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
+                        : String(value).substring(0, 200);
+                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
                 }
             }
+            html += '</tbody></table>';
+            html += '</div>';
         }
-
-        // System Properties (BIM.System.*)
-        const systemProps = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
-        systemProps.forEach(prop => {
-            if (rawData[prop] !== undefined && rawData[prop] !== null) {
-                const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(prop) : `BIM.System.${prop}`;
-                const displayValue = Array.isArray(rawData[prop]) ? rawData[prop].join(', ') : rawData[prop];
-                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
-            }
-        });
-
-        // 그 외 모든 속성 (최상위 레벨, 객체가 아닌 경우)
-        for (const [key, value] of Object.entries(rawData)) {
-            // 이미 표시한 속성들은 건너뛰기
-            if (basicAttrs.includes(key) || key === 'Parameters' || key === 'TypeParameters' || systemProps.includes(key)) continue;
-
-            if (value !== null && value !== undefined && typeof value !== 'object') {
-                const displayValue = String(value).substring(0, 100);
-                html += `<tr><td class="prop-name">BIM.${key}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
-            }
-        }
-
-        html += '</tbody></table>';
-        html += '</div>';
     }
 
     // 공사코드

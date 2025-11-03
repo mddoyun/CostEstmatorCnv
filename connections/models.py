@@ -485,6 +485,85 @@ class Activity(models.Model):
         return f"{self.code} - {self.name}"
 
 
+class ActivityObject(models.Model):
+    """CostItem에 할당된 Activity의 실제 작업 객체 (일정 정보 포함)"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activity_objects')
+
+    # 연관 관계
+    cost_item = models.ForeignKey('CostItem', on_delete=models.CASCADE, related_name='activity_objects', help_text="연관된 산출항목")
+    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name='activity_objects', help_text="연관된 액티비티 코드")
+
+    # 일정 정보
+    start_date = models.DateField(null=True, blank=True, help_text="시작일")
+    end_date = models.DateField(null=True, blank=True, help_text="종료일")
+    actual_duration = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="실제 소요일수 (계산 또는 수동 입력)"
+    )
+
+    # 수량 정보 (CostItem에서 상속되지만 개별적으로 수정 가능)
+    quantity = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=decimal.Decimal('0.0'),
+        help_text="수량 (기본값: cost_item.quantity)"
+    )
+
+    # 수동 입력 여부
+    is_manual = models.BooleanField(default=False, help_text="수동으로 일자/수량을 입력했는지 여부")
+    manual_formula = models.TextField(blank=True, help_text="수동 입력 시 사용한 산식")
+
+    # 진행 상태
+    progress = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=decimal.Decimal('0.0'),
+        help_text="진행률 (0-100)"
+    )
+
+    # 활성화 상태
+    is_active = models.BooleanField(default=True, help_text="활성화 여부")
+
+    # 메타데이터
+    metadata = models.JSONField(default=dict, blank=True, help_text="추가 메타데이터")
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('cost_item', 'activity')
+        ordering = ['start_date', 'cost_item']
+        indexes = [
+            models.Index(fields=['project', 'activity']),
+            models.Index(fields=['cost_item', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.activity.code} - {self.cost_item}"
+
+    def calculate_duration(self):
+        """
+        Activity의 duration_per_unit과 quantity를 기반으로 소요일수 계산
+        """
+        if self.activity and self.quantity:
+            return float(self.activity.duration_per_unit) * float(self.quantity)
+        return 0.0
+
+    def auto_calculate_dates(self):
+        """
+        duration을 기반으로 종료일 자동 계산
+        """
+        if self.start_date and self.actual_duration:
+            from datetime import timedelta
+            self.end_date = self.start_date + timedelta(days=float(self.actual_duration))
+
+
 class ActivityDependency(models.Model):
     """공정 간 선후행 관계 (Dependency)"""
 
@@ -744,6 +823,7 @@ class CostItem(models.Model):
     quantity_member = models.ForeignKey(QuantityMember, on_delete=models.CASCADE, null=True, blank=True, related_name='cost_items')
     cost_code = models.ForeignKey(CostCode, on_delete=models.PROTECT, related_name='cost_items')
     quantity = models.FloatField(default=0.0)
+    is_manual_quantity = models.BooleanField(default=False, help_text="수동으로 입력된 수량 여부 (True면 자동 생성 시 수량 유지)")
 
     quantity_mapping_expression = models.JSONField(default=dict, blank=True, verbose_name="수량 맵핑식(json)")
 
@@ -764,6 +844,8 @@ class CostItem(models.Model):
         help_text="이 산출항목에 할당된 액티비티 코드들 (복수 할당 가능)"
     )
     # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    locked_activity_ids = models.JSONField(default=list, blank=True, help_text="잠금된 액티비티 ID 목록 (UUID strings)")
 
     description = models.TextField(blank=True, null=True, help_text="수동 생성 시 특이사항 기록")
 

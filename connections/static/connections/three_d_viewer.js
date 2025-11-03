@@ -8290,7 +8290,7 @@
 
         const canvas = document.getElementById('data-mgmt-three-d-canvas');
         if (!canvas) {
-            console.error("[Data Mgmt 3D Viewer] Canvas not found!");
+            console.log("[Data Mgmt 3D Viewer] Canvas not found, skipping initialization (this is normal if not using data management 3D viewer)");
             return;
         }
 
@@ -9914,7 +9914,7 @@
         const viewerSection = document.querySelector('.details-panel-viewer');
 
         if (!resizeHandle || !topSection || !viewerSection) {
-            console.warn("[Data Mgmt Split Bar] Elements not found");
+            console.log("[Data Mgmt Split Bar] Elements not found, skipping initialization (this is normal if not using data management split bar)");
             return;
         }
 

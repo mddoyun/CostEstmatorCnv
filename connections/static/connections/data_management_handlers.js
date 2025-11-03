@@ -363,6 +363,7 @@ function handleRowSelection(event, clickedRow, contextPrefix) {
     if (!elementDbId) return;
 
     if (event.shiftKey && state.lastSelectedRowIndex > -1) {
+        // Shift+클릭: 범위 선택
         const start = Math.min(state.lastSelectedRowIndex, clickedRowIndex);
         const end = Math.max(state.lastSelectedRowIndex, clickedRowIndex);
         if (!event.ctrlKey) state.selectedElementIds.clear();
@@ -370,15 +371,13 @@ function handleRowSelection(event, clickedRow, contextPrefix) {
             const rowId = allVisibleRows[i]?.dataset.dbId;
             if (rowId) state.selectedElementIds.add(rowId);
         }
-    } else if (event.ctrlKey) {
+    } else {
+        // 단순 클릭: 토글 (Activity Objects 방식)
         if (state.selectedElementIds.has(elementDbId)) {
             state.selectedElementIds.delete(elementDbId);
         } else {
             state.selectedElementIds.add(elementDbId);
         }
-    } else {
-        state.selectedElementIds.clear();
-        state.selectedElementIds.add(elementDbId);
     }
     state.lastSelectedRowIndex = clickedRowIndex;
 }

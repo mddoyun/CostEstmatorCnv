@@ -512,6 +512,136 @@ window.setupWebSocket = function() {
                         'success'
                     );
                 }
+                else if (activeTab === 'cost-item-management') {
+                    // 코스트아이템 탭 처리
+                    window.selectedCiIds.clear();
+                    window.ciFilteredIds = new Set();
+
+                    // Revit/Blender에서 선택된 unique_id를 가진 RawElement 찾기
+                    const selectedRawElementIds = new Set();
+                    allRevitData.forEach((item) => {
+                        if (uniqueIds.has(item.element_unique_id)) {
+                            selectedRawElementIds.add(item.id);
+                        }
+                    });
+
+                    // 해당 RawElement와 연결된 코스트아이템 찾기
+                    if (window.loadedCostItems) {
+                        window.loadedCostItems.forEach(ci => {
+                            if (ci.raw_element_id && selectedRawElementIds.has(ci.raw_element_id)) {
+                                window.selectedCiIds.add(ci.id);
+                                window.ciFilteredIds.add(ci.id);
+                            }
+                        });
+                    }
+
+                    console.log(
+                        `[WebSocket] Applying Cost Items filter: ${window.selectedCiIds.size} items from ${selectedRawElementIds.size} elements`
+                    );
+
+                    // 필터 활성화 및 버튼 표시
+                    window.isCiFilterToSelectionActive = true;
+                    const clearBtn = document.getElementById('ci-clear-selection-filter-btn');
+                    if (clearBtn) clearBtn.style.display = 'inline-block';
+
+                    // 테이블 다시 렌더링
+                    if (typeof renderCostItemsTable === 'function' && window.loadedCostItems) {
+                        renderCostItemsTable(window.loadedCostItems);
+                    }
+
+                    showToast(
+                        `${window.selectedCiIds.size}개의 산출항목을 연동 프로그램에서 가져와 필터링합니다.`,
+                        'success'
+                    );
+                }
+                else if (activeTab === 'activity-objects') {
+                    // 액티비티 객체 탭 처리
+                    selectedAoIds.clear();
+                    window.aoFilteredIds = window.aoFilteredIds || new Set();
+                    window.aoFilteredIds.clear();
+
+                    // Revit/Blender에서 선택된 unique_id를 가진 RawElement 찾기
+                    const selectedRawElementIds = new Set();
+                    allRevitData.forEach((item) => {
+                        if (uniqueIds.has(item.element_unique_id)) {
+                            selectedRawElementIds.add(item.id);
+                        }
+                    });
+
+                    console.log(`[WebSocket][AO] Selected ${selectedRawElementIds.size} RawElements from Revit/Blender`);
+
+                    // BIM ID → QuantityMember ID 매핑
+                    const qmIds = new Set();
+                    if (window.loadedQuantityMembers && window.loadedQuantityMembers.length > 0) {
+                        window.loadedQuantityMembers.forEach(qm => {
+                            const elementId = qm.split_element_id || qm.raw_element_id;
+                            if (elementId && selectedRawElementIds.has(elementId)) {
+                                qmIds.add(qm.id);
+                            }
+                        });
+                    }
+
+                    console.log(`[WebSocket][AO] Found ${qmIds.size} QuantityMembers`);
+
+                    // QuantityMember ID → CostItem ID 매핑
+                    const ciIds = new Set();
+                    if (window.loadedCostItems && window.loadedCostItems.length > 0) {
+                        window.loadedCostItems.forEach(ci => {
+                            let qmId = null;
+                            if (ci.quantity_member) {
+                                if (typeof ci.quantity_member === 'object' && ci.quantity_member.id) {
+                                    qmId = ci.quantity_member.id;
+                                } else if (typeof ci.quantity_member === 'string') {
+                                    qmId = ci.quantity_member;
+                                }
+                            } else if (ci.quantity_member_id) {
+                                qmId = ci.quantity_member_id;
+                            }
+
+                            if (qmId && qmIds.has(qmId)) {
+                                ciIds.add(ci.id);
+                            }
+                        });
+                    }
+
+                    console.log(`[WebSocket][AO] Found ${ciIds.size} CostItems`);
+
+                    // CostItem ID → ActivityObject 매핑
+                    if (window.loadedActivityObjects && window.loadedActivityObjects.length > 0) {
+                        window.loadedActivityObjects.forEach(ao => {
+                            if (ao.cost_item && ao.cost_item.id && ciIds.has(ao.cost_item.id)) {
+                                selectedAoIds.add(ao.id);
+                                window.aoFilteredIds.add(ao.id);
+                            }
+                        });
+                    }
+
+                    console.log(`[WebSocket][AO] Found ${selectedAoIds.size} ActivityObjects`);
+
+                    // 필터 활성화 및 버튼 표시
+                    if (selectedAoIds.size > 0) {
+                        window.isAoFilterToSelectionActive = true;
+                        const clearBtnSidebar = document.getElementById('ao-clear-selection-filter-btn');
+                        const clearBtnFooter = document.getElementById('ao-clear-selection-filter-btn-footer');
+                        if (clearBtnSidebar) clearBtnSidebar.style.display = 'inline-block';
+                        if (clearBtnFooter) clearBtnFooter.style.display = 'inline-block';
+
+                        // 테이블 다시 렌더링
+                        if (typeof renderActivityObjectsTable === 'function' && window.loadedActivityObjects) {
+                            renderActivityObjectsTable(window.loadedActivityObjects);
+                        }
+
+                        showToast(
+                            `${selectedAoIds.size}개의 액티비티 객체를 연동 프로그램에서 가져와 필터링합니다.`,
+                            'success'
+                        );
+                    } else {
+                        showToast(
+                            '연동 프로그램에서 선택한 객체와 매칭되는 액티비티 객체가 없습니다.',
+                            'warning'
+                        );
+                    }
+                }
                 else {
                     // 기본: 데이터 관리 탭 처리
                     const state = viewerStates['data-management'];

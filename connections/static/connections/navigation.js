@@ -655,15 +655,18 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
                 loadActivities();
             }
             break;
-        case 'activity-assignment': // 액티비티 할당 탭
+        case 'activity-objects': // 액티비티 객체 탭
             console.log(
-                `[DEBUG][loadDataForActiveTab] Activity Assignment tab activated. Loading quantity members with activity info.`
+                `[DEBUG][loadDataForActiveTab] Activity Objects tab activated. Loading activity objects.`
             );
-            if (typeof loadActivities === 'function') {
-                loadActivities(); // 액티비티 목록 먼저 로드
+            if (typeof loadActivityObjects === 'function') {
+                loadActivityObjects(); // 액티비티 객체 목록 로드
             }
-            if (typeof loadActivityAssignments === 'function') {
-                loadActivityAssignments(); // 산출부재별 할당 정보 로드
+            if (typeof loadActivities === 'function') {
+                loadActivities(); // 액티비티 목록 로드 (콤보박스용)
+            }
+            if (typeof loadCostItems === 'function') {
+                loadCostItems(); // 코스트 아이템 목록 로드 (참조용)
             }
             break;
         default:
@@ -690,6 +693,28 @@ window.loadSpecificRuleset = async function loadSpecificRuleset(rulesetType) {
             loadPropertyMappingRules();
             break;
         case 'costcode-ruleset':
+            await loadCostCodes(); // Load cost codes first for dropdown
+            await loadQuantityMembers(); // Load quantity members for field collection
+
+            // BIM 데이터 확인 및 필요시 요청 (조건 빌더에서 BIM.* 속성 사용)
+            if (
+                allRevitData.length === 0 &&
+                frontendSocket &&
+                frontendSocket.readyState === WebSocket.OPEN
+            ) {
+                console.log(
+                    "[DEBUG][showRulesetTab] Requesting BIM data for costcode-ruleset as it's empty."
+                );
+                frontendSocket.send(
+                    JSON.stringify({
+                        type: 'get_all_elements',
+                        payload: { project_id: currentProjectId },
+                    })
+                );
+                // Wait a moment for data to load
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+
             loadCostCodeRules();
             break;
         case 'member-mark-assignment-ruleset':

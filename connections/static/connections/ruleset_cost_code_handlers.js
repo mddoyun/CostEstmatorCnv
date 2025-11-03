@@ -1,5 +1,5 @@
 // =====================================================================
-// 공사코드 룰셋(CostCodeRule) 관리 관련 함수들
+// 수량산출룰셋(CostCodeRule) 관리 관련 함수들
 // =====================================================================
 
 async function loadCostCodeRules() {
@@ -12,7 +12,7 @@ async function loadCostCodeRules() {
             `/connections/api/rules/cost-code/${currentProjectId}/`
         );
         if (!response.ok)
-            throw new Error('공사코드 룰셋을 불러오는데 실패했습니다.');
+            throw new Error('수량산출룰셋을 불러오는데 실패했습니다.');
         loadedCostCodeRules = await response.json();
         renderCostCodeRulesetTable(loadedCostCodeRules);
     } catch (error) {
@@ -68,16 +68,9 @@ async function handleCostCodeRuleActions(event) {
             }
         });
 
-        // 맵핑 빌더에서 수량 계산식 수집
-        const mappingRows = ruleRow.querySelectorAll('.mapping-row');
-        const quantity_mapping_script = {};
-        mappingRows.forEach(row => {
-            const key = row.querySelector('.mapping-key-input').value.trim();
-            const value = row.querySelector('.mapping-value-input').value.trim();
-            if (key && value) {
-                quantity_mapping_script[key] = value;
-            }
-        });
+        // 수량 산식 수집
+        const quantityFormulaInput = ruleRow.querySelector('.quantity-formula-input');
+        const quantity_formula = quantityFormulaInput ? quantityFormulaInput.value.trim() : '';
 
         const ruleData = {
             id: ruleId !== 'new' ? ruleId : null,
@@ -88,7 +81,7 @@ async function handleCostCodeRuleActions(event) {
             target_cost_code_id: ruleRow.querySelector('.rule-cost-code-select')
                 .value,
             conditions: conditions,
-            quantity_mapping_script: quantity_mapping_script,
+            quantity_formula: quantity_formula,
         };
 
         if (!ruleData.target_cost_code_id) {

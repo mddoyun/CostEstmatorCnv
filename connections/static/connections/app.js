@@ -402,7 +402,7 @@ function handleRulesetNavClick(e) {
 // 기존 loadCostItems 함수를 찾아 아래 코드로 교체하세요.
 
 // =====================================================================
-// 공사코드 룰셋(CostCodeRule) 관리 관련 함수들
+// 수량산출룰셋(CostCodeRule) 관리 관련 함수들
 // =====================================================================
 
 // ▼▼▼ [추가] 이 함수 블록을 추가해주세요. ▼▼▼
@@ -1189,4 +1189,29 @@ function saveBoqColumnSettings() {
         resizer.classList.remove('resizing');
         document.body.classList.remove('resizing');
     });
+})();
+
+// ==================== CI 스플릿바 초기화 ====================
+// cost-item-management 탭의 좌우 패널 사이의 스플릿바 드래그 기능
+(function initializeCiSplitBar() {
+    if (typeof window.initCiSplitBar === 'function') {
+        window.initCiSplitBar();
+        console.log('[DEBUG] CI split bar initialized from app.js');
+    }
+})();
+
+// ==================== AO 스플릿바 및 리스너 초기화 ====================
+// activity-objects 탭의 좌우 패널 사이의 스플릿바 드래그 기능 및 이벤트 리스너 설정
+(function initializeAoTab() {
+    // setupAoListeners 호출
+    if (typeof window.setupAoListeners === 'function') {
+        window.setupAoListeners();
+        console.log('[DEBUG] AO listeners initialized from app.js');
+    }
+
+    // initAoSplitBar 호출
+    if (typeof window.initAoSplitBar === 'function') {
+        window.initAoSplitBar();
+        console.log('[DEBUG] AO split bar initialized from app.js');
+    }
 })();

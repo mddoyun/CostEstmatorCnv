@@ -58,7 +58,8 @@ from .models import (
     Activity,      # <--- 액티비티 모델 추가
     ActivityDependency,  # <--- 액티비티 의존성 모델 추가
     WorkCalendar,  # <--- 작업 캘린더 모델 추가
-    ActivityAssignmentRule  # <--- 액티비티 할당 룰셋 모델 추가
+    ActivityAssignmentRule,  # <--- 액티비티 할당 룰셋 모델 추가
+    ActivityObject  # <--- 액티비티 객체 모델 추가
 
 )
 from tensorflow.keras import models # <<< models 임포트 추가
@@ -1714,7 +1715,16 @@ def cost_items_api(request, project_id, item_id=None):
                 'quantity_member_name': item.quantity_member.name if item.quantity_member else None,  # ▼▼▼ [추가] QM 이름 ▼▼▼
                 'quantity_member_classification': item.quantity_member.classification_tag.name if item.quantity_member and item.quantity_member.classification_tag else None,  # ▼▼▼ [추가] QM 분류 ▼▼▼
                 'description': item.description,
-                'activities': [str(act.id) for act in item.activities.all()],  # ▼▼▼ [수정] 복수 activities 리스트로 변경 ▼▼▼
+                'activities': [
+                    {
+                        'id': str(act.id),
+                        'code': act.code,
+                        'name': act.name,
+                        'duration_per_unit': float(act.duration_per_unit) if act.duration_per_unit else None,
+                        'description': act.description if hasattr(act, 'description') else None,
+                    }
+                    for act in item.activities.all()
+                ],  # ▼▼▼ [수정] Activity 전체 정보 반환 ▼▼▼
                 'quantity_member_properties': {},
                 'member_mark_properties': {},
                 'raw_element_properties': {},
@@ -1773,6 +1783,8 @@ def cost_items_api(request, project_id, item_id=None):
                     # quantity 업데이트
                     if 'quantity' in data:
                         item.quantity = float(data['quantity'])
+                        item.is_manual_quantity = True  # 수동 수량 입력 플래그 설정
+                        print(f"[DEBUG][cost_items_api] POST: Updated quantity to {data['quantity']} and set is_manual_quantity=True")
 
                     # description 업데이트
                     if 'description' in data:
@@ -1781,6 +1793,10 @@ def cost_items_api(request, project_id, item_id=None):
                     # quantity_mapping_expression 업데이트
                     if 'quantity_mapping_expression' in data:
                         item.quantity_mapping_expression = data['quantity_mapping_expression']
+                        # mapping expression이 설정되면 수동 입력으로 간주
+                        if data['quantity_mapping_expression']:
+                            item.is_manual_quantity = True
+                            print(f"[DEBUG][cost_items_api] POST: Set is_manual_quantity=True due to mapping expression")
 
                     item.save()
                     return JsonResponse({'status': 'success', 'message': '산출항목이 업데이트되었습니다.', 'item_id': str(item.id)})
@@ -1861,10 +1877,23 @@ def cost_items_api(request, project_id, item_id=None):
 
             # 다른 필드들도 필요시 업데이트
             if 'description' in data: item.description = data['description']
-            if 'quantity' in data: item.quantity = data['quantity']
+            if 'quantity' in data:
+                item.quantity = data['quantity']
+                item.is_manual_quantity = True  # 수동 수량 입력 플래그 설정
+                print(f"[DEBUG][cost_items_api] PATCH: Updated quantity to {data['quantity']} and set is_manual_quantity=True")
             if 'quantity_mapping_expression' in data:
                 item.quantity_mapping_expression = data['quantity_mapping_expression']
-                print(f"[DEBUG][cost_items_api] PATCH: Updated quantity_mapping_expression to {data['quantity_mapping_expression']}")
+                # mapping expression이 빈 객체이면 수동 입력 해제
+                if not data['quantity_mapping_expression'] or data['quantity_mapping_expression'] == {}:
+                    item.is_manual_quantity = False
+                    print(f"[DEBUG][cost_items_api] PATCH: Reset is_manual_quantity to False (mapping expression cleared)")
+                else:
+                    item.is_manual_quantity = True
+                    print(f"[DEBUG][cost_items_api] PATCH: Set is_manual_quantity=True due to mapping expression")
+            # is_manual_quantity 필드를 직접 설정할 수 있도록 허용
+            if 'is_manual_quantity' in data:
+                item.is_manual_quantity = data['is_manual_quantity']
+                print(f"[DEBUG][cost_items_api] PATCH: Explicitly set is_manual_quantity to {data['is_manual_quantity']}")
 
             item.save()
             print(f"[DEBUG][cost_items_api] PATCH: Item saved successfully")
@@ -1977,10 +2006,12 @@ def create_cost_items_auto_view(request, project_id):
                     qty_script = script_to_use.get('수량', 0)
                     calculated_qty = evaluate_expression_for_cost_item(qty_script, member)
                     final_qty = float(calculated_qty) if is_numeric(calculated_qty) else 0.0
-                
-                if item.quantity != final_qty or created:
-                    item.quantity = final_qty
-                    item.save(update_fields=['quantity'])
+
+                # is_manual_quantity가 True면 수량 업데이트 건너뜀
+                if not item.is_manual_quantity:
+                    if item.quantity != final_qty or created:
+                        item.quantity = final_qty
+                        item.save(update_fields=['quantity'])
 
                 valid_item_ids.add(item.id)
 
@@ -5981,3 +6012,292 @@ def apply_cost_item_activity_rules_api(request, project_id):
         print(traceback.format_exc(), file=sys.stderr)
         sys.stderr.flush()
         return JsonResponse({'status': 'error', 'message': error_msg, 'details': traceback.format_exc()}, status=500)
+
+
+# ============================================================
+# ActivityObject API Views
+# ============================================================
+
+@require_http_methods(["GET", "POST", "PUT", "DELETE"])
+def activity_objects_api(request, project_id, ao_id=None):
+    """ActivityObject API - 액티비티 객체 목록 조회, 생성, 수정, 삭제"""
+    print(f"[DEBUG][activity_objects_api] ENTRY: method={request.method}, project_id={project_id}, ao_id={ao_id}")
+
+    if request.method == 'GET':
+        # 목록 조회
+        activity_objects = ActivityObject.objects.filter(
+            project_id=project_id,
+            is_active=True
+        ).select_related(
+            'activity',
+            'cost_item__cost_code',
+            'cost_item__quantity_member__member_mark',
+            'cost_item__quantity_member__raw_element'
+        ).prefetch_related('cost_item__activities')
+
+        data = []
+        for ao in activity_objects:
+            ao_data = {
+                'id': str(ao.id),
+                'start_date': ao.start_date.isoformat() if ao.start_date else None,
+                'end_date': ao.end_date.isoformat() if ao.end_date else None,
+                'actual_duration': float(ao.actual_duration) if ao.actual_duration else None,
+                'quantity': float(ao.quantity),
+                'is_manual': ao.is_manual,
+                'manual_formula': ao.manual_formula,
+                'progress': float(ao.progress),
+                'metadata': ao.metadata,
+                'created_at': ao.created_at.isoformat() if ao.created_at else None,
+                'updated_at': ao.updated_at.isoformat() if ao.updated_at else None,
+            }
+
+            # Activity 속성
+            if ao.activity:
+                ao_data['activity'] = {
+                    'id': str(ao.activity.id),
+                    'code': ao.activity.code,
+                    'name': ao.activity.name,
+                    'duration_per_unit': float(ao.activity.duration_per_unit) if ao.activity.duration_per_unit else None,
+                }
+
+            # CostItem 속성
+            if ao.cost_item:
+                ci = ao.cost_item
+                ao_data['cost_item'] = {
+                    'id': str(ci.id),
+                    'quantity': float(ci.quantity),
+                    'description': ci.description,
+                }
+
+                # CostCode 속성
+                if ci.cost_code:
+                    ao_data['cost_code'] = {
+                        'id': str(ci.cost_code.id),
+                        'code': ci.cost_code.code,
+                        'name': ci.cost_code.name,
+                        'detail_code': ci.cost_code.detail_code,
+                        'unit': ci.cost_code.unit,
+                        'note': ci.cost_code.note,
+                    }
+
+                # QuantityMember 속성
+                if ci.quantity_member:
+                    qm = ci.quantity_member
+                    ao_data['quantity_member'] = {
+                        'id': str(qm.id),
+                        'name': qm.name,
+                        'properties': qm.properties or {},
+                    }
+
+                    # MemberMark 속성
+                    if qm.member_mark:
+                        ao_data['member_mark'] = {
+                            'id': str(qm.member_mark.id),
+                            'mark': qm.member_mark.mark,
+                            'description': qm.member_mark.description,
+                            'properties': qm.member_mark.properties or {},
+                        }
+
+                    # RawElement (BIM) 속성
+                    if qm.raw_element and qm.raw_element.raw_data:
+                        ao_data['raw_data'] = qm.raw_element.raw_data
+
+            data.append(ao_data)
+
+        print(f"[DEBUG][activity_objects_api] GET: Returning {len(data)} ActivityObjects")
+        return JsonResponse(data, safe=False)
+
+    elif request.method == 'POST':
+        # 수동 생성
+        try:
+            data = json.loads(request.body)
+            project = Project.objects.get(id=project_id)
+
+            # 필수 필드 확인
+            cost_item_id = data.get('cost_item_id')
+            activity_id = data.get('activity_id')
+
+            if not activity_id:
+                return JsonResponse({'status': 'error', 'message': 'Activity를 선택해주세요.'}, status=400)
+
+            activity = Activity.objects.get(id=activity_id, project=project)
+
+            # cost_item은 선택사항
+            cost_item = None
+            if cost_item_id:
+                cost_item = CostItem.objects.get(id=cost_item_id, project=project)
+
+            # 중복 확인 (cost_item이 있는 경우에만)
+            if cost_item:
+                existing = ActivityObject.objects.filter(
+                    cost_item=cost_item,
+                    activity=activity,
+                    is_active=True
+                ).first()
+
+                if existing:
+                    return JsonResponse({'status': 'error', 'message': '이미 동일한 ActivityObject가 존재합니다.'}, status=400)
+
+            # quantity 결정
+            quantity = data.get('quantity')
+            if quantity is None and cost_item:
+                quantity = cost_item.quantity
+
+            # 생성
+            ao = ActivityObject.objects.create(
+                project=project,
+                cost_item=cost_item,
+                activity=activity,
+                start_date=data.get('start_date'),
+                end_date=data.get('end_date'),
+                quantity=quantity,
+                is_manual=data.get('is_manual', False),
+                manual_formula=data.get('manual_formula', ''),
+            )
+
+            # actual_duration 자동 계산
+            if not ao.actual_duration:
+                ao.actual_duration = ao.calculate_duration()
+
+            # end_date 자동 계산 (start_date가 있을 때)
+            if ao.start_date and not ao.end_date:
+                ao.auto_calculate_dates()
+
+            ao.save()
+
+            print(f"[DEBUG][activity_objects_api] POST: Created ActivityObject {ao.id}")
+            return JsonResponse({
+                'status': 'success',
+                'message': '액티비티 객체가 생성되었습니다.',
+                'ao_id': str(ao.id)
+            })
+
+        except (Project.DoesNotExist, CostItem.DoesNotExist, Activity.DoesNotExist) as e:
+            return JsonResponse({'status': 'error', 'message': f'데이터를 찾을 수 없습니다: {str(e)}'}, status=404)
+        except Exception as e:
+            print(f"[ERROR][activity_objects_api] POST Error: {e}")
+            return JsonResponse({'status': 'error', 'message': f'생성 중 오류 발생: {str(e)}'}, status=400)
+
+    elif request.method == 'PUT':
+        # 수정
+        if not ao_id:
+            return JsonResponse({'status': 'error', 'message': 'ActivityObject ID가 필요합니다.'}, status=400)
+
+        try:
+            data = json.loads(request.body)
+            ao = ActivityObject.objects.get(id=ao_id, project_id=project_id)
+
+            # 수정 가능한 필드들
+            if 'start_date' in data:
+                ao.start_date = data['start_date']
+            if 'end_date' in data:
+                ao.end_date = data['end_date']
+            if 'actual_duration' in data:
+                ao.actual_duration = data['actual_duration']
+            if 'quantity' in data:
+                ao.quantity = data['quantity']
+            if 'is_manual' in data:
+                ao.is_manual = data['is_manual']
+            if 'manual_formula' in data:
+                ao.manual_formula = data['manual_formula']
+            if 'progress' in data:
+                ao.progress = data['progress']
+            if 'metadata' in data:
+                ao.metadata = data['metadata']
+
+            ao.save()
+
+            print(f"[DEBUG][activity_objects_api] PUT: Updated ActivityObject {ao.id}")
+            return JsonResponse({'status': 'success', 'message': '액티비티 객체가 수정되었습니다.'})
+
+        except ActivityObject.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '해당 액티비티 객체를 찾을 수 없습니다.'}, status=404)
+        except Exception as e:
+            print(f"[ERROR][activity_objects_api] PUT Error: {e}")
+            return JsonResponse({'status': 'error', 'message': f'수정 중 오류 발생: {str(e)}'}, status=400)
+
+    elif request.method == 'DELETE':
+        # 삭제 (소프트 삭제)
+        if not ao_id:
+            return JsonResponse({'status': 'error', 'message': 'ActivityObject ID가 필요합니다.'}, status=400)
+
+        try:
+            ao = ActivityObject.objects.get(id=ao_id, project_id=project_id)
+            ao.is_active = False
+            ao.save()
+
+            print(f"[DEBUG][activity_objects_api] DELETE: Soft deleted ActivityObject {ao.id}")
+            return JsonResponse({'status': 'success', 'message': '액티비티 객체가 삭제되었습니다.'})
+
+        except ActivityObject.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '해당 액티비티 객체를 찾을 수 없습니다.'}, status=404)
+        except Exception as e:
+            print(f"[ERROR][activity_objects_api] DELETE Error: {e}")
+            return JsonResponse({'status': 'error', 'message': f'삭제 중 오류 발생: {str(e)}'}, status=500)
+
+
+@require_http_methods(["POST"])
+def create_activity_objects_auto_view(request, project_id):
+    """CostItem에 할당된 Activity를 기준으로 ActivityObject 자동 생성"""
+    print(f"[DEBUG][create_activity_objects_auto_view] ENTRY: project_id={project_id}")
+
+    try:
+        project = Project.objects.get(id=project_id)
+
+        # CostItem 중 activities가 할당된 것들을 찾음
+        cost_items = CostItem.objects.filter(
+            project=project,
+            is_active=True
+        ).prefetch_related('activities')
+
+        created_count = 0
+        skipped_count = 0
+
+        for cost_item in cost_items:
+            activities = cost_item.activities.all()
+
+            for activity in activities:
+                # 이미 존재하는지 확인
+                existing = ActivityObject.objects.filter(
+                    cost_item=cost_item,
+                    activity=activity,
+                    is_active=True
+                ).first()
+
+                if existing:
+                    skipped_count += 1
+                    print(f"[DEBUG] Skipping existing ActivityObject for CI:{cost_item.id} + Activity:{activity.code}")
+                    continue
+
+                # 생성
+                ao = ActivityObject.objects.create(
+                    project=project,
+                    cost_item=cost_item,
+                    activity=activity,
+                    quantity=cost_item.quantity,
+                    is_manual=False,
+                )
+
+                # actual_duration 자동 계산
+                ao.actual_duration = ao.calculate_duration()
+                ao.save()
+
+                created_count += 1
+                print(f"[DEBUG] Created ActivityObject for CI:{cost_item.id} + Activity:{activity.code}")
+
+        message = f"액티비티 객체 자동 생성 완료: {created_count}개 생성, {skipped_count}개 스킵"
+        print(f"[DEBUG] {message}")
+        return JsonResponse({
+            'status': 'success',
+            'message': message,
+            'created_count': created_count,
+            'skipped_count': skipped_count
+        })
+
+    except Project.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        print(f"[ERROR][create_activity_objects_auto_view] Error: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'status': 'error', 'message': f'자동 생성 중 오류 발생: {str(e)}'}, status=500)

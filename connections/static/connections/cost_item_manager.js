@@ -9,6 +9,16 @@
 const getLoadedCostItems = () => window.loadedCostItems || [];
 const getSelectedCiIds = () => window.selectedCiIds || new Set();
 
+// 전역 변수 초기화
+if (typeof window.ciGroupingLevels === 'undefined') {
+    window.ciGroupingLevels = [];
+}
+
+// 현재 활성화된 뷰 추적
+if (typeof window.activeCiView === 'undefined') {
+    window.activeCiView = 'cost-item-view'; // 기본값
+}
+
 function setupCostItemsListeners() {
     document
         .getElementById('create-ci-manual-btn')
@@ -60,7 +70,7 @@ function setupCostItemsListeners() {
     // 그룹핑 적용 버튼
     document
         .getElementById('apply-ci-grouping-btn')
-        ?.addEventListener('click', () => renderCostItemsTable(window.loadedCostItems));
+        ?.addEventListener('click', applyCiGrouping);
 
     // 필터 버튼들
     document
@@ -110,6 +120,11 @@ function setupCostItemsListeners() {
     document
         .getElementById('ci-activity-assign-select')
         ?.addEventListener('focus', loadActivitiesForCombobox);
+
+    // 뷰 탭 전환 (코스트아이템 뷰 / 액티비티별 뷰)
+    document
+        .querySelector('#cost-item-management .view-tabs')
+        ?.addEventListener('click', handleCiViewTabClick);
 
     // 스플릿바 초기화
     initCiSplitBar();
@@ -228,6 +243,7 @@ function handleCiRowSelection(event, clickedRow) {
     if (!itemId) return;
 
     if (event.shiftKey && lastSelectedCiRowIndex > -1) {
+        // Shift+클릭: 범위 선택
         const start = Math.min(lastSelectedCiRowIndex, clickedRowIndex);
         const end = Math.max(lastSelectedCiRowIndex, clickedRowIndex);
         if (!event.ctrlKey) selectedCiIds.clear();
@@ -235,12 +251,13 @@ function handleCiRowSelection(event, clickedRow) {
             const rowId = allVisibleRows[i].dataset.id;
             if (rowId) selectedCiIds.add(rowId);
         }
-    } else if (event.ctrlKey) {
-        if (selectedCiIds.has(itemId)) selectedCiIds.delete(itemId);
-        else selectedCiIds.add(itemId);
     } else {
-        selectedCiIds.clear();
-        selectedCiIds.add(itemId);
+        // 단순 클릭: 토글 (Activity Objects 방식)
+        if (selectedCiIds.has(itemId)) {
+            selectedCiIds.delete(itemId);
+        } else {
+            selectedCiIds.add(itemId);
+        }
     }
 
     lastSelectedCiRowIndex = clickedRowIndex;
@@ -294,7 +311,8 @@ function handleCostItemActions(event) {
                 'X-CSRFToken': csrftoken,
             },
             body: JSON.stringify({
-                quantity_mapping_expression: {}
+                quantity_mapping_expression: {},
+                is_manual_quantity: false  // 수동 입력 해제
             }),
         })
         .then(res => {
@@ -407,15 +425,15 @@ function handleCostItemActions(event) {
 
 function addCiGroupingLevel() {
     const container = document.getElementById('ci-grouping-controls');
-    const index = container.children.length;
+    const newLevelDiv = document.createElement('div');
+    newLevelDiv.className = 'group-level';
+
     const select = document.createElement('select');
-    select.className = 'ci-grouping-select';
-    select.style.marginBottom = '4px';
-    select.dataset.index = index;
+    select.className = 'group-by-select';
 
     const defaultOption = document.createElement('option');
     defaultOption.value = '';
-    defaultOption.textContent = '(필드 선택)';
+    defaultOption.textContent = '-- 필드 선택 --';
     select.appendChild(defaultOption);
 
     // 필드 옵션 추가 - window.allCiFields에서 가져오기
@@ -427,7 +445,26 @@ function addCiGroupingLevel() {
         select.appendChild(option);
     });
 
-    container.appendChild(select);
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-group-level-btn';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', function() {
+        newLevelDiv.remove();
+    });
+
+    newLevelDiv.appendChild(select);
+    newLevelDiv.appendChild(removeBtn);
+    container.appendChild(newLevelDiv);
+}
+
+function applyCiGrouping() {
+    // 현재 활성화된 뷰에 따라 적절한 렌더링 함수 호출
+    if (window.activeCiView === 'activity-view') {
+        renderCostItemsByActivityView();
+    } else {
+        // cost-item-view
+        renderCostItemsTable(window.loadedCostItems);
+    }
 }
 
 function handleCiColumnFilter(event) {
@@ -2747,9 +2784,9 @@ async function removeIndividualActivity(itemId, activityId) {
 
         showToast(result.message, 'success');
 
-        // 로컬 데이터 업데이트
+        // 로컬 데이터 업데이트 (activities는 이제 객체 배열)
         if (item.activities) {
-            item.activities = item.activities.filter(id => id !== activityId);
+            item.activities = item.activities.filter(act => act.id !== activityId);
         }
 
         // UI 새로고침
@@ -2784,41 +2821,39 @@ function renderCiActivitiesList() {
         return;
     }
 
-    const activityIds = item.activities || [];  // 백엔드에서 'activities'로 반환
+    const activities = item.activities || [];  // 백엔드에서 'activities'로 객체 배열 반환
     const lockedActivityIds = new Set(item.locked_activity_ids || []);
 
-    if (activityIds.length === 0) {
+    if (activities.length === 0) {
         container.innerHTML = '<p style="color: #999; font-size: 11px; margin: 4px 0;">할당된 액티비티가 없습니다.</p>';
         return;
     }
 
     let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
-    activityIds.forEach(activityId => {
-        const activity = window.loadedActivities?.find(a => a.id === activityId);
-        if (activity) {
-            const isLocked = lockedActivityIds.has(activityId);
-            const lockIcon = isLocked ? '🔒' : '🔓';
-            const lockTitle = isLocked ? '잠금 해제' : '잠금';
+    activities.forEach(activity => {
+        // activity는 이미 {id, code, name, ...} 객체임
+        const isLocked = lockedActivityIds.has(activity.id);
+        const lockIcon = isLocked ? '🔒' : '🔓';
+        const lockTitle = isLocked ? '잠금 해제' : '잠금';
 
-            html += `
-                <li style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee;">
-                    <span style="flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${activity.name}</span>
-                    <div style="display: flex; gap: 2px;">
-                        <button onclick="toggleIndividualActivityLock('${item.id}', '${activityId}')"
-                                style="padding: 2px 6px; font-size: 10px; background: none; border: none; cursor: pointer;"
-                                title="${lockTitle}">
-                            ${lockIcon}
-                        </button>
-                        <button onclick="removeIndividualActivity('${item.id}', '${activityId}')"
-                                style="padding: 2px 6px; font-size: 10px; background: #dc3545; color: white; border: none; border-radius: 2px; cursor: pointer;"
-                                title="제거"
-                                ${isLocked ? 'disabled' : ''}>
-                            ✕
-                        </button>
-                    </div>
-                </li>
-            `;
-        }
+        html += `
+            <li style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee;">
+                <span style="flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${activity.code} - ${activity.name}</span>
+                <div style="display: flex; gap: 2px;">
+                    <button onclick="toggleIndividualActivityLock('${item.id}', '${activity.id}')"
+                            style="padding: 2px 6px; font-size: 10px; background: none; border: none; cursor: pointer;"
+                            title="${lockTitle}">
+                        ${lockIcon}
+                    </button>
+                    <button onclick="removeIndividualActivity('${item.id}', '${activity.id}')"
+                            style="padding: 2px 6px; font-size: 10px; background: #dc3545; color: white; border: none; border-radius: 2px; cursor: pointer;"
+                            title="제거"
+                            ${isLocked ? 'disabled' : ''}>
+                        ✕
+                    </button>
+                </div>
+            </li>
+        `;
     });
     html += '</ul>';
 
@@ -2878,6 +2913,133 @@ async function applyCiActivityRules() {
         console.error('[ERROR][applyCiActivityRules]', error);
         showToast(error.message, 'error');
     }
+}
+
+// =====================================================================
+// 뷰 탭 전환 (코스트아이템 뷰 / 액티비티별 뷰)
+// =====================================================================
+
+function handleCiViewTabClick(e) {
+    console.log('[DEBUG][handleCiViewTabClick] ===== 뷰 탭 클릭 =====');
+    console.log('[DEBUG][handleCiViewTabClick] e.target:', e.target);
+    console.log('[DEBUG][handleCiViewTabClick] e.target.classList:', e.target.classList);
+
+    if (!e.target.classList.contains('view-tab-button')) {
+        console.log('[DEBUG][handleCiViewTabClick] Not a view-tab-button, returning');
+        return;
+    }
+
+    const viewType = e.target.dataset.view;
+    console.log('[DEBUG][handleCiViewTabClick] viewType:', viewType);
+
+    if (!viewType) {
+        console.log('[DEBUG][handleCiViewTabClick] No viewType, returning');
+        return;
+    }
+
+    // 탭 활성화 상태 변경
+    document.querySelectorAll('#cost-item-management .view-tab-button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    e.target.classList.add('active');
+    console.log('[DEBUG][handleCiViewTabClick] Tab activated:', viewType);
+
+    // 현재 뷰 상태 업데이트
+    window.activeCiView = viewType;
+
+    // 뷰에 따라 테이블 렌더링
+    if (viewType === 'cost-item-view') {
+        console.log('[DEBUG][handleCiViewTabClick] Switching to COST-ITEM VIEW');
+        // 기본 코스트아이템 뷰 - 그룹핑 초기화
+        window.ciGroupingLevels = [];
+        console.log('[DEBUG][handleCiViewTabClick] window.ciGroupingLevels reset to:', window.ciGroupingLevels);
+        console.log('[DEBUG][handleCiViewTabClick] Rendering with loadedCostItems count:', window.loadedCostItems.length);
+        renderCostItemsTable(window.loadedCostItems);
+    } else if (viewType === 'activity-view') {
+        console.log('[DEBUG][handleCiViewTabClick] Switching to ACTIVITY VIEW');
+        // 액티비티별 뷰: 각 CostItem을 할당된 Activity마다 복제
+        renderCostItemsByActivityView();
+    }
+    console.log('[DEBUG][handleCiViewTabClick] ===== 뷰 탭 클릭 종료 =====');
+}
+
+function renderCostItemsByActivityView() {
+    console.log('[DEBUG][renderCostItemsByActivityView] ===== Activity View 렌더링 시작 =====');
+    console.log('[DEBUG][renderCostItemsByActivityView] loadedCostItems count:', window.loadedCostItems.length);
+
+    const expandedItems = [];
+
+    window.loadedCostItems.forEach((ci, index) => {
+        console.log(`[DEBUG][renderCostItemsByActivityView] Processing CostItem ${index}:`, {
+            id: ci.id,
+            name: ci.name || 'N/A',
+            activities: ci.activities,
+            activitiesCount: ci.activities ? ci.activities.length : 0
+        });
+
+        if (ci.activities && ci.activities.length > 0) {
+            // 각 Activity마다 CostItem 복제
+            ci.activities.forEach(activity => {
+                console.log(`[DEBUG][renderCostItemsByActivityView]   - Expanding for Activity:`, {
+                    code: activity.code,
+                    name: activity.name,
+                    id: activity.id
+                });
+
+                const expandedCi = {
+                    ...ci,
+                    // Activity 정보를 최상위 필드로 추가 (그룹핑용)
+                    'Activity.code': activity.code,
+                    'Activity.name': activity.name,
+                    'Activity.id': activity.id,
+                    'Activity.duration_per_unit': activity.duration_per_unit,
+                    // 현재 표시 중인 Activity 정보 추가
+                    _displayActivity: activity,
+                    // 원본 CostItem ID 보존
+                    _originalCiId: ci.id,
+                    // 고유 ID 생성 (테이블 렌더링용)
+                    id: `${ci.id}_activity_${activity.id}`
+                };
+                expandedItems.push(expandedCi);
+            });
+        } else {
+            console.log(`[DEBUG][renderCostItemsByActivityView]   - No activities, adding as (할당 안됨)`);
+            // Activity가 없는 CostItem도 표시
+            expandedItems.push({
+                ...ci,
+                'Activity.code': '(할당 안됨)',
+                'Activity.name': '(할당 안됨)',
+                _displayActivity: null,
+                _originalCiId: ci.id
+            });
+        }
+    });
+
+    console.log(`[DEBUG][renderCostItemsByActivityView] Expanded ${window.loadedCostItems.length} items to ${expandedItems.length} rows`);
+    console.log('[DEBUG][renderCostItemsByActivityView] Sample expanded items (first 3):');
+    expandedItems.slice(0, 3).forEach((item, idx) => {
+        console.log(`  [${idx}]:`, {
+            id: item.id,
+            'Activity.code': item['Activity.code'],
+            'Activity.name': item['Activity.name'],
+            name: item.name || 'N/A'
+        });
+    });
+
+    // DOM에서 사용자가 설정한 그룹핑 레벨 읽기
+    const userGroupingLevels = Array.from(
+        document.querySelectorAll('#ci-grouping-controls .group-by-select')
+    )
+        .map((s) => s.value)
+        .filter(Boolean);
+
+    // Activity.code를 최상위로, 사용자 설정 그룹핑을 하위로 설정
+    window.ciGroupingLevels = ['Activity.code', ...userGroupingLevels];
+    console.log('[DEBUG][renderCostItemsByActivityView] window.ciGroupingLevels set to:', window.ciGroupingLevels);
+
+    console.log('[DEBUG][renderCostItemsByActivityView] Calling renderCostItemsTable with expandedItems...');
+    renderCostItemsTable(expandedItems);
+    console.log('[DEBUG][renderCostItemsByActivityView] ===== Activity View 렌더링 종료 =====');
 }
 
 // 전역 함수로 등록
