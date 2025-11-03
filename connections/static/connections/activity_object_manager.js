@@ -1438,24 +1438,48 @@ function showManualAoQuantityInputModal() {
         z-index: 10000;
     `;
 
-    // 속성 옵션 생성 (ActivityObject에서 사용 가능한 필드들)
+    // 속성 옵션 생성 - 첫 번째 선택된 항목의 컨텍스트에서 동적으로 생성
     let propertyOptions = '<option value="">-- 속성 선택 --</option>';
-    propertyOptions += '<optgroup label="ActivityObject 속성">';
-    propertyOptions += '<option value="{AO.quantity}">{AO.quantity}</option>';
-    propertyOptions += '<option value="{AO.actual_duration}">{AO.actual_duration}</option>';
-    propertyOptions += '</optgroup>';
-    propertyOptions += '<optgroup label="Activity 속성">';
-    propertyOptions += '<option value="{Activity.duration_per_unit}">{Activity.duration_per_unit}</option>';
-    propertyOptions += '</optgroup>';
-    propertyOptions += '<optgroup label="CostItem 속성">';
-    propertyOptions += '<option value="{CI.quantity}">{CI.quantity}</option>';
-    propertyOptions += '</optgroup>';
-    propertyOptions += '<optgroup label="QuantityMember 속성">';
-    propertyOptions += '<option value="{QM.volume}">{QM.volume}</option>';
-    propertyOptions += '<option value="{QM.area}">{QM.area}</option>';
-    propertyOptions += '<option value="{QM.length}">{QM.length}</option>';
-    propertyOptions += '<option value="{QM.count}">{QM.count}</option>';
-    propertyOptions += '</optgroup>';
+
+    if (selectedItems.length > 0) {
+        const sampleContext = buildActivityObjectContext(selectedItems[0]);
+        const grouped = {};
+
+        // Context 키를 그룹별로 분류
+        Object.keys(sampleContext).forEach(key => {
+            const parts = key.split('.');
+            const group = parts[0]; // AO, Activity, CI, QM, MM, BIM 등
+
+            if (!grouped[group]) grouped[group] = [];
+            grouped[group].push(key);
+        });
+
+        // 그룹명 한글 매핑
+        const groupNames = {
+            'AO': 'ActivityObject 속성',
+            'Activity': 'Activity 속성',
+            'CI': 'CostItem 속성',
+            'CostCode': 'CostCode 속성',
+            'QM': 'QuantityMember 속성',
+            'MM': 'MemberMark 속성',
+            'BIM': 'BIM 속성'
+        };
+
+        // 각 그룹별로 옵션 생성
+        Object.keys(grouped).sort().forEach(group => {
+            propertyOptions += `<optgroup label="${groupNames[group] || group}">`;
+            grouped[group].sort().forEach(key => {
+                propertyOptions += `<option value="{${key}}">{${key}}</option>`;
+            });
+            propertyOptions += '</optgroup>';
+        });
+    } else {
+        // 기본 옵션 (선택 항목 없을 때)
+        propertyOptions += '<optgroup label="ActivityObject 속성">';
+        propertyOptions += '<option value="{AO.quantity}">{AO.quantity}</option>';
+        propertyOptions += '<option value="{AO.actual_duration}">{AO.actual_duration}</option>';
+        propertyOptions += '</optgroup>';
+    }
 
     modal.innerHTML = `
         <div style="background: white; border-radius: 8px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
@@ -1598,8 +1622,9 @@ function showManualAoQuantityInputModal() {
                 for (const item of selectedItems) {
                     const updateData = {
                         quantity: directValue,
+                        actual_duration: directValue,  // actual_duration도 함께 업데이트
                         is_manual: true,
-                        manual_formula: null,
+                        manual_formula: '',  // null 대신 빈 문자열
                         quantity_expression: {
                             mode: 'direct',
                             value: directValue
@@ -1640,6 +1665,7 @@ function showManualAoQuantityInputModal() {
                     if (calculatedQuantity !== null && !isNaN(calculatedQuantity)) {
                         const updateData = {
                             quantity: calculatedQuantity,
+                            actual_duration: calculatedQuantity,  // actual_duration도 함께 업데이트
                             is_manual: true,
                             manual_formula: formula,
                             quantity_expression: {
@@ -2077,7 +2103,8 @@ async function recalculateAllAoQuantities() {
 
                 // 서버에 저장
                 const updateData = {
-                    quantity: newQuantity
+                    quantity: newQuantity,
+                    actual_duration: newQuantity  // actual_duration도 함께 업데이트
                 };
 
                 const saveResponse = await fetch(`/connections/api/activity-objects/${currentProjectId}/${ao.id}/`, {
