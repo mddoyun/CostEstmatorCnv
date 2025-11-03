@@ -435,10 +435,13 @@ def evaluate_conditions(data_dict, conditions):
         internal_field = get_internal_field_name(p)
 
         actual_value = None
-        # 2. 먼저 data_dict에서 직접 키를 찾아봅니다 (예: 'classification_tag_name').
-        if internal_field in data_dict:
+        # 2. 먼저 data_dict에서 원본 표시명 (p)으로 직접 키를 찾아봅니다
+        if p in data_dict:
+            actual_value = data_dict.get(p)
+        # 3. 원본 키가 없으면 변환된 내부 필드명으로 찾아봅니다
+        elif internal_field in data_dict:
             actual_value = data_dict.get(internal_field)
-        # 3. 직접 키가 없으면, 중첩된 구조(raw_data)를 탐색하는 기존 함수를 호출합니다.
+        # 4. 둘 다 없으면, 중첩된 구조(raw_data)를 탐색하는 기존 함수를 호출합니다.
         else:
             actual_value = get_value_from_element(data_dict, internal_field)
         # ▲▲▲ [핵심 수정] 여기까지 입니다. ▲▲▲
@@ -1276,14 +1279,24 @@ def manage_quantity_member_spaces_api(request, project_id):
 def cost_code_rules_api(request, project_id, rule_id=None):
     if request.method == 'GET':
         rules = CostCodeRule.objects.filter(project_id=project_id).select_related('target_cost_code')
-        rules_data = [{
-            'id': str(rule.id), 'name': rule.name, 'description': rule.description,
-            'target_cost_code_id': str(rule.target_cost_code.id),
-            'target_cost_code_name': f"{rule.target_cost_code.code} - {rule.target_cost_code.name}",
-            'conditions': rule.conditions,
-            'quantity_mapping_script': rule.quantity_mapping_script,
-            'priority': rule.priority,
-        } for rule in rules]
+        rules_data = []
+        for rule in rules:
+            # quantity_mapping_script에서 formula 추출 (신규 형식) 또는 그대로 반환 (기존 형식)
+            quantity_formula = ''
+            if isinstance(rule.quantity_mapping_script, dict) and 'formula' in rule.quantity_mapping_script:
+                quantity_formula = rule.quantity_mapping_script['formula']
+
+            rules_data.append({
+                'id': str(rule.id),
+                'name': rule.name,
+                'description': rule.description,
+                'target_cost_code_id': str(rule.target_cost_code.id),
+                'target_cost_code_name': f"{rule.target_cost_code.code} - {rule.target_cost_code.name}",
+                'conditions': rule.conditions,
+                'quantity_formula': quantity_formula,  # 신규 필드
+                'quantity_mapping_script': rule.quantity_mapping_script,  # 하위 호환성
+                'priority': rule.priority,
+            })
         return JsonResponse(rules_data, safe=False)
 
     elif request.method == 'POST':
@@ -1299,7 +1312,13 @@ def cost_code_rules_api(request, project_id, rule_id=None):
             rule.description = data.get('description', '')
             rule.target_cost_code = target_cost_code
             rule.conditions = data.get('conditions', [])
-            rule.quantity_mapping_script = data.get('quantity_mapping_script', {})
+
+            # quantity_formula를 quantity_mapping_script로 저장 (하위 호환성 유지)
+            if 'quantity_formula' in data:
+                rule.quantity_mapping_script = {'formula': data.get('quantity_formula', '')}
+            else:
+                rule.quantity_mapping_script = data.get('quantity_mapping_script', {})
+
             rule.priority = data.get('priority', 0)
             rule.save()
             return JsonResponse({'status': 'success', 'message': '공사코드 룰셋이 저장되었습니다.', 'rule_id': str(rule.id)})
@@ -1509,25 +1528,32 @@ def apply_activity_assignment_rules_view(request, project_id):
             if cost_item.description:
                 combined_properties['description'] = cost_item.description
 
-            # 2. CostCode 속성 - CC 접두사: CC.{property_name}
+            # 2. CostCode 속성 - CostCode 접두사: CostCode.{property_name}
             if cost_item.cost_code:
                 cc = cost_item.cost_code
-                combined_properties['CC.code'] = cc.code
-                combined_properties['CC.name'] = cc.name
+                combined_properties['CostCode.code'] = cc.code
+                combined_properties['CostCode.name'] = cc.name
+                if cc.detail_code:
+                    combined_properties['CostCode.detail_code'] = cc.detail_code
+                if cc.note:
+                    combined_properties['CostCode.note'] = cc.note
                 if cc.category:
-                    combined_properties['CC.category'] = cc.category
+                    combined_properties['CostCode.category'] = cc.category
                 if cc.spec:
-                    combined_properties['CC.spec'] = cc.spec
+                    combined_properties['CostCode.spec'] = cc.spec
                 if cc.unit:
-                    combined_properties['CC.unit'] = cc.unit
+                    combined_properties['CostCode.unit'] = cc.unit
 
             # 3. QuantityMember 속성 - QM 접두사: QM.{property_name}
             if cost_item.quantity_member:
                 qm = cost_item.quantity_member
                 combined_properties['QM.name'] = qm.name
+                combined_properties['QM.id'] = str(qm.id)
+                if qm.classification_tag:
+                    combined_properties['QM.classification_tag'] = qm.classification_tag.name
                 if qm.properties:
                     for k, v in qm.properties.items():
-                        combined_properties[f'QM.{k}'] = v
+                        combined_properties[f'QM.properties.{k}'] = v
 
                 # 4. MemberMark 속성 - MM 접두사: MM.{property_name}
                 if qm.member_mark:
@@ -1537,19 +1563,25 @@ def apply_activity_assignment_rules_view(request, project_id):
                         combined_properties['MM.description'] = mm.description
                     if mm.properties:
                         for k, v in mm.properties.items():
-                            combined_properties[f'MM.{k}'] = v
+                            combined_properties[f'MM.properties.{k}'] = v
 
-                # 5. RawElement (BIM 원본) 속성 - RE 접두사: RE.{property_name}
+                # 5. RawElement (BIM 원본) 속성 - BIM 접두사: BIM.Attributes/Parameters/TypeParameters
                 if qm.raw_element and qm.raw_element.raw_data:
                     raw_data = qm.raw_element.raw_data
+                    # BIM.Attributes.* - 기본 속성
                     for k, v in raw_data.items():
-                        if not isinstance(v, (dict, list)):
-                            combined_properties[f'RE.{k}'] = v
-                    # TypeParameters와 Parameters도 포함
+                        if k not in ('Parameters', 'TypeParameters') and not isinstance(v, (dict, list)):
+                            combined_properties[f'BIM.Attributes.{k}'] = v
+                    # BIM.TypeParameters.* - 타입 파라미터
                     for k, v in raw_data.get('TypeParameters', {}).items():
-                        combined_properties[f'RE.TypeParameters.{k}'] = v
+                        combined_properties[f'BIM.TypeParameters.{k}'] = v
+                    # BIM.Parameters.* - 인스턴스 파라미터
                     for k, v in raw_data.get('Parameters', {}).items():
-                        combined_properties[f'RE.Parameters.{k}'] = v
+                        combined_properties[f'BIM.Parameters.{k}'] = v
+
+                # 6. Space 속성 (공간분류)
+                if qm.space:
+                    combined_properties['Space.name'] = qm.space.name
 
             # 룰셋 적용 (조건에 맞는 모든 룰을 적용)
             for rule in activity_rules:
@@ -1676,8 +1708,11 @@ def cost_items_api(request, project_id, item_id=None):
                 'cost_code': item.cost_code.code if item.cost_code else None,  # ▼▼▼ [추가] 공사코드 ▼▼▼
                 'cost_code_detail_code': item.cost_code.detail_code if item.cost_code else None,  # ▼▼▼ [추가] 상세코드/이름 ▼▼▼
                 'cost_code_unit': item.cost_code.unit if item.cost_code else None,  # ▼▼▼ [추가] 단위 ▼▼▼
+                'cost_code_note': item.cost_code.note if item.cost_code else None,  # ▼▼▼ [추가] 비고 ▼▼▼
                 'quantity_member_id': str(item.quantity_member_id) if item.quantity_member_id else None,
                 'quantity_member': str(item.quantity_member_id) if item.quantity_member_id else None,  # ▼▼▼ [추가] quantity_member FK ▼▼▼
+                'quantity_member_name': item.quantity_member.name if item.quantity_member else None,  # ▼▼▼ [추가] QM 이름 ▼▼▼
+                'quantity_member_classification': item.quantity_member.classification_tag.name if item.quantity_member and item.quantity_member.classification_tag else None,  # ▼▼▼ [추가] QM 분류 ▼▼▼
                 'description': item.description,
                 'activities': [str(act.id) for act in item.activities.all()],  # ▼▼▼ [수정] 복수 activities 리스트로 변경 ▼▼▼
                 'quantity_member_properties': {},
@@ -1691,9 +1726,11 @@ def cost_items_api(request, project_id, item_id=None):
             
             if item.quantity_member:
                 item_data['quantity_member_properties'] = item.quantity_member.properties or {}
-                
+                item_data['space_name'] = item.quantity_member.space_name if hasattr(item.quantity_member, 'space_name') else None
+
                 if item.quantity_member.member_mark:
                     item_data['member_mark_properties'] = item.quantity_member.member_mark.properties or {}
+                    item_data['member_mark_mark'] = item.quantity_member.member_mark.mark if item.quantity_member.member_mark else None
                 
                 # ▼▼▼ [핵심 수정] RawElement의 모든 속성을 단순화하여 통합하는 로직 ▼▼▼
                 if item.quantity_member.raw_element:
@@ -1721,18 +1758,44 @@ def cost_items_api(request, project_id, item_id=None):
         return JsonResponse(data, safe=False)
 
     elif request.method == 'POST':
-        # (POST 로직은 변경 없음)
         try:
             data = json.loads(request.body)
             project = Project.objects.get(id=project_id)
-            cost_code = CostCode.objects.get(id=data.get('cost_code_id'), project=project)
 
-            new_item = CostItem.objects.create(
-                project=project,
-                cost_code=cost_code,
-                description="수동 생성됨",
-            )
-            return JsonResponse({'status': 'success', 'message': '새 산출항목이 수동으로 생성되었습니다.', 'item_id': str(new_item.id)})
+            # ▼▼▼ [수정] id가 있으면 업데이트, 없으면 생성 ▼▼▼
+            item_id_from_data = data.get('id')
+
+            if item_id_from_data:
+                # 기존 항목 업데이트
+                try:
+                    item = CostItem.objects.select_related('quantity_member').get(id=item_id_from_data, project_id=project_id)
+
+                    # quantity 업데이트
+                    if 'quantity' in data:
+                        item.quantity = float(data['quantity'])
+
+                    # description 업데이트
+                    if 'description' in data:
+                        item.description = data['description']
+
+                    # quantity_mapping_expression 업데이트
+                    if 'quantity_mapping_expression' in data:
+                        item.quantity_mapping_expression = data['quantity_mapping_expression']
+
+                    item.save()
+                    return JsonResponse({'status': 'success', 'message': '산출항목이 업데이트되었습니다.', 'item_id': str(item.id)})
+                except CostItem.DoesNotExist:
+                    return JsonResponse({'status': 'error', 'message': '해당 산출항목을 찾을 수 없습니다.'}, status=404)
+            else:
+                # 새 항목 생성
+                cost_code = CostCode.objects.get(id=data.get('cost_code_id'), project=project)
+                new_item = CostItem.objects.create(
+                    project=project,
+                    cost_code=cost_code,
+                    description="수동 생성됨",
+                )
+                return JsonResponse({'status': 'success', 'message': '새 산출항목이 수동으로 생성되었습니다.', 'item_id': str(new_item.id)})
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
         except (Project.DoesNotExist, CostCode.DoesNotExist):
             return JsonResponse({'status': 'error', 'message': '프로젝트 또는 공사코드를 찾을 수 없습니다.'}, status=404)
         except Exception as e:
@@ -1799,6 +1862,9 @@ def cost_items_api(request, project_id, item_id=None):
             # 다른 필드들도 필요시 업데이트
             if 'description' in data: item.description = data['description']
             if 'quantity' in data: item.quantity = data['quantity']
+            if 'quantity_mapping_expression' in data:
+                item.quantity_mapping_expression = data['quantity_mapping_expression']
+                print(f"[DEBUG][cost_items_api] PATCH: Updated quantity_mapping_expression to {data['quantity_mapping_expression']}")
 
             item.save()
             print(f"[DEBUG][cost_items_api] PATCH: Item saved successfully")
@@ -1845,17 +1911,22 @@ def create_cost_items_auto_view(request, project_id):
         ).distinct()
         # ▲▲▲ [수정] 여기까지 ▲▲▲
 
-        if not rules.exists():
-            return JsonResponse({'status': 'info', 'message': '자동 생성을 위한 공사코드 룰셋이 없습니다.'})
+        # ▼▼▼ [수정] 룰셋이 없어도 진행 가능하도록 변경 (수량은 0으로 설정됨) ▼▼▼
         if not members_qs.exists():
             return JsonResponse({'status': 'info', 'message': '공사코드가 할당된 수량산출부재가 없습니다.'})
+
+        has_rules = rules.exists()
+        if not has_rules:
+            print(f"[WARNING] 공사코드 룰셋이 없습니다. 수량은 0으로 설정됩니다.")
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
 
         valid_item_ids = set()
         created_count = 0
         updated_count = 0
-        
+
         print(f"\n[DEBUG] --- '자동생성(공사코드기준)' 실행 시작 ---")
         print(f"[DEBUG] {members_qs.count()}개의 QuantityMembers를 처리합니다.")
+        print(f"[DEBUG] 공사코드 룰셋 개수: {rules.count()}개")
 
         # [수정] iterator 사용
         for member in members_qs.iterator(chunk_size=500):
@@ -1916,7 +1987,12 @@ def create_cost_items_auto_view(request, project_id):
         deletable_items = CostItem.objects.filter(project=project, quantity_member__isnull=False).exclude(id__in=valid_item_ids)
         deleted_count, _ = deletable_items.delete()
 
-        message = f'룰셋/개별 맵핑식을 적용하여 {created_count}개 항목 생성, {updated_count}개 업데이트, {deleted_count}개 삭제했습니다.'
+        # ▼▼▼ [수정] 룰셋 유무에 따라 다른 메시지 표시 ▼▼▼
+        if has_rules:
+            message = f'룰셋/개별 맵핑식을 적용하여 {created_count}개 항목 생성, {updated_count}개 업데이트, {deleted_count}개 삭제했습니다.'
+        else:
+            message = f'할당된 공사코드 기준으로 {created_count}개 항목 생성, {updated_count}개 업데이트, {deleted_count}개 삭제했습니다. (공사코드 룰셋이 없어 수량은 0으로 설정됨)'
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         return JsonResponse({'status': 'success', 'message': message})
 
     except Project.DoesNotExist:
@@ -5633,3 +5709,275 @@ def work_calendars_api(request, project_id, calendar_id=None):
         import traceback
         traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# ========================================================================
+# CostItem Activity Management APIs
+# ========================================================================
+
+@require_http_methods(["POST"])
+def manage_cost_item_activities_api(request, project_id):
+    """선택된 여러 산출항목에 대해 액티비티를 일괄 할당/제거하는 API"""
+    try:
+        data = json.loads(request.body)
+        item_ids = data.get('item_ids', [])
+        activity_id = data.get('activity_id')
+        action = data.get('action')  # 'assign', 'remove', or 'clear'
+
+        if not all([item_ids, action]):
+            return JsonResponse({'status': 'error', 'message': '필수 파라미터가 누락되었습니다.'}, status=400)
+
+        items = CostItem.objects.filter(project_id=project_id, id__in=item_ids)
+
+        if action == 'assign':
+            if not activity_id:
+                return JsonResponse({'status': 'error', 'message': '할당할 액티비티 ID가 필요합니다.'}, status=400)
+            activity_to_add = Activity.objects.get(id=activity_id, project_id=project_id)
+            for item in items:
+                item.activities.add(activity_to_add)
+            message = f'{len(item_ids)}개 산출항목에 액티비티 "{activity_to_add.name}"을(를) 추가했습니다.'
+
+        elif action == 'remove':
+            if not activity_id:
+                return JsonResponse({'status': 'error', 'message': '제거할 액티비티 ID가 필요합니다.'}, status=400)
+            activity_to_remove = Activity.objects.get(id=activity_id, project_id=project_id)
+            removed_count = 0
+            locked_count = 0
+            for item in items:
+                locked_ids = set(item.locked_activity_ids or [])
+                if str(activity_id) in locked_ids:
+                    locked_count += 1
+                else:
+                    item.activities.remove(activity_to_remove)
+                    removed_count += 1
+
+            if locked_count > 0 and removed_count == 0:
+                message = f'액티비티 "{activity_to_remove.name}"은(는) 잠겨있어 제거할 수 없습니다.'
+            elif locked_count > 0:
+                message = f'{removed_count}개 산출항목에서 액티비티를 제거했습니다. ({locked_count}개는 잠금 상태로 제거되지 않음)'
+            else:
+                message = f'{removed_count}개 산출항목에서 액티비티 "{activity_to_remove.name}"을(를) 제거했습니다.'
+
+        elif action == 'clear':
+            # 'clear' 액션은 잠기지 않은 모든 액티비티만 제거합니다.
+            for item in items:
+                locked_ids = set(item.locked_activity_ids or [])
+                current_activities = list(item.activities.all())
+                for activity in current_activities:
+                    if str(activity.id) not in locked_ids:
+                        item.activities.remove(activity)
+            message = f'{len(item_ids)}개 산출항목의 잠기지 않은 액티비티를 제거했습니다.'
+
+        else:
+            return JsonResponse({'status': 'error', 'message': '잘못된 action입니다. "assign", "remove", 또는 "clear"를 사용하세요.'}, status=400)
+
+        return JsonResponse({'status': 'success', 'message': message})
+
+    except Activity.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '존재하지 않는 액티비티입니다.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def clear_cost_item_activities_api(request, project_id):
+    """선택된 산출항목들의 잠기지 않은 모든 액티비티를 제거하는 API"""
+    try:
+        data = json.loads(request.body)
+        item_ids = data.get('item_ids', [])
+
+        if not item_ids:
+            return JsonResponse({'status': 'error', 'message': '산출항목 ID가 필요합니다.'}, status=400)
+
+        items = CostItem.objects.filter(project_id=project_id, id__in=item_ids)
+
+        for item in items:
+            locked_ids = set(item.locked_activity_ids or [])
+            current_activities = list(item.activities.all())
+            for activity in current_activities:
+                if str(activity.id) not in locked_ids:
+                    item.activities.remove(activity)
+
+        message = f'{len(item_ids)}개 산출항목의 잠기지 않은 액티비티를 제거했습니다.'
+        return JsonResponse({'status': 'success', 'message': message})
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def toggle_cost_item_activity_lock_api(request, project_id):
+    """특정 산출항목의 특정 액티비티 잠금 상태를 토글합니다."""
+    try:
+        data = json.loads(request.body)
+        item_id = data.get('item_id')
+        activity_id = data.get('activity_id')
+
+        if not all([item_id, activity_id]):
+            return JsonResponse({'status': 'error', 'message': '산출항목 ID와 액티비티 ID가 필요합니다.'}, status=400)
+
+        item = CostItem.objects.get(project_id=project_id, id=item_id)
+        activity = Activity.objects.get(project_id=project_id, id=activity_id)
+
+        # 현재 잠금 상태 확인
+        locked_ids = item.locked_activity_ids or []
+        activity_id_str = str(activity.id)
+
+        if activity_id_str in locked_ids:
+            # 잠금 해제
+            locked_ids.remove(activity_id_str)
+            is_locked = False
+            message = f'액티비티 "{activity.name}"의 잠금을 해제했습니다.'
+        else:
+            # 잠금
+            locked_ids.append(activity_id_str)
+            is_locked = True
+            message = f'액티비티 "{activity.name}"을(를) 잠갔습니다.'
+
+        item.locked_activity_ids = locked_ids
+        item.save(update_fields=['locked_activity_ids'])
+
+        return JsonResponse({
+            'status': 'success',
+            'message': message,
+            'is_locked': is_locked,
+            'activity_id': activity_id_str
+        })
+
+    except CostItem.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '산출항목을 찾을 수 없습니다.'}, status=404)
+    except Activity.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '액티비티를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def apply_cost_item_activity_rules_api(request, project_id):
+    """CostItem에 액티비티 할당 룰셋을 일괄 적용 (잠긴 액티비티는 보호)"""
+    import sys
+    print("\n" + "="*80, file=sys.stderr)
+    print("[DEBUG] === CostItem 액티비티 룰셋 일괄적용 API 호출됨 ===", file=sys.stderr)
+    print(f"[DEBUG] Project ID: {project_id}", file=sys.stderr)
+    print("="*80 + "\n", file=sys.stderr)
+    sys.stderr.flush()
+
+    try:
+        project = Project.objects.get(id=project_id)
+
+        # is_active=True인 CostItem만 가져오기
+        cost_items_qs = CostItem.objects.filter(
+            project=project,
+            is_active=True
+        ).select_related(
+            'cost_code',
+            'quantity_member',
+            'quantity_member__member_mark',
+            'quantity_member__raw_element'
+        ).prefetch_related('activities')
+
+        # ActivityAssignmentRule을 우선순위대로 가져오기
+        activity_rules = list(ActivityAssignmentRule.objects.filter(project=project).select_related('target_activity').order_by('priority'))
+
+        ci_count = cost_items_qs.count()
+        rule_count = len(activity_rules)
+        print(f"[DEBUG] {ci_count}개의 산출항목에 대해 액티비티 할당 룰셋 적용을 시작합니다.", file=sys.stderr)
+        print(f"  > 적용할 액티비티 할당 룰셋: {rule_count}개", file=sys.stderr)
+        sys.stderr.flush()
+
+        updated_count = 0
+
+        # 각 CostItem에 대해 룰 적용
+        for cost_item in cost_items_qs.iterator(chunk_size=500):
+            # 잠긴 액티비티 ID 세트
+            locked_ids = set(cost_item.locked_activity_ids or [])
+
+            # 잠기지 않은 액티비티만 제거
+            current_activities = list(cost_item.activities.all())
+            for activity in current_activities:
+                if str(activity.id) not in locked_ids:
+                    cost_item.activities.remove(activity)
+
+            # 다단계 속성 접근을 위한 combined_properties 구성
+            combined_properties = {}
+
+            # 1. CostItem 자체 속성
+            combined_properties['CI.quantity'] = cost_item.quantity
+            if cost_item.description:
+                combined_properties['CI.description'] = cost_item.description
+
+            # 2. CostCode 속성
+            if cost_item.cost_code:
+                cc = cost_item.cost_code
+                combined_properties['CostCode.code'] = cc.code
+                combined_properties['CostCode.name'] = cc.name
+                if cc.detail_code:
+                    combined_properties['CostCode.detail_code'] = cc.detail_code
+                if cc.note:
+                    combined_properties['CostCode.note'] = cc.note
+
+            # 3. QuantityMember 속성
+            if cost_item.quantity_member:
+                qm = cost_item.quantity_member
+                combined_properties['QM.name'] = qm.name
+                if qm.properties:
+                    for k, v in qm.properties.items():
+                        combined_properties[f'QM.properties.{k}'] = v
+
+                # 4. MemberMark 속성
+                if qm.member_mark:
+                    mm = qm.member_mark
+                    combined_properties['MM.mark'] = mm.mark
+                    if mm.description:
+                        combined_properties['MM.description'] = mm.description
+                    if mm.properties:
+                        for k, v in mm.properties.items():
+                            combined_properties[f'MM.properties.{k}'] = v
+
+                # 5. RawElement (BIM 원본) 속성
+                if qm.raw_element and qm.raw_element.raw_data:
+                    raw_data = qm.raw_element.raw_data
+                    for k, v in raw_data.items():
+                        if k not in ['TypeParameters', 'Parameters'] and not isinstance(v, (dict, list)):
+                            combined_properties[f'BIM.Attributes.{k}'] = v
+                    # TypeParameters와 Parameters 포함
+                    for k, v in raw_data.get('TypeParameters', {}).items():
+                        combined_properties[f'BIM.TypeParameters.{k}'] = v
+                    for k, v in raw_data.get('Parameters', {}).items():
+                        combined_properties[f'BIM.Parameters.{k}'] = v
+
+            # 룰셋 적용 (조건에 맞는 모든 룰을 적용)
+            for rule in activity_rules:
+                print(f"[DEBUG] Evaluating rule {rule.id} for CostItem {cost_item.id}", file=sys.stderr)
+                print(f"  > Rule conditions: {rule.conditions}", file=sys.stderr)
+                print(f"  > Available properties: {list(combined_properties.keys())}", file=sys.stderr)
+                sys.stderr.flush()
+
+                condition_result = evaluate_conditions(combined_properties, rule.conditions)
+                print(f"  > Condition result: {condition_result}", file=sys.stderr)
+                sys.stderr.flush()
+
+                if condition_result:
+                    # 이미 할당되어 있지 않으면 추가
+                    if not cost_item.activities.filter(id=rule.target_activity.id).exists():
+                        cost_item.activities.add(rule.target_activity)
+                        updated_count += 1
+                        print(f"[DEBUG] CostItem {cost_item.id}에 Activity '{rule.target_activity.code}' 할당", file=sys.stderr)
+                    else:
+                        print(f"[DEBUG] Activity already assigned to CostItem {cost_item.id}", file=sys.stderr)
+                    sys.stderr.flush()
+
+        message = f"액티비티 할당 완료: {updated_count}개의 산출항목에 액티비티가 할당되었습니다."
+        print(f"[DEBUG] {message}", file=sys.stderr)
+        sys.stderr.flush()
+        return JsonResponse({'status': 'success', 'message': message, 'updated_count': updated_count})
+
+    except Project.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        import traceback
+        error_msg = f'오류 발생: {str(e)}'
+        print(f"[ERROR] {error_msg}", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
+        sys.stderr.flush()
+        return JsonResponse({'status': 'error', 'message': error_msg, 'details': traceback.format_exc()}, status=500)

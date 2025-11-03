@@ -31,6 +31,9 @@ async function loadActivities() {
 
         // 액티비티 할당 탭의 드롭다운 업데이트
         updateActivityFilterSelect();
+
+        // 산출-코스트아이템 탭의 액티비티 콤보박스 업데이트
+        updateCiActivitySelect();
     } catch (error) {
         console.error('Error loading activities:', error);
         showToast(error.message, 'error');
