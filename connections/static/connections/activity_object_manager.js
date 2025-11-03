@@ -657,6 +657,17 @@ function renderActivityObjectsTable(activityObjects) {
 
     if (!activityObjects || activityObjects.length === 0) {
         container.innerHTML = '<p>액티비티 객체가 없습니다.</p>';
+
+        // Clear property panel
+        const propertyPanel = document.getElementById('ao-properties-content');
+        if (propertyPanel) {
+            propertyPanel.innerHTML = '<p>선택된 액티비티 객체가 없습니다.</p>';
+        }
+
+        // Clear selection state
+        selectedAoIds.clear();
+
+        console.log('[DEBUG][renderActivityObjectsTable] Cleared property panel and selection state due to empty array');
         return;
     }
 
@@ -888,6 +899,7 @@ function createAoRow(ao, selectedFields) {
     deleteBtn.style.padding = '4px 8px';
     deleteBtn.style.marginLeft = '4px';
     deleteBtn.addEventListener('click', (e) => {
+        console.log('[DEBUG][renderActivityObjectsTable] Delete button clicked for AO:', ao.id);
         e.stopPropagation(); // 행 클릭 이벤트 방지
         deleteActivityObject(ao.id);
     });
@@ -1351,11 +1363,16 @@ function clearManualInput(aoId) {
 // =====================================================================
 
 async function deleteActivityObject(aoId) {
+    console.log('[DEBUG][deleteActivityObject] Called with aoId:', aoId);
+    console.log('[DEBUG][deleteActivityObject] Current loadedActivityObjects count:', window.loadedActivityObjects?.length);
+
     if (!confirm('이 액티비티 객체를 삭제하시겠습니까?')) {
+        console.log('[DEBUG][deleteActivityObject] User cancelled deletion');
         return;
     }
 
     try {
+        console.log('[DEBUG][deleteActivityObject] Sending DELETE request...');
         const response = await fetch(
             `/connections/api/activity-objects/${currentProjectId}/${aoId}/`,
             {
@@ -1366,13 +1383,18 @@ async function deleteActivityObject(aoId) {
             }
         );
 
+        console.log('[DEBUG][deleteActivityObject] Response status:', response.status);
         const result = await response.json();
+        console.log('[DEBUG][deleteActivityObject] Response result:', result);
+
         if (!response.ok) throw new Error(result.message || '삭제에 실패했습니다.');
 
         showToast(result.message, 'success');
+        console.log('[DEBUG][deleteActivityObject] Reloading activity objects...');
         await loadActivityObjects();
+        console.log('[DEBUG][deleteActivityObject] Reload complete');
     } catch (error) {
-        console.error('Error deleting activity object:', error);
+        console.error('[ERROR][deleteActivityObject] Error deleting activity object:', error);
         showToast(error.message, 'error');
     }
 }
