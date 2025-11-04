@@ -1144,13 +1144,22 @@
 
         // ▼▼▼ [수정] Section Box 버튼 이벤트 리스너 ▼▼▼
         const toggleClippingBtn = document.getElementById('toggle-clipping-btn');
+        const fitSectionBoxBtn = document.getElementById('fit-section-box-btn');
+
         if (toggleClippingBtn) {
             toggleClippingBtn.onclick = () => {
                 window.toggleSectionBox();
-                // 처음 활성화 시 자동으로 Fit
-                if (sectionBoxEnabled && sectionBoxPlanes.length === 0) {
-                    window.fitSectionBox();
+                toggleClippingBtn.textContent = sectionBoxEnabled ? '단면 ON' : '단면 OFF';
+                // 맞춤 버튼 표시/숨김
+                if (fitSectionBoxBtn) {
+                    fitSectionBoxBtn.style.display = sectionBoxEnabled ? 'block' : 'none';
                 }
+            };
+        }
+
+        if (fitSectionBoxBtn) {
+            fitSectionBoxBtn.onclick = () => {
+                window.fitSectionBox();
             };
         }
         // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -2003,6 +2012,66 @@
         const canvas = document.getElementById('three-d-canvas');
         const rect = canvas.getBoundingClientRect();
 
+        // ▼▼▼ [추가] Section Box 핸들 드래그 처리 ▼▼▼
+        if (draggingHandle) {
+            event.preventDefault();
+            const mouse = new THREE.Vector2(
+                ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+
+            const handleName = draggingHandle.userData.handleName;
+            const axis = handleName.substring(1); // "+X" -> "X"
+            const direction = handleName.charAt(0); // "+" or "-"
+
+            // 현재 핸들 위치
+            const handlePosition = draggingHandle.position.clone();
+
+            // 카메라 방향에 수직인 평면을 사용 (드래그가 자연스러움)
+            const cameraDirection = new THREE.Vector3();
+            camera.getWorldDirection(cameraDirection);
+            const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+                cameraDirection.negate(),
+                handlePosition
+            );
+
+            // Ray와 평면의 교차점 계산
+            const intersectionPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(plane, intersectionPoint);
+
+            if (intersectionPoint) {
+                // 교차점의 해당 축 좌표만 사용
+                let newValue;
+                if (axis === 'X') {
+                    newValue = intersectionPoint.x;
+                    if (direction === '+') {
+                        sectionBoxBounds.maxX = Math.max(newValue, sectionBoxBounds.minX + 1);
+                    } else {
+                        sectionBoxBounds.minX = Math.min(newValue, sectionBoxBounds.maxX - 1);
+                    }
+                } else if (axis === 'Y') {
+                    newValue = intersectionPoint.y;
+                    if (direction === '+') {
+                        sectionBoxBounds.maxY = Math.max(newValue, sectionBoxBounds.minY + 1);
+                    } else {
+                        sectionBoxBounds.minY = Math.min(newValue, sectionBoxBounds.maxY - 1);
+                    }
+                } else if (axis === 'Z') {
+                    newValue = intersectionPoint.z;
+                    if (direction === '+') {
+                        sectionBoxBounds.maxZ = Math.max(newValue, sectionBoxBounds.minZ + 1);
+                    } else {
+                        sectionBoxBounds.minZ = Math.min(newValue, sectionBoxBounds.maxZ - 1);
+                    }
+                }
+
+                updateSectionBox();
+            }
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // ▼▼▼ [추가] Shift + 우클릭 회전 처리 (Orbit Around Selection) ▼▼▼
         if (isShiftRightRotating) {
             event.preventDefault();  // 브라우저 기본 동작 방지
@@ -2045,50 +2114,6 @@
             // 새 카메라 위치
             camera.position.copy(rotationCenter).add(offset);
             camera.lookAt(rotationCenter);
-
-            return;
-        }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
-
-        // ▼▼▼ [추가] 클리핑 핸들 드래그 처리 ▼▼▼
-        if (isDraggingClippingPlane && clippingHelper && clippingHandle) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-
-            // 마우스 위치를 3D 공간의 ray로 변환
-            const mouse = new THREE.Vector2(
-                ((event.clientX - rect.left) / rect.width) * 2 - 1,
-                -((event.clientY - rect.top) / rect.height) * 2 + 1
-            );
-            raycaster.setFromCamera(mouse, camera);
-
-            // 클리핑 평면의 법선 방향으로만 이동
-            const planeNormal = clippingPlane.normal.clone().normalize();
-            const planePoint = clippingHelper.position.clone();
-
-            // Ray와 클리핑 평면의 교점 계산
-            const intersectPlane = new THREE.Plane(planeNormal, -planePoint.dot(planeNormal));
-            const intersectPoint = new THREE.Vector3();
-            raycaster.ray.intersectPlane(intersectPlane, intersectPoint);
-
-            if (intersectPoint) {
-                // 평면 법선 방향으로의 거리 계산
-                const distance = intersectPoint.dot(planeNormal);
-
-                // 클리핑 평면 constant 업데이트 (평면 방정식: normal · point + constant = 0)
-                clippingPlane.constant = -distance;
-
-                // 헬퍼 위치 업데이트
-                clippingHelper.position.copy(planeNormal.clone().multiplyScalar(distance));
-
-                // 모든 메시에 업데이트된 클리핑 평면 적용
-                scene.traverse((object) => {
-                    if (object.isMesh && object.material && clippingEnabled) {
-                        object.material.clippingPlanes = [clippingPlane];
-                        object.material.needsUpdate = true;
-                    }
-                });
-            }
 
             return;
         }
@@ -2213,7 +2238,7 @@
                         transparent: true,
                         opacity: 0.6,
                         side: THREE.DoubleSide,
-                        clippingPlanes: clippingEnabled ? [clippingPlane] : [] // ▼▼▼ [수정] 클리핑 평면 유지 ▼▼▼
+                        clippingPlanes: sectionBoxEnabled ? sectionBoxPlanes : [] // ▼▼▼ [수정] Section Box 평면 유지 ▼▼▼
                     });
 
                     hoveredObject.material = hoverMaterial;
@@ -2308,8 +2333,17 @@
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(scene.children, true);
 
-            if (intersects.length > 0) {
-                const intersection = intersects[0];
+            // 그리드와 같은 보조 객체는 제외하고 실제 3D 오브젝트만 필터링
+            const validIntersects = intersects.filter(intersect => {
+                if (intersect.object instanceof THREE.GridHelper) return false;
+                if (intersect.object instanceof THREE.AxesHelper) return false;
+                if (intersect.object instanceof THREE.Line) return false;
+                if (intersect.object instanceof THREE.LineSegments) return false;
+                return true;
+            });
+
+            if (validIntersects.length > 0) {
+                const intersection = validIntersects[0];
                 let point = intersection.point;
 
                 // 스냅 기능 적용
@@ -2970,7 +3004,8 @@
             flatShading: true,         // Flat shading to match original objects
             transparent: true,
             opacity: 0.7,              // Semi-transparent
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            clippingPlanes: sectionBoxEnabled ? sectionBoxPlanes : []
         });
 
         object.material = highlightMaterial;
@@ -3150,7 +3185,8 @@
                 flatShading: true,
                 transparent: true,
                 opacity: 0.7,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                clippingPlanes: sectionBoxEnabled ? sectionBoxPlanes : []
             });
 
             object.material = highlightMaterial;
@@ -3258,7 +3294,8 @@
                 flatShading: true,
                 transparent: true,
                 opacity: 0.7,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                clippingPlanes: sectionBoxEnabled ? sectionBoxPlanes : []
             });
 
             object.material = highlightMaterial;
@@ -11442,7 +11479,8 @@
                 flatShading: true,
                 transparent: true,
                 opacity: 0.7,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                clippingPlanes: sectionBoxEnabled ? sectionBoxPlanes : []
             });
 
             obj.material = highlightMaterial;
@@ -11911,6 +11949,13 @@
                 break;
         }
 
+        // ▼▼▼ [추가] Section Box clipping planes 적용 ▼▼▼
+        if (sectionBoxEnabled && sectionBoxPlanes.length > 0) {
+            mesh.material.clippingPlanes = sectionBoxPlanes;
+            mesh.material.needsUpdate = true;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // ▼▼▼ [수정] 선 표시 로직: edgesVisible 토글 또는 edges 모드일 때 표시 ▼▼▼
         const shouldShowEdges = edgesVisible || renderingMode === 'edges';
 
@@ -11921,15 +11966,18 @@
                 const edges = new THREE.EdgesGeometry(mesh.geometry);
                 const lineMaterial = new THREE.LineBasicMaterial({
                     color: isSelected ? 0xffff00 : 0x000000,
-                    linewidth: 1
+                    linewidth: 1,
+                    clippingPlanes: sectionBoxEnabled ? sectionBoxPlanes : []
                 });
                 const line = new THREE.LineSegments(edges, lineMaterial);
                 line.userData.isEdgeLine = true;
                 mesh.add(line);
                 mesh.userData.edgesLine = line;
             } else {
-                // 선이 있으면 색상만 업데이트
+                // 선이 있으면 색상 및 clipping planes 업데이트
                 mesh.userData.edgesLine.material.color.setHex(isSelected ? 0xffff00 : 0x000000);
+                mesh.userData.edgesLine.material.clippingPlanes = sectionBoxEnabled ? sectionBoxPlanes : [];
+                mesh.userData.edgesLine.material.needsUpdate = true;
             }
         } else {
             // 선을 숨겨야 하는 경우
@@ -12085,36 +12133,29 @@
         if (sectionBoxEnabled) {
             // Section Box 활성화
             if (sectionBoxPlanes.length === 0) {
+                // 처음 활성화 시 planes 먼저 초기화하고 객체에 맞춤
                 initializeSectionBoxPlanes();
+                window.fitSectionBox();
             }
-
-            // 모든 메시에 6개 clipping planes 적용
-            scene.traverse((object) => {
-                if (object.isMesh && object.material && !object.userData.isSectionBoxHelper) {
-                    object.material.clippingPlanes = sectionBoxPlanes;
-                    object.material.needsUpdate = true;
-                }
-            });
 
             // Section Box 시각화 생성
             if (!sectionBoxHelper) {
                 createSectionBoxHelper();
             }
+
+            // 렌더링 모드 다시 적용 (clipping planes 포함)
+            window.applyRenderingModeToScene();
         } else {
             // Section Box 비활성화
-            scene.traverse((object) => {
-                if (object.isMesh && object.material) {
-                    object.material.clippingPlanes = [];
-                    object.material.needsUpdate = true;
-                }
-            });
-
             // Section Box 시각화 제거
             if (sectionBoxHelper) {
                 scene.remove(sectionBoxHelper);
                 sectionBoxHelper = null;
             }
             sectionBoxHandles = [];
+
+            // 렌더링 모드 다시 적용 (clipping planes 제거)
+            window.applyRenderingModeToScene();
         }
 
         // 버튼 상태 업데이트
@@ -12126,60 +12167,19 @@
     };
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    /**
-     * 단면 평면 방향 변경 (X, Y, Z축)
-     */
+    // ▼▼▼ [DEPRECATED] 오래된 단일 clipping plane 함수들 - Section Box로 대체됨 ▼▼▼
+    /*
     window.setClippingAxis = function(axis) {
         console.log(`[3D Viewer] Setting clipping axis to ${axis}`);
-
-        switch(axis) {
-            case 'X':
-                clippingPlane.normal.set(1, 0, 0);
-                break;
-            case 'Y':
-                clippingPlane.normal.set(0, 1, 0);
-                break;
-            case 'Z':
-                clippingPlane.normal.set(0, 0, 1);
-                break;
-        }
-
-        // Helper 업데이트
-        if (clippingHelper) {
-            scene.remove(clippingHelper);
-            createClippingHelper();
-        }
-
-        // 재질 업데이트
-        scene.traverse((object) => {
-            if (object.isMesh && object.material && clippingEnabled) {
-                object.material.clippingPlanes = [clippingPlane];
-                object.material.needsUpdate = true;
-            }
-        });
+        // Section Box 시스템에서는 사용하지 않음
     };
 
-    /**
-     * 단면 평면 위치 조정
-     */
     window.moveClippingPlane = function(delta) {
-        clippingPlane.constant += delta;
-        console.log(`[3D Viewer] Clipping plane moved to ${clippingPlane.constant.toFixed(2)}`);
-
-        // Helper 업데이트
-        if (clippingHelper) {
-            scene.remove(clippingHelper);
-            createClippingHelper();
-        }
-
-        // 재질 업데이트
-        scene.traverse((object) => {
-            if (object.isMesh && object.material && clippingEnabled) {
-                object.material.clippingPlanes = [clippingPlane];
-                object.material.needsUpdate = true;
-            }
-        });
+        console.log(`[3D Viewer] Clipping plane moved`);
+        // Section Box 시스템에서는 사용하지 않음
     };
+    */
+    // ▲▲▲ [DEPRECATED] 여기까지 ▲▲▲
 
     /**
      * Section Box 시각화 생성 (외곽선 + 6개 면 핸들)

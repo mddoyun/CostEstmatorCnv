@@ -3348,6 +3348,18 @@ div[id$='-grouping-controls'] {
     cursor: not-allowed;
 }
 
+/* 우측 세로 버튼 그룹 (단면/측정) */
+.viewer-controls-right {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+    max-width: 120px;
+}
+
 /* 버튼 그룹 */
 .button-group {
     display: flex;

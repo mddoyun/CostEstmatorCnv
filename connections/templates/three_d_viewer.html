@@ -60,6 +60,37 @@
                     </div>
                 </div>
 
+                <!-- 우측 세로 버튼 그룹 (단면/측정) -->
+                <div class="viewer-controls-right">
+                    <!-- 단면 그룹 -->
+                    <div class="button-group">
+                        <button id="toggle-clipping-btn" class="rendering-mode-btn" title="Section Box 단면 자르기 (6개 면으로 조정 가능)">단면 OFF</button>
+                        <button id="fit-section-box-btn" class="rendering-mode-btn" title="객체에 맞춤" style="display: none;">맞춤</button>
+                    </div>
+
+                    <!-- 단면 회전 컨트롤 -->
+                    <div id="section-rotation-controls" class="button-group" style="display: none;">
+                        <label style="font-size: 11px; color: #333; font-weight: bold;">회전축</label>
+                        <select id="rotation-axis-select" style="width: 100%; padding: 4px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;">
+                            <option value="x">X축</option>
+                            <option value="y" selected>Y축</option>
+                            <option value="z">Z축</option>
+                        </select>
+                        <label style="font-size: 11px; color: #333; font-weight: bold; margin-top: 5px;">각도</label>
+                        <input type="number" id="rotation-angle-input" value="0" min="-180" max="180" step="1" style="width: 100%; padding: 4px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;">
+                        <input type="range" id="rotation-slider" min="-180" max="180" value="0" step="1" style="width: 100%; margin: 2px 0;">
+                        <button id="apply-rotation-btn" class="rendering-mode-btn" title="회전 적용">회전적용</button>
+                        <button id="reset-rotation-btn" class="rendering-mode-btn" title="회전 초기화">초기화</button>
+                    </div>
+
+                    <!-- 측정 그룹 -->
+                    <div class="button-group">
+                        <button id="toggle-measurement-btn" class="rendering-mode-btn" title="치수 측정">측정 OFF</button>
+                        <button id="clear-measurements-btn" class="rendering-mode-btn" title="측정 삭제">측정삭제</button>
+                        <button id="toggle-unit-btn" class="rendering-mode-btn" title="단위 변경 (mm/m)">mm</button>
+                    </div>
+                </div>
+
                 <!-- ▼▼▼ [추가] 렌더링 모드 버튼 그룹 (하단 배치) ▼▼▼ -->
                 <div class="rendering-controls-bar">
                     <button id="realistic-mode-btn" class="rendering-mode-btn active" title="실제 색상">실제색상</button>
@@ -70,12 +101,6 @@
                     <button id="sunlight-mode-btn" class="rendering-mode-btn" title="태양광 음영">태양광</button>
                     <button id="shadow-toggle-btn" class="rendering-mode-btn shadow-btn" title="그림자 on/off">그림자 OFF</button>
                     <button id="edges-toggle-btn" class="rendering-mode-btn edges-btn" title="모든 모드에서 선 표시/숨김">선 OFF</button>
-                    <div class="button-separator"></div>
-                    <button id="toggle-clipping-btn" class="rendering-mode-btn" title="Section Box 단면 자르기 (6개 면으로 조정 가능)">단면 OFF</button>
-                    <div class="button-separator"></div>
-                    <button id="toggle-measurement-btn" class="rendering-mode-btn" title="치수 측정">측정 OFF</button>
-                    <button id="clear-measurements-btn" class="rendering-mode-btn" title="측정 삭제">측정삭제</button>
-                    <button id="toggle-unit-btn" class="rendering-mode-btn" title="단위 변경 (mm/m)">mm</button>
                 </div>
                 <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
                 <canvas id="sketch-canvas" style="position: absolute; top: 0; left: 0; display: none; pointer-events: none;"></canvas>
