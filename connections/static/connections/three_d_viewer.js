@@ -103,6 +103,8 @@
     let clippingEnabled = false;
     let clippingPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0); // Default: XY plane at Z=0
     let clippingHelper = null; // Visual helper for the clipping plane
+    let clippingHandle = null; // Draggable handle for clipping plane
+    let isDraggingClippingPlane = false; // Is currently dragging clipping plane
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // ▼▼▼ [추가] 치수 측정 (Distance Measurement) 변수 ▼▼▼
@@ -110,6 +112,9 @@
     let measurementPoints = []; // Array of {x, y, z} points
     let measurementLines = []; // Array of THREE.Line objects
     let measurementLabels = []; // Array of HTML label elements
+    let measurementUnit = 'mm'; // Default unit: 'mm' or 'm'
+    let snapEnabled = true; // Snap to vertices/edges/midpoints
+    let snapThreshold = 0.5; // Snap distance threshold in model units
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     let currentDisplayedQMs = []; // 현재 표시중인 수량산출부재 목록
 
@@ -1139,12 +1144,16 @@
         // ▼▼▼ [추가] 치수 측정 버튼 이벤트 리스너 ▼▼▼
         const toggleMeasurementBtn = document.getElementById('toggle-measurement-btn');
         const clearMeasurementsBtn = document.getElementById('clear-measurements-btn');
+        const toggleUnitBtn = document.getElementById('toggle-unit-btn');
 
         if (toggleMeasurementBtn) {
             toggleMeasurementBtn.onclick = () => window.toggleMeasurementMode();
         }
         if (clearMeasurementsBtn) {
             clearMeasurementsBtn.onclick = () => window.clearMeasurements();
+        }
+        if (toggleUnitBtn) {
+            toggleUnitBtn.onclick = () => window.toggleMeasurementUnit();
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -1943,8 +1952,26 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // 좌클릭: 박스 선택
+        // 좌클릭: 박스 선택 또는 핸들 드래그
         if (event.button !== 0) return;
+
+        // ▼▼▼ [추가] 클리핑 핸들 드래그 체크 ▼▼▼
+        if (clippingEnabled && clippingHandle) {
+            const mouse = new THREE.Vector2(
+                ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(clippingHandle, false);
+
+            if (intersects.length > 0) {
+                isDraggingClippingPlane = true;
+                controls.enabled = false; // OrbitControls 비활성화
+                console.log('[3D Viewer] Started dragging clipping plane handle');
+                return; // 핸들 드래그 시작, 박스 선택 안 함
+            }
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         dragStart = {
             x: event.clientX - rect.left,
@@ -2004,6 +2031,50 @@
             // 새 카메라 위치
             camera.position.copy(rotationCenter).add(offset);
             camera.lookAt(rotationCenter);
+
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 클리핑 핸들 드래그 처리 ▼▼▼
+        if (isDraggingClippingPlane && clippingHelper && clippingHandle) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            // 마우스 위치를 3D 공간의 ray로 변환
+            const mouse = new THREE.Vector2(
+                ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+
+            // 클리핑 평면의 법선 방향으로만 이동
+            const planeNormal = clippingPlane.normal.clone().normalize();
+            const planePoint = clippingHelper.position.clone();
+
+            // Ray와 클리핑 평면의 교점 계산
+            const intersectPlane = new THREE.Plane(planeNormal, -planePoint.dot(planeNormal));
+            const intersectPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(intersectPlane, intersectPoint);
+
+            if (intersectPoint) {
+                // 평면 법선 방향으로의 거리 계산
+                const distance = intersectPoint.dot(planeNormal);
+
+                // 클리핑 평면 constant 업데이트 (평면 방정식: normal · point + constant = 0)
+                clippingPlane.constant = -distance;
+
+                // 헬퍼 위치 업데이트
+                clippingHelper.position.copy(planeNormal.clone().multiplyScalar(distance));
+
+                // 모든 메시에 업데이트된 클리핑 평면 적용
+                scene.traverse((object) => {
+                    if (object.isMesh && object.material && clippingEnabled) {
+                        object.material.clippingPlanes = [clippingPlane];
+                        object.material.needsUpdate = true;
+                    }
+                });
+            }
 
             return;
         }
@@ -2127,7 +2198,8 @@
                         flatShading: true,
                         transparent: true,
                         opacity: 0.6,
-                        side: THREE.DoubleSide
+                        side: THREE.DoubleSide,
+                        clippingPlanes: clippingEnabled ? [clippingPlane] : [] // ▼▼▼ [수정] 클리핑 평면 유지 ▼▼▼
                     });
 
                     hoveredObject.material = hoverMaterial;
@@ -2205,6 +2277,17 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+        // ▼▼▼ [추가] 클리핑 핸들 드래그 종료 ▼▼▼
+        if (isDraggingClippingPlane) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            console.log('[3D Viewer] Clipping plane drag ended');
+            isDraggingClippingPlane = false;
+            controls.enabled = true; // OrbitControls 재활성화
+            return;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // ▼▼▼ [추가] 측정 모드 처리 ▼▼▼
         if (measurementMode) {
             // 측정 모드일 때는 객체 선택 대신 측정점 추가
@@ -2212,7 +2295,14 @@
             const intersects = raycaster.intersectObjects(scene.children, true);
 
             if (intersects.length > 0) {
-                const point = intersects[0].point;
+                const intersection = intersects[0];
+                let point = intersection.point;
+
+                // 스냅 기능 적용
+                if (snapEnabled) {
+                    point = findSnapPoint(point, intersection.object, intersection);
+                }
+
                 addMeasurementPoint(point);
             }
 
@@ -11837,19 +11927,30 @@
         if (rawData && rawData.System && rawData.System.Geometry && rawData.System.Geometry.materials) {
             const materials = rawData.System.Geometry.materials;
 
+            // 디버깅: materials 객체 출력
+            console.log('[DEBUG] Materials data for mesh:', materials);
+
             // Diffuse 색상 추출
             if (materials.diffuse_color && Array.isArray(materials.diffuse_color) && materials.diffuse_color.length >= 3) {
                 const r = materials.diffuse_color[0];
                 const g = materials.diffuse_color[1];
                 const b = materials.diffuse_color[2];
                 color = new THREE.Color(r, g, b).getHex();
+                console.log('[DEBUG] Applied color:', { r, g, b, hex: color.toString(16) });
+            } else {
+                console.log('[DEBUG] No diffuse_color found, using default gray');
             }
 
             // 투명도 추출 (IFC의 Transparency는 0=불투명, 1=완전투명)
             if (materials.transparency !== undefined && materials.transparency !== null) {
                 opacity = 1.0 - materials.transparency; // Three.js opacity는 0=투명, 1=불투명
                 transparent = materials.transparency > 0;
+                console.log('[DEBUG] Applied transparency:', materials.transparency, 'opacity:', opacity);
+            } else {
+                console.log('[DEBUG] No transparency found, using default opaque');
             }
+        } else {
+            console.log('[DEBUG] No materials data found in rawData');
         }
 
         // 선택된 경우 노란색 하이라이트
@@ -12028,6 +12129,7 @@
         });
 
         clippingHelper = new THREE.Mesh(geometry, material);
+        clippingHelper.userData.isClippingHelper = true; // ▼▼▼ [추가] 클리핑 헬퍼 마커 ▼▼▼
 
         // 평면의 위치와 방향 설정
         const normal = clippingPlane.normal.clone();
@@ -12046,12 +12148,180 @@
         const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff0000 }));
         clippingHelper.add(line);
 
+        // ▼▼▼ [추가] 드래그 가능한 핸들 추가 (중앙 구체) ▼▼▼
+        const handleGeometry = new THREE.SphereGeometry(1, 16, 16);
+        const handleMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: false,
+            depthTest: false // 항상 보이도록
+        });
+        clippingHandle = new THREE.Mesh(handleGeometry, handleMaterial);
+        clippingHandle.userData.isDraggable = true;
+        clippingHandle.userData.isClippingHandle = true;
+        clippingHandle.position.set(0, 0, 0); // 평면 중앙
+        clippingHandle.renderOrder = 999; // 항상 위에 렌더링
+        clippingHelper.add(clippingHandle);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         scene.add(clippingHelper);
     }
 
     // ============================================================
     // 치수 측정 (Distance Measurement) 기능
     // ============================================================
+
+    /**
+     * 스냅 기능: 가장 가까운 정점, 모서리 중간점, 면 중심점 찾기
+     * @param {THREE.Vector3} point - 원본 교차점
+     * @param {THREE.Object3D} intersectedObject - 교차된 객체
+     * @param {THREE.Intersection} intersection - Raycaster intersection 결과
+     * @returns {THREE.Vector3} - 스냅된 점 또는 원본 점
+     */
+    function findSnapPoint(point, intersectedObject, intersection) {
+        if (!snapEnabled) return point.clone();
+
+        let closestPoint = point.clone();
+        let minDistance = snapThreshold;
+
+        // 1. 정점 스냅 (Vertex Snap)
+        if (intersectedObject.geometry) {
+            const geometry = intersectedObject.geometry;
+            const positionAttribute = geometry.attributes.position;
+
+            if (positionAttribute) {
+                for (let i = 0; i < positionAttribute.count; i++) {
+                    const vertex = new THREE.Vector3(
+                        positionAttribute.getX(i),
+                        positionAttribute.getY(i),
+                        positionAttribute.getZ(i)
+                    );
+
+                    // 로컬 좌표를 월드 좌표로 변환
+                    vertex.applyMatrix4(intersectedObject.matrixWorld);
+
+                    const distance = vertex.distanceTo(point);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestPoint = vertex;
+                    }
+                }
+            }
+        }
+
+        // 2. 모서리 중간점 스냅 (Edge Midpoint Snap)
+        if (intersection.face && intersectedObject.geometry) {
+            const geometry = intersectedObject.geometry;
+            const positionAttribute = geometry.attributes.position;
+
+            if (positionAttribute && intersection.face) {
+                const face = intersection.face;
+                const vertices = [
+                    new THREE.Vector3(
+                        positionAttribute.getX(face.a),
+                        positionAttribute.getY(face.a),
+                        positionAttribute.getZ(face.a)
+                    ),
+                    new THREE.Vector3(
+                        positionAttribute.getX(face.b),
+                        positionAttribute.getY(face.b),
+                        positionAttribute.getZ(face.b)
+                    ),
+                    new THREE.Vector3(
+                        positionAttribute.getX(face.c),
+                        positionAttribute.getY(face.c),
+                        positionAttribute.getZ(face.c)
+                    )
+                ];
+
+                // 월드 좌표로 변환
+                vertices.forEach(v => v.applyMatrix4(intersectedObject.matrixWorld));
+
+                // 삼각형의 세 모서리
+                const edges = [
+                    [vertices[0], vertices[1]],
+                    [vertices[1], vertices[2]],
+                    [vertices[2], vertices[0]]
+                ];
+
+                edges.forEach(edge => {
+                    const midpoint = new THREE.Vector3()
+                        .addVectors(edge[0], edge[1])
+                        .multiplyScalar(0.5);
+
+                    const distance = midpoint.distanceTo(point);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestPoint = midpoint;
+                    }
+                });
+
+                // 3. 면 중심점 스냅 (Face Center Snap)
+                const faceCenter = new THREE.Vector3()
+                    .add(vertices[0])
+                    .add(vertices[1])
+                    .add(vertices[2])
+                    .divideScalar(3);
+
+                const faceCenterDistance = faceCenter.distanceTo(point);
+                if (faceCenterDistance < minDistance) {
+                    minDistance = faceCenterDistance;
+                    closestPoint = faceCenter;
+                }
+            }
+        }
+
+        console.log(`[Snap] Original: (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}), Snapped: (${closestPoint.x.toFixed(2)}, ${closestPoint.y.toFixed(2)}, ${closestPoint.z.toFixed(2)}), Distance: ${minDistance.toFixed(3)}`);
+
+        return closestPoint;
+    }
+
+    /**
+     * 측정 단위 변환
+     * @param {number} distance - 모델 단위의 거리
+     * @returns {string} - 포맷된 거리 문자열
+     */
+    function formatDistance(distance) {
+        if (measurementUnit === 'mm') {
+            return `${(distance * 1000).toFixed(2)} mm`;
+        } else { // 'm'
+            return `${distance.toFixed(3)} m`;
+        }
+    }
+
+    /**
+     * 측정 단위 토글
+     */
+    window.toggleMeasurementUnit = function() {
+        measurementUnit = measurementUnit === 'mm' ? 'm' : 'mm';
+        console.log(`[3D Viewer] Measurement unit changed to: ${measurementUnit}`);
+
+        // 버튼 텍스트 업데이트
+        const unitBtn = document.getElementById('toggle-unit-btn');
+        if (unitBtn) {
+            unitBtn.textContent = measurementUnit === 'mm' ? 'mm' : 'm';
+        }
+
+        // 기존 측정 라벨 업데이트
+        updateAllMeasurementLabels();
+    };
+
+    /**
+     * 모든 측정 라벨 업데이트 (단위 변경 시)
+     */
+    function updateAllMeasurementLabels() {
+        for (let i = 0; i < measurementPoints.length - 1; i++) {
+            const start = measurementPoints[i];
+            const end = measurementPoints[i + 1];
+            const distance = start.distanceTo(end);
+
+            // 라벨이 있으면 업데이트
+            const labelIndex = i;
+            if (measurementLabels[labelIndex]) {
+                const label = measurementLabels[labelIndex];
+                label.textContent = formatDistance(distance);
+            }
+        }
+    }
 
     /**
      * 측정 모드 토글
@@ -12146,7 +12416,7 @@
     function createMeasurementLabel(distance, position) {
         const label = document.createElement('div');
         label.className = 'measurement-label';
-        label.textContent = `${distance.toFixed(3)}m`;
+        label.textContent = formatDistance(distance); // ▼▼▼ [수정] formatDistance 사용 ▼▼▼
         label.style.position = 'absolute';
         label.style.color = '#00ff00';
         label.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
