@@ -404,6 +404,11 @@ class Activity(models.Model):
         default=decimal.Decimal('1.0'),
         help_text="단위수량당 소요일수 (duration per unit quantity)"
     )
+    manual_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="수동으로 지정한 시작일 (설정 시 의존성 무시하고 이 날짜에 시작)"
+    )
 
     # Resource and cost
     resources = models.JSONField(

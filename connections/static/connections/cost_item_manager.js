@@ -1179,11 +1179,17 @@ function populateCiFieldSelection(items) {
 
     // 공사코드 필드 (코스트아이템 고유)
     const costCodeFields = [
-        { key: 'cost_code_name', label: 'CostCode.name', section: 'CostCode' },
-        { key: 'cost_code', label: 'CostCode.code', section: 'CostCode' },
-        { key: 'cost_code_detail_code', label: 'CostCode.detail_code', section: 'CostCode' },
-        { key: 'cost_code_unit', label: 'CostCode.unit', section: 'CostCode' },
-        { key: 'cost_code_note', label: 'CostCode.note', section: 'CostCode' }
+        { key: 'cost_code', label: 'CostCode.코드', section: 'CostCode' },
+        { key: 'cost_code_name', label: 'CostCode.이름', section: 'CostCode' },
+        { key: 'cost_code_description', label: 'CostCode.설명', section: 'CostCode' },
+        { key: 'cost_code_detail_code', label: 'CostCode.내역코드', section: 'CostCode' },
+        { key: 'cost_code_category', label: 'CostCode.공정', section: 'CostCode' },
+        { key: 'cost_code_product_name', label: 'CostCode.품명', section: 'CostCode' },
+        { key: 'cost_code_spec', label: 'CostCode.규격', section: 'CostCode' },
+        { key: 'cost_code_unit', label: 'CostCode.단위', section: 'CostCode' },
+        { key: 'cost_code_note', label: 'CostCode.비고', section: 'CostCode' },
+        { key: 'cost_code_ai_sd_enabled', label: 'CostCode.AI개략견적', section: 'CostCode' },
+        { key: 'cost_code_dd_enabled', label: 'CostCode.상세견적', section: 'CostCode' }
     ];
 
     // 현재 선택된 컬럼 (없으면 기본값)
@@ -2026,9 +2032,17 @@ function buildCostItemContext(costItem) {
     if (costItem.cost_code) {
         const costCode = window.loadedCostCodes?.find(cc => cc.id === costItem.cost_code);
         if (costCode) {
-            context['cost_code_code'] = costCode.code;
+            context['cost_code'] = costCode.code;
             context['cost_code_name'] = costCode.name;
+            context['cost_code_description'] = costCode.description;
             context['cost_code_detail_code'] = costCode.detail_code;
+            context['cost_code_category'] = costCode.category;
+            context['cost_code_product_name'] = costCode.product_name;
+            context['cost_code_spec'] = costCode.spec;
+            context['cost_code_unit'] = costCode.unit;
+            context['cost_code_note'] = costCode.note;
+            context['cost_code_ai_sd_enabled'] = costCode.ai_sd_enabled;
+            context['cost_code_dd_enabled'] = costCode.dd_enabled;
             // CostItem에는 name 필드가 없으므로 cost_code의 name을 사용
             context['name'] = `${costCode.code} - ${costCode.name}`;
         } else {

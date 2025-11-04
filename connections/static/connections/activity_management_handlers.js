@@ -6,6 +6,13 @@ let loadedActivities = [];
 window.loadedActivities = []; // 전역 window 객체에도 할당
 let loadedActivityDependencies = [];
 
+// ▼▼▼ [추가] 정렬 상태 추적 ▼▼▼
+let activitySortState = {
+    column: null,
+    ascending: true
+};
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
 /**
  * 현재 프로젝트의 모든 액티비티를 서버에서 불러옵니다.
  */
@@ -252,15 +259,91 @@ function openPredecessorEditDialog(successorActivity, existingDep) {
 
         document.body.removeChild(dialog);
 
-        // Refresh the predecessors modal if it exists
-        const modal = document.querySelector('.modal-overlay');
-        if (modal) {
-            const renderFunc = modal.querySelector('#predecessors-list');
-            if (renderFunc) {
-                openPredecessorsModal(successorActivity);
-                document.body.removeChild(modal);
+        // ▼▼▼ [수정] 선행작업 모달의 리스트를 즉시 새로고침 ▼▼▼
+        // Find all modal overlays (there should be 2: main modal and this dialog)
+        const modals = document.querySelectorAll('.modal-overlay');
+        const mainModal = Array.from(modals).find(m => m.querySelector('#predecessors-list'));
+
+        if (mainModal) {
+            // loadActivityDependencies를 먼저 호출하여 전역 데이터 업데이트
+            await loadActivityDependencies();
+
+            // 모달 내부의 리스트만 재렌더링
+            const listContainer = mainModal.querySelector('#predecessors-list');
+            const predecessors = loadedActivityDependencies.filter(
+                dep => dep.successor_activity === successorActivity.id
+            );
+
+            if (predecessors.length === 0) {
+                listContainer.innerHTML = '<p>선행작업이 없습니다.</p>';
+            } else {
+                const table = document.createElement('table');
+                table.className = 'ruleset-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>선행작업</th>
+                            <th>관계유형</th>
+                            <th>Lag(일)</th>
+                            <th>작업</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                `;
+
+                const tbody = table.querySelector('tbody');
+                predecessors.forEach(dep => {
+                    const predActivity = loadedActivities.find(
+                        a => a.id === dep.predecessor_activity
+                    );
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${predActivity ? `${predActivity.code} - ${predActivity.name}` : 'N/A'}</td>
+                        <td>${dep.dependency_type}</td>
+                        <td>${dep.lag_days || 0}</td>
+                        <td>
+                            <button class="edit-pred-btn btn-edit" data-dep-id="${dep.id}">편집</button>
+                            <button class="delete-pred-btn btn-delete" data-dep-id="${dep.id}">삭제</button>
+                        </td>
+                    `;
+
+                    // Edit button
+                    row.querySelector('.edit-pred-btn').addEventListener('click', () => {
+                        openPredecessorEditDialog(successorActivity, dep);
+                    });
+
+                    // Delete button
+                    row.querySelector('.delete-pred-btn').addEventListener('click', async () => {
+                        if (confirm('이 선행작업 관계를 삭제하시겠습니까?')) {
+                            await deleteDependency(dep.id);
+
+                            // Refresh the list again after deletion
+                            await loadActivityDependencies();
+                            const updatedPredecessors = loadedActivityDependencies.filter(
+                                d => d.successor_activity === successorActivity.id
+                            );
+
+                            if (updatedPredecessors.length === 0) {
+                                listContainer.innerHTML = '<p>선행작업이 없습니다.</p>';
+                            } else {
+                                // Re-trigger the save button click handler logic to refresh
+                                mainModal.querySelector('#add-predecessor-btn').click();
+                                mainModal.querySelector('#add-predecessor-btn').click(); // Toggle twice to refresh
+                            }
+
+                            await loadActivities(); // Reload to update main table
+                        }
+                    });
+
+                    tbody.appendChild(row);
+                });
+
+                listContainer.innerHTML = '';
+                listContainer.appendChild(table);
             }
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         await loadActivities(); // Reload to update main table
     });
@@ -289,11 +372,22 @@ function renderActivitiesTable(activities, editId = null) {
     table.innerHTML = `
         <thead>
             <tr>
-                <th>작업코드</th>
-                <th>작업명</th>
-                <th>단위수량당 소요일수</th>
+                <th class="sortable-header" data-column="code" style="cursor: pointer;">
+                    작업코드 <span class="sort-indicator"></span>
+                </th>
+                <th class="sortable-header" data-column="name" style="cursor: pointer;">
+                    작업명 <span class="sort-indicator"></span>
+                </th>
+                <th class="sortable-header" data-column="duration_per_unit" style="cursor: pointer;">
+                    단위수량당 소요일수 <span class="sort-indicator"></span>
+                </th>
+                <th class="sortable-header" data-column="manual_start_date" style="cursor: pointer;">
+                    수동 시작일 <span class="sort-indicator"></span>
+                </th>
                 <th>선행작업</th>
-                <th>담당자</th>
+                <th class="sortable-header" data-column="responsible_person" style="cursor: pointer;">
+                    담당자 <span class="sort-indicator"></span>
+                </th>
                 <th>작업</th>
             </tr>
         </thead>
@@ -323,6 +417,9 @@ function renderActivitiesTable(activities, editId = null) {
                 <td><input type="number" class="activity-duration-input" value="${
                     activity.duration_per_unit || '1'
                 }" step="0.1" min="0" placeholder="단위수량당 일수"></td>
+                <td><input type="date" class="activity-manual-start-input" value="${
+                    activity.manual_start_date || ''
+                }" placeholder="YYYY-MM-DD"></td>
                 <td class="predecessors-cell">-</td>
                 <td><input type="text" class="activity-responsible-input" value="${
                     activity.responsible_person || ''
@@ -339,12 +436,14 @@ function renderActivitiesTable(activities, editId = null) {
             row.querySelector('.save-activity-btn').addEventListener(
                 'click',
                 async function () {
+                    const manualStartValue = row.querySelector('.activity-manual-start-input').value;
                     const activityData = {
                         code: row.querySelector('.activity-code-input').value,
                         name: row.querySelector('.activity-name-input').value,
                         duration_per_unit: parseFloat(
                             row.querySelector('.activity-duration-input').value
                         ),
+                        manual_start_date: manualStartValue || null,
                         responsible_person:
                             row.querySelector('.activity-responsible-input')
                                 .value || '',
@@ -368,10 +467,15 @@ function renderActivitiesTable(activities, editId = null) {
             );
             const predecessorText = formatPredecessors(predecessors);
 
+            const manualStartDateDisplay = activity.manual_start_date
+                ? `<span style="color: #17a2b8; font-weight: bold;">${activity.manual_start_date}</span>`
+                : '-';
+
             row.innerHTML = `
                 <td>${activity.code || ''}</td>
                 <td>${activity.name || ''}</td>
                 <td>${activity.duration_per_unit || '0'}</td>
+                <td>${manualStartDateDisplay}</td>
                 <td class="predecessors-cell clickable" data-activity-id="${activity.id}" style="cursor: pointer; color: #0066cc;">
                     ${predecessorText}
                 </td>
@@ -427,6 +531,7 @@ function renderActivitiesTable(activities, editId = null) {
             code: '',
             name: '',
             duration_per_unit: 1,
+            manual_start_date: null, // ▼▼▼ [추가] 새 액티비티에 manual_start_date 필드 추가 ▼▼▼
         });
     }
 
@@ -435,6 +540,68 @@ function renderActivitiesTable(activities, editId = null) {
 
     container.innerHTML = '';
     container.appendChild(table);
+
+    // ▼▼▼ [추가] 정렬 기능 추가 ▼▼▼
+    // 정렬 인디케이터 업데이트
+    const updateSortIndicators = () => {
+        table.querySelectorAll('.sort-indicator').forEach(indicator => {
+            indicator.textContent = '';
+        });
+
+        if (activitySortState.column) {
+            const activeHeader = table.querySelector(`th[data-column="${activitySortState.column}"] .sort-indicator`);
+            if (activeHeader) {
+                activeHeader.textContent = activitySortState.ascending ? ' ▲' : ' ▼';
+            }
+        }
+    };
+
+    // 초기 인디케이터 표시
+    updateSortIndicators();
+
+    // 헤더 클릭 이벤트
+    table.querySelectorAll('.sortable-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const column = header.getAttribute('data-column');
+
+            // 같은 열을 다시 클릭하면 순서 반전
+            if (activitySortState.column === column) {
+                activitySortState.ascending = !activitySortState.ascending;
+            } else {
+                // 새로운 열을 클릭하면 오름차순으로 시작
+                activitySortState.column = column;
+                activitySortState.ascending = true;
+            }
+
+            // 정렬 수행
+            const sortedActivities = [...loadedActivities].sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+
+                // null/undefined 처리
+                if (aVal == null) aVal = '';
+                if (bVal == null) bVal = '';
+
+                // 숫자형 비교
+                if (column === 'duration_per_unit') {
+                    aVal = parseFloat(aVal) || 0;
+                    bVal = parseFloat(bVal) || 0;
+                }
+
+                // 문자열 비교
+                if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+                if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+                if (aVal < bVal) return activitySortState.ascending ? -1 : 1;
+                if (aVal > bVal) return activitySortState.ascending ? 1 : -1;
+                return 0;
+            });
+
+            // 재렌더링 (편집 상태 유지)
+            renderActivitiesTable(sortedActivities, editId);
+        });
+    });
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 }
 
 /**

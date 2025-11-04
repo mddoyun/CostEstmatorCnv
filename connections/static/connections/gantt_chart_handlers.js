@@ -362,10 +362,22 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
             predecessors.forEach(dep => {
                 const predTasks = tasksByActivity.get(dep.predecessor_activity) || [];
                 if (predTasks.length > 0) {
+                    const predTask = predTasks[0];
+
+                    // ▼▼▼ [추가] 선행 작업의 수동 시작일 확인 ▼▼▼
+                    let predStartDate;
+                    if (predTask.activity && predTask.activity.manual_start_date) {
+                        // 선행 작업에 수동 시작일이 있으면 사용
+                        predStartDate = new Date(predTask.activity.manual_start_date);
+                    } else {
+                        // 없으면 재귀적으로 계산
+                        predStartDate = getEarliestStartDate(dep.predecessor_activity, new Set(visited));
+                    }
+                    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
                     // ▼▼▼ [수정] 선행 작업의 종료일 계산 (작업일 기준) ▼▼▼
-                    const predStartDate = getEarliestStartDate(dep.predecessor_activity, new Set(visited));
-                    const predDuration = predTasks[0].durationDays || 1;
-                    const predCalendar = predTasks[0].calendar || mainCalendar;
+                    const predDuration = predTask.durationDays || 1;
+                    const predCalendar = predTask.calendar || mainCalendar;
                     const predEndDate = addWorkingDays(predStartDate, predDuration, predCalendar);
 
                     // Lag 적용 (작업일 기준)
@@ -385,7 +397,18 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
         // 각 태스크의 시작일/종료일 재설정
         tasks.forEach(task => {
             try {
-                const startDate = getEarliestStartDate(task.activityId);
+                // ▼▼▼ [추가] 수동 시작일이 설정된 경우 해당 날짜 사용 ▼▼▼
+                let startDate;
+                if (task.activity && task.activity.manual_start_date) {
+                    // 수동 시작일이 있으면 해당 날짜를 사용 (의존성 무시)
+                    startDate = new Date(task.activity.manual_start_date);
+                    console.log(`[Gantt] Activity ${task.activity.code} using manual start date: ${task.activity.manual_start_date}`);
+                } else {
+                    // 수동 시작일이 없으면 의존성 기반으로 계산
+                    startDate = getEarliestStartDate(task.activityId);
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 // ▼▼▼ [수정] 작업일 기준으로 종료일 계산 ▼▼▼
                 const taskCalendar = task.calendar || mainCalendar;
                 const endDate = addWorkingDays(startDate, task.durationDays, taskCalendar);
@@ -957,8 +980,32 @@ function selectGanttDate(dateString) {
         dateInput.value = dateString;
     }
 
+    // ▼▼▼ [수정] 스크롤 위치 저장 ▼▼▼
+    const chartContainer = document.getElementById('gantt-chart-container');
+    let scrollLeft = 0;
+    let scrollTop = 0;
+
+    if (chartContainer) {
+        const scrollableDiv = chartContainer.querySelector('div[style*="overflow"]');
+        if (scrollableDiv) {
+            scrollLeft = scrollableDiv.scrollLeft;
+            scrollTop = scrollableDiv.scrollTop;
+        }
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
     // 간트차트 다시 렌더링 (선택된 날짜 하이라이트)
     renderGanttChart(ganttData);
+
+    // ▼▼▼ [추가] 스크롤 위치 복원 ▼▼▼
+    if (chartContainer) {
+        const scrollableDiv = chartContainer.querySelector('div[style*="overflow"]');
+        if (scrollableDiv) {
+            scrollableDiv.scrollLeft = scrollLeft;
+            scrollableDiv.scrollTop = scrollTop;
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // 내역집계표 자동 업데이트
     const activeTab = document.querySelector('.gantt-bottom-tab-btn.active');

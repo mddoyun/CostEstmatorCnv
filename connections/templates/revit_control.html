@@ -1582,74 +1582,59 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="control-box">
-                                <h4>표시할 필드</h4>
-                                <div
-                                    id="boq-display-fields-container"
-                                    style="
-                                        max-height: 150px;
-                                        overflow-y: auto;
-                                        overflow-x: auto;
-                                    "
-                                >
-                                    <small
-                                        >그룹핑 필드 목록을 먼저
-                                        불러옵니다...</small
+                            <!-- ▼▼▼ [수정] 코스트아이템 스타일의 탭 구조로 변경 ▼▼▼ -->
+                            <div class="left-panel-tab-container">
+                                <div class="left-panel-tabs">
+                                    <button
+                                        class="left-panel-tab-button active"
+                                        data-tab="boq-field-selection"
                                     >
+                                        필드 선택
+                                    </button>
+                                    <button
+                                        class="left-panel-tab-button"
+                                        data-tab="boq-properties"
+                                    >
+                                        산출항목 속성
+                                    </button>
+                                </div>
+
+                                <!-- 필드 선택 탭 -->
+                                <div
+                                    class="left-panel-tab-content active"
+                                    id="boq-field-selection-content"
+                                >
+                                    <div class="control-box">
+                                        <div
+                                            id="boq-display-fields-container"
+                                            style="
+                                                max-height: 400px;
+                                                overflow-y: auto;
+                                                overflow-x: auto;
+                                            "
+                                        >
+                                            <small
+                                                >그룹핑 필드 목록을 먼저
+                                                불러옵니다...</small
+                                            >
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 산출항목 속성 탭 -->
+                                <div
+                                    class="left-panel-tab-content"
+                                    id="boq-properties-content"
+                                >
+                                    <div class="control-box">
+                                        <div id="boq-selected-properties-container">
+                                            <!-- 부재속성, 일람부호, BIM원본이 모두 여기에 그룹으로 표시됨 -->
+                                            <p>집계표 행을 하나만 선택하세요.</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div
-                                id="boq-item-details-panel"
-                                class="control-box boq-left-details-panel"
-                            >
-                                <div class="details-panel-tabs">
-                                    <button
-                                        class="detail-tab-button active"
-                                        data-tab="boq-member-prop"
-                                    >
-                                        부재 속성
-                                    </button>
-                                    <button
-                                        class="detail-tab-button"
-                                        data-tab="boq-mark-prop"
-                                    >
-                                        일람부호
-                                    </button>
-                                    <button
-                                        class="detail-tab-button"
-                                        data-tab="boq-raw-prop"
-                                    >
-                                        BIM 원본
-                                    </button>
-                                </div>
-                                <div
-                                    class="detail-tab-content active"
-                                    data-tab="boq-member-prop"
-                                >
-                                    <div
-                                        id="boq-details-member-container"
-                                        class="properties-sub-container"
-                                    ></div>
-                                </div>
-                                <div
-                                    class="detail-tab-content"
-                                    data-tab="boq-mark-prop"
-                                >
-                                    <div
-                                        id="boq-details-mark-container"
-                                        class="properties-sub-container"
-                                    ></div>
-                                </div>
-                                <div
-                                    class="detail-tab-content"
-                                    data-tab="boq-raw-prop"
-                                >
-                                    <div
-                                        id="boq-details-raw-container"
-                                        class="properties-sub-container"
-                                    ></div>
-                                </div>
-                            </div>
+                            <!-- ▲▲▲ [수정] 여기까지 ▲▲▲ -->
                         </aside>
 
                         <main class="boq-main-content">
@@ -1962,8 +1947,8 @@
                                 <div style="display: flex; align-items: center; gap: 10px; margin-left: auto;">
                                     <label for="gantt-view-mode">표시 모드:</label>
                                     <select id="gantt-view-mode" style="padding: 5px;">
-                                        <option value="Day">일</option>
-                                        <option value="Week" selected>주</option>
+                                        <option value="Day" selected>일</option>
+                                        <option value="Week">주</option>
                                         <option value="Month">월</option>
                                     </select>
                                 </div>
@@ -1991,14 +1976,14 @@
                             <div style="width: 60px; height: 4px; background: #999; border-radius: 2px;"></div>
                         </div>
                         <!-- 하단: 상세정보 (접기/펼치기 가능) -->
-                        <div id="gantt-bottom-section" style="border-top: 2px solid #ddd; background: #fafafa; flex: 0 0 50px; display: flex; flex-direction: column; min-height: 50px;">
+                        <div id="gantt-bottom-section" style="border-top: 2px solid #ddd; background: #fafafa; flex: 1 1 300px; display: flex; flex-direction: column; min-height: 50px;">
                             <!-- 토글 헤더 -->
                             <div id="gantt-bottom-toggle-header" style="padding: 12px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #e3f2fd; border-bottom: 1px solid #1976d2; flex: 0 0 auto;">
                                 <h3 style="margin: 0; color: #1976d2; font-size: 15px; font-weight: bold;">📊 상세 정보 / 내역집계표</h3>
-                                <span id="gantt-bottom-toggle-icon" style="font-size: 18px; color: #1976d2; font-weight: bold;">▼</span>
+                                <span id="gantt-bottom-toggle-icon" style="font-size: 18px; color: #1976d2; font-weight: bold;">▲</span>
                             </div>
                             <!-- 하단 컨텐츠 -->
-                            <div id="gantt-bottom-content" style="display: none; background: white; flex: 1 1 auto; overflow: hidden; min-height: 0; flex-direction: column;">
+                            <div id="gantt-bottom-content" style="display: flex; background: white; flex: 1 1 auto; overflow: hidden; min-height: 0; flex-direction: column;">
                                 <!-- 탭 헤더 -->
                                 <div style="display: flex; border-bottom: 2px solid #ddd; margin-bottom: 15px; flex-shrink: 0; padding: 0 20px;">
                                     <button class="gantt-bottom-tab-btn active" data-tab="detail" style="padding: 12px 24px; border: none; background: #1976d2; color: white; cursor: pointer; font-size: 14px; font-weight: bold; border-radius: 4px 4px 0 0; margin-right: 2px;">

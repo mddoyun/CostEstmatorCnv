@@ -2396,6 +2396,7 @@ def get_boq_grouping_fields_api(request, project_id):
     """
     BOQ 집계 시 사용할 수 있는 필드 목록을 CostItem 기준으로 동적으로 생성하여 반환합니다.
     [수정됨] RawElement의 raw_data 속성까지 동적으로 분석하여 포함합니다.
+    [수정됨] 코스트아이템 탭과 동일한 접두어 형식(BIM., QM., MM.)을 사용합니다.
     """
     fields = []
     existing_values = set()
@@ -2406,22 +2407,25 @@ def get_boq_grouping_fields_api(request, project_id):
             existing_values.add(value)
 
     # 1. CostItem 및 연관 모델의 고정 필드를 먼저 추가합니다.
-    add_field('cost_code__code', '공사코드 - 코드')
-    add_field('cost_code__name', '공사코드 - 이름')
-    add_field('cost_code__spec', '공사코드 - 규격')
-    add_field('cost_code__unit', '공사코드 - 단위')
-    add_field('cost_code__category', '공사코드 - 공정')
-    add_field('cost_code__detail_code', '공사코드 - 내역코드')
-    add_field('cost_code__product_name', '공사코드 - 품명')
-    add_field('cost_code__note', '공사코드 - 비고')
-    add_field('quantity_member__name', '산출부재 - 이름')
-    add_field('quantity_member__classification_tag__name', '산출부재 - 수량산출분류')
-    add_field('quantity_member__member_mark__mark', '일람부호 - 부호명')
+    add_field('cost_code__code', 'CostCode.코드')
+    add_field('cost_code__name', 'CostCode.이름')
+    add_field('cost_code__description', 'CostCode.설명')
+    add_field('cost_code__detail_code', 'CostCode.내역코드')
+    add_field('cost_code__category', 'CostCode.공정')
+    add_field('cost_code__product_name', 'CostCode.품명')
+    add_field('cost_code__spec', 'CostCode.규격')
+    add_field('cost_code__unit', 'CostCode.단위')
+    add_field('cost_code__note', 'CostCode.비고')
+    add_field('cost_code__ai_sd_enabled', 'CostCode.AI개략견적')
+    add_field('cost_code__dd_enabled', 'CostCode.상세견적')
+    add_field('quantity_member__name', 'QM.name')
+    add_field('quantity_member__classification_tag__name', 'QM.classification_tag')
+    add_field('quantity_member__member_mark__mark', 'MM.mark')
 
     # 2. DB에서 최근 100개의 CostItem을 샘플링하여 JSON 필드 키를 분석합니다.
     #    (전체 데이터를 스캔하는 것을 방지하여 성능 확보)
     sample_items = CostItem.objects.filter(
-        project_id=project_id, 
+        project_id=project_id,
         quantity_member__raw_element__isnull=False
     ).select_related(
         'quantity_member__member_mark',
@@ -2436,39 +2440,34 @@ def get_boq_grouping_fields_api(request, project_id):
         # 2-1. QuantityMember의 'properties' (부재속성) 분석
         if member.properties and isinstance(member.properties, dict):
             for key in member.properties.keys():
-                add_field(f'quantity_member__properties__{key}', f'부재속성 - {key}')
+                add_field(f'quantity_member__properties__{key}', f'QM.properties.{key}')
 
         # 2-2. MemberMark의 'properties' (일람부호 속성) 분석
         if member.member_mark and member.member_mark.properties and isinstance(member.member_mark.properties, dict):
             for key in member.member_mark.properties.keys():
-                add_field(f'quantity_member__member_mark__properties__{key}', f'일람부호 속성 - {key}')
-        
+                add_field(f'quantity_member__member_mark__properties__{key}', f'MM.properties.{key}')
+
         # 2-3. RawElement의 'raw_data' (BIM원본) 분석
         if member.raw_element and member.raw_element.raw_data and isinstance(member.raw_element.raw_data, dict):
             raw_data = member.raw_element.raw_data
-            
-            # raw_data의 3가지 레벨(최상위, TypeParameters, Parameters)을 모두 순회합니다.
-            source_map = {
-                'BIM원본': raw_data,
-                'BIM원본 (타입)': raw_data.get('TypeParameters', {}),
-                'BIM원본 (인스턴스)': raw_data.get('Parameters', {})
-            }
 
-            for prefix, data_dict in source_map.items():
-                if not isinstance(data_dict, dict): continue
+            # raw_data의 최상위 속성들 (Attributes)
+            basic_attrs = ['Category', 'Family', 'Type', 'Level', 'Name']
+            for attr in basic_attrs:
+                if attr in raw_data and not isinstance(raw_data[attr], (dict, list)):
+                    add_field(f'quantity_member__raw_element__raw_data__{attr}', f'BIM.Attributes.{attr}')
 
-                for key, value in data_dict.items():
-                    # 값이 딕셔너리나 리스트가 아닌 경우만 필드로 추가
-                    if not isinstance(value, (dict, list)):
-                        # 프론트엔드로 보낼 고유 경로 생성
-                        path_suffix = key
-                        if prefix == 'BIM원본 (타입)':
-                            path_suffix = f'TypeParameters__{key}'
-                        elif prefix == 'BIM원본 (인스턴스)':
-                            path_suffix = f'Parameters__{key}'
-                        
-                        value_path = f'quantity_member__raw_element__raw_data__{path_suffix}'
-                        add_field(value_path, f'{prefix} - {key}')
+            # BIM.Parameters.*
+            if 'Parameters' in raw_data and isinstance(raw_data['Parameters'], dict):
+                for key in raw_data['Parameters'].keys():
+                    if key != 'Geometry' and not isinstance(raw_data['Parameters'][key], (dict, list)):
+                        add_field(f'quantity_member__raw_element__raw_data__Parameters__{key}', f'BIM.Parameters.{key}')
+
+            # BIM.TypeParameters.*
+            if 'TypeParameters' in raw_data and isinstance(raw_data['TypeParameters'], dict):
+                for key in raw_data['TypeParameters'].keys():
+                    if not isinstance(raw_data['TypeParameters'][key], (dict, list)):
+                        add_field(f'quantity_member__raw_element__raw_data__TypeParameters__{key}', f'BIM.TypeParameters.{key}')
 
     return JsonResponse(sorted(fields, key=lambda x: x['label']), safe=False)
 
@@ -5425,6 +5424,7 @@ def activities_api(request, project_id=None, activity_id=None):
                     'name': activity.name,
                     'description': activity.description,
                     'duration_per_unit': float(activity.duration_per_unit),
+                    'manual_start_date': activity.manual_start_date.isoformat() if activity.manual_start_date else None,
                     'responsible_person': activity.responsible_person,
                     'contractor': activity.contractor,
                     'location': activity.location,
@@ -5441,18 +5441,22 @@ def activities_api(request, project_id=None, activity_id=None):
             project = Project.objects.get(pk=project_id)
             data = json.loads(request.body)
 
+            # ▼▼▼ [수정] manual_start_date 추가 ▼▼▼
+            manual_start_date = data.get('manual_start_date')
             activity = Activity.objects.create(
                 project=project,
                 code=data.get('code'),
                 name=data.get('name'),
                 description=data.get('description', ''),
                 duration_per_unit=data.get('duration_per_unit', 1.0),
+                manual_start_date=manual_start_date if manual_start_date else None,
                 responsible_person=data.get('responsible_person', ''),
                 contractor=data.get('contractor', ''),
                 location=data.get('location', ''),
                 notes=data.get('notes', ''),
                 wbs_code=data.get('wbs_code', ''),
             )
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
 
             return JsonResponse({
                 'status': 'success',
@@ -5474,6 +5478,11 @@ def activities_api(request, project_id=None, activity_id=None):
             activity.location = data.get('location', activity.location)
             activity.notes = data.get('notes', activity.notes)
             activity.wbs_code = data.get('wbs_code', activity.wbs_code)
+
+            # 수동 시작일 업데이트
+            if 'manual_start_date' in data:
+                manual_start_date = data.get('manual_start_date')
+                activity.manual_start_date = manual_start_date if manual_start_date else None
 
             # ▼▼▼ [추가] 작업 캘린더 업데이트 지원 ▼▼▼
             if 'work_calendar' in data:

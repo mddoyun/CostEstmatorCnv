@@ -396,6 +396,9 @@ function setupBoqTableInteractions() {
                     `[DEBUG][Event] Main BOQ table row clicked. Item IDs:`, itemIds
                 );
                 updateBoqDetailsPanel(itemIds);
+                // ▼▼▼ [추가] 왼쪽 패널의 산출항목 속성 탭 업데이트 ▼▼▼
+                updateBoqLeftPanelProperties(itemIds);
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
             }
         });
         tbody.dataset.rowClickListenerAttached = "true";
@@ -700,101 +703,134 @@ function updateBoqDetailsPanel(itemIds) {
 }
 
 /**
- * ID에 해당하는 CostItem의 상세 속성을 오른쪽 상세정보 패널에 렌더링합니다.
+ * ID에 해당하는 CostItem의 상세 속성을 왼쪽 패널의 "산출항목 속성" 탭에 렌더링합니다.
  * @param {String | null} itemId - 상세 정보를 표시할 CostItem의 ID
  */
 function renderBoqItemProperties(itemId) {
     currentBoqDetailItemId = itemId;
 
     const listContainer = document.getElementById("boq-item-list-container");
-    listContainer.querySelectorAll("tr").forEach((row) => {
-        row.classList.toggle("selected", row.dataset.itemId === itemId);
-    });
+    if (listContainer) {
+        listContainer.querySelectorAll("tr").forEach((row) => {
+            row.classList.toggle("selected", row.dataset.itemId === itemId);
+        });
+    }
 
-    const memberContainer = document.getElementById(
-        "boq-details-member-container"
+    // 새로운 통합 패널에 속성 표시
+    if (itemId) {
+        updateBoqLeftPanelProperties([itemId]);
+    } else {
+        updateBoqLeftPanelProperties([]);
+    }
+}
+
+// ▼▼▼ [추가] 왼쪽 패널의 산출항목 속성 탭 업데이트 함수 ▼▼▼
+/**
+ * 집계표 행 선택 시 왼쪽 패널의 "산출항목 속성" 탭을 업데이트합니다.
+ * @param {Array<String>} itemIds - 선택된 CostItem의 ID 배열
+ */
+function updateBoqLeftPanelProperties(itemIds) {
+    const propertiesContainer = document.getElementById(
+        "boq-selected-properties-container"
     );
-    const markContainer = document.getElementById("boq-details-mark-container");
-    const rawContainer = document.getElementById("boq-details-raw-container");
 
-    if (!itemId) {
-        memberContainer.innerHTML = "<p>항목을 선택하세요.</p>";
-        markContainer.innerHTML = "<p>항목을 선택하세요.</p>";
-        rawContainer.innerHTML = "<p>항목을 선택하세요.</p>";
+    if (!propertiesContainer) {
+        console.warn(
+            "[WARN] BOQ left panel properties container not found."
+        );
         return;
     }
 
-    const costItem = loadedCostItems.find(
-        (item) => item.id.toString() === itemId.toString()
+    // 비어있으면 초기 상태 표시
+    if (!itemIds || itemIds.length === 0) {
+        propertiesContainer.innerHTML = "<p>집계표 행을 하나만 선택하세요.</p>";
+        return;
+    }
+
+    console.log(`[DEBUG] Updating BOQ left panel properties for itemIds:`, itemIds);
+
+    // CostItem 가져오기
+    const costItem = window.loadedCostItems.find(
+        (item) => itemIds[0] === item.id
     );
     if (!costItem) {
-        memberContainer.innerHTML = "<p>항목 정보를 찾을 수 없습니다.</p>";
-        markContainer.innerHTML = "";
-        rawContainer.innerHTML = "";
+        propertiesContainer.innerHTML = "<p>관련 산출항목을 찾을 수 없습니다.</p>";
+        console.warn(`[WARN] CostItem not found for IDs:`, itemIds);
         return;
     }
 
-    const member = costItem.quantity_member_id
-        ? loadedQuantityMembers.find(
-              (m) => m.id.toString() === costItem.quantity_member_id.toString()
-          )
-        : null;
-
-    // 1. 부재 속성 렌더링
-    if (
-        member &&
-        member.properties &&
-        Object.keys(member.properties).length > 0
-    ) {
-        let tableHtml =
-            '<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>';
-        Object.keys(member.properties)
-            .sort()
-            .forEach((key) => {
-                tableHtml += `<tr><td>${key}</td><td>${member.properties[key]}</td></tr>`;
-            });
-        memberContainer.innerHTML = tableHtml + "</tbody></table>";
-    } else {
-        memberContainer.innerHTML = "<p>연관된 부재 속성이 없습니다.</p>";
+    const memberId = costItem.quantity_member_id;
+    if (!memberId) {
+        propertiesContainer.innerHTML = "<p>연관된 부재가 없습니다.</p>";
+        console.warn(
+            `[WARN] CostItem ${costItem.id} has no associated quantity_member_id.`
+        );
+        return;
     }
 
-    // 2. 일람부호 속성 렌더링
+    const member = window.loadedQuantityMembers.find(
+        (m) => m.id === memberId
+    );
+    if (!member) {
+        propertiesContainer.innerHTML = "<p>부재 정보를 찾을 수 없습니다.</p>";
+        console.warn(`[WARN] QuantityMember not found for ID: ${memberId}`);
+        return;
+    }
+
+    // 코스트아이템 스타일로 그룹화하여 표시
+    let html = '';
+
+    // 1. 부재 속성 그룹
+    html += '<div class="property-group" style="margin-bottom: 20px;">';
+    html += '<h4 style="margin: 0 0 10px 0; padding: 8px; background: #e3f2fd; border-left: 4px solid #2196f3; font-size: 14px; font-weight: bold; color: #1976d2;">부재 속성</h4>';
+    if (member && member.properties && Object.keys(member.properties).length > 0) {
+        html += '<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>';
+        Object.keys(member.properties).sort().forEach((key) => {
+            html += `<tr><td>${key}</td><td>${member.properties[key]}</td></tr>`;
+        });
+        html += "</tbody></table>";
+    } else {
+        html += "<p style='padding: 10px; color: #666;'>연관된 부재 속성이 없습니다.</p>";
+    }
+    html += '</div>';
+
+    // 2. 일람부호 속성 그룹
+    html += '<div class="property-group" style="margin-bottom: 20px;">';
+    html += '<h4 style="margin: 0 0 10px 0; padding: 8px; background: #fff3e0; border-left: 4px solid #ff9800; font-size: 14px; font-weight: bold; color: #f57c00;">일람부호 속성</h4>';
     if (member && member.member_mark_id) {
         const mark = loadedMemberMarks.find(
             (m) => m.id.toString() === member.member_mark_id.toString()
         );
         if (mark) {
-            let header = `<h5>${mark.mark} (일람부호 속성)</h5>`;
-            let tableHtml =
-                '<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>';
+            html += `<h5 style="margin: 10px 0; font-size: 13px; color: #555;">${mark.mark}</h5>`;
+            html += '<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>';
             if (mark.properties && Object.keys(mark.properties).length > 0) {
-                Object.keys(mark.properties)
-                    .sort()
-                    .forEach((key) => {
-                        tableHtml += `<tr><td>${key}</td><td>${mark.properties[key]}</td></tr>`;
-                    });
+                Object.keys(mark.properties).sort().forEach((key) => {
+                    html += `<tr><td>${key}</td><td>${mark.properties[key]}</td></tr>`;
+                });
             } else {
-                tableHtml +=
-                    '<tr><td colspan="2">정의된 속성이 없습니다.</td></tr>';
+                html += '<tr><td colspan="2">정의된 속성이 없습니다.</td></tr>';
             }
-            markContainer.innerHTML = header + tableHtml + "</tbody></table>";
+            html += "</tbody></table>";
         } else {
-            markContainer.innerHTML =
-                "<p>연결된 일람부호 정보를 찾을 수 없습니다.</p>";
+            html += "<p style='padding: 10px; color: #666;'>연결된 일람부호 정보를 찾을 수 없습니다.</p>";
         }
     } else {
-        markContainer.innerHTML = "<p>연관된 일람부호가 없습니다.</p>";
+        html += "<p style='padding: 10px; color: #666;'>연관된 일람부호가 없습니다.</p>";
     }
+    html += '</div>';
 
-    // 3. BIM 원본 데이터 렌더링
+    // 3. BIM 원본 데이터 그룹
+    html += '<div class="property-group" style="margin-bottom: 20px;">';
+    html += '<h4 style="margin: 0 0 10px 0; padding: 8px; background: #f3e5f5; border-left: 4px solid #9c27b0; font-size: 14px; font-weight: bold; color: #7b1fa2;">BIM 원본 데이터</h4>';
     const rawElement = member?.raw_element_id
         ? allRevitData.find(
               (el) => el.id.toString() === member.raw_element_id.toString()
           )
         : null;
     if (rawElement?.raw_data) {
-        let header = `<h5>${rawElement.raw_data.Name || "이름 없음"}</h5>`;
-        let tableHtml = `<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>`;
+        html += `<h5 style="margin: 10px 0; font-size: 13px; color: #555;">${rawElement.raw_data.Name || "이름 없음"}</h5>`;
+        html += `<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>`;
         const allKeys = new Set();
         Object.keys(rawElement.raw_data).forEach((k) => allKeys.add(k));
         Object.keys(rawElement.raw_data.Parameters || {}).forEach((k) =>
@@ -803,19 +839,21 @@ function renderBoqItemProperties(itemId) {
         Object.keys(rawElement.raw_data.TypeParameters || {}).forEach((k) =>
             allKeys.add(k)
         );
-        Array.from(allKeys)
-            .sort()
-            .forEach((key) => {
-                const value = getValueForItem(rawElement, key);
-                if (value !== undefined && typeof value !== "object") {
-                    tableHtml += `<tr><td>${key}</td><td>${value}</td></tr>`;
-                }
-            });
-        rawContainer.innerHTML = header + tableHtml + "</tbody></table>";
+        Array.from(allKeys).sort().forEach((key) => {
+            const value = getValueForItem(rawElement, key);
+            if (value !== undefined && typeof value !== "object") {
+                html += `<tr><td>${key}</td><td>${value}</td></tr>`;
+            }
+        });
+        html += "</tbody></table>";
     } else {
-        rawContainer.innerHTML = "<p>연관된 BIM 원본 데이터가 없습니다.</p>";
+        html += "<p style='padding: 10px; color: #666;'>연관된 BIM 원본 데이터가 없습니다.</p>";
     }
+    html += '</div>';
+
+    propertiesContainer.innerHTML = html;
 }
+// ▲▲▲ [추가] 여기까지 ▲▲▲
 
 // =====================================================================
 // '집계' 탭 동적 UI 최종 완성본 (리사이저, 접기/펴기, 탭 클릭)
@@ -840,9 +878,6 @@ function initializeBoqUI() {
     );
     const boqContainer = ddTabContainer.querySelector(".boq-container");
     const bottomPanel = ddTabContainer.querySelector(".boq-details-wrapper");
-    const boqDetailsPanel = ddTabContainer.querySelector(
-        "#boq-item-details-panel"
-    );
 
     // --- 1. 왼쪽 패널 접기/펴기 기능 ---
     if (leftToggleBtn && boqContainer) {
@@ -888,64 +923,46 @@ function initializeBoqUI() {
         );
     }
 
-    // --- 3. 왼쪽 상세 정보 패널 탭 클릭 기능 ---
-    if (boqDetailsPanel) {
-        const tabsContainer = boqDetailsPanel.querySelector(
-            ".details-panel-tabs"
-        );
+    // --- 3. 왼쪽 패널 탭 클릭 기능 (필드 선택 / 산출항목 속성) ---
+    // ▼▼▼ [수정] 새로운 left-panel-tab 구조 지원 ▼▼▼
+    const leftPanelTabContainer = ddTabContainer.querySelector(".left-panel-tab-container");
+    if (leftPanelTabContainer) {
+        const tabsContainer = leftPanelTabContainer.querySelector(".left-panel-tabs");
         if (tabsContainer && !tabsContainer.dataset.listenerAttached) {
             tabsContainer.addEventListener("click", (e) => {
-                const clickedButton = e.target.closest(".detail-tab-button");
-                if (
-                    !clickedButton ||
-                    clickedButton.classList.contains("active") ||
-                    !clickedButton.closest(".details-panel-tabs")
-                ) {
-                    console.log(
-                        "[DEBUG] DD Detail tab click ignored (not a button, already active, or outside container)."
-                    );
+                const clickedButton = e.target.closest(".left-panel-tab-button");
+                if (!clickedButton || clickedButton.classList.contains("active")) {
                     return;
                 }
 
-                const targetTab = clickedButton.dataset.tab;
-                console.log(`[DEBUG] DD Detail tab clicked: ${targetTab}`);
+                const targetTabId = clickedButton.dataset.tab;
+                console.log(`[DEBUG] BOQ left panel tab clicked: ${targetTabId}`);
 
-                boqDetailsPanel
-                    .querySelectorAll(".detail-tab-button.active")
+                // 모든 탭 버튼과 콘텐츠에서 active 클래스 제거
+                leftPanelTabContainer
+                    .querySelectorAll(".left-panel-tab-button.active")
                     .forEach((btn) => btn.classList.remove("active"));
-                boqDetailsPanel
-                    .querySelectorAll(".detail-tab-content.active")
+                leftPanelTabContainer
+                    .querySelectorAll(".left-panel-tab-content.active")
                     .forEach((content) => content.classList.remove("active"));
 
+                // 클릭된 탭 버튼과 콘텐츠에 active 클래스 추가
                 clickedButton.classList.add("active");
-                const targetContent = boqDetailsPanel.querySelector(
-                    `.detail-tab-content[data-tab="${targetTab}"]`
-                );
+                const targetContent = leftPanelTabContainer.querySelector(`#${targetTabId}-content`);
                 if (targetContent) {
                     targetContent.classList.add("active");
-                    console.log(
-                        `[DEBUG] DD Detail tab content activated: ${targetTab}`
-                    );
+                    console.log(`[DEBUG] BOQ left panel tab content activated: ${targetTabId}`);
                 } else {
-                    console.warn(
-                        `[WARN] DD Detail tab content for '${targetTab}' not found.`
-                    );
+                    console.warn(`[WARN] BOQ left panel tab content for '${targetTabId}' not found.`);
                 }
             });
             tabsContainer.dataset.listenerAttached = "true";
-            console.log(
-                "[DEBUG] DD Detail panel tab click listener attached (in initializeBoqUI)."
-            );
-        } else if (!tabsContainer) {
-            console.warn(
-                "[WARN] DD Detail panel tabs container not found within #boq-item-details-panel."
-            );
+            console.log("[DEBUG] BOQ left panel tab click listener attached.");
         }
     } else {
-        console.warn(
-            "[WARN] Left detail panel '#boq-item-details-panel' not found."
-        );
+        console.warn("[WARN] BOQ left-panel-tab-container not found.");
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
     console.log("[DEBUG] Detailed Estimation (DD) UI initialization complete.");
 }
 
