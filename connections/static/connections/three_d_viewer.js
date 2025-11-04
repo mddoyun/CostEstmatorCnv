@@ -492,6 +492,8 @@
             .map(obj => ({
                 id: obj.id,
                 geometry_volume: obj.geometry_volume,
+                raw_data: obj.raw_data,  // ▼▼▼ [추가] 재질 정보를 위해 raw_data 포함 ▼▼▼
+                element_unique_id: obj.element_unique_id,  // ▼▼▼ [추가] element_unique_id 포함 ▼▼▼
                 geometry: {
                     vertices: obj.raw_data.Parameters.Geometry.verts,
                     faces: obj.raw_data.Parameters.Geometry.faces,
@@ -513,25 +515,33 @@
         // 2. leaf split만 로드 (parent가 아닌 것만)
         const splitObjects = (window.allSplitElements || [])
             .filter(split => !parentSplitIds.has(split.id))
-            .map(split => ({
-            id: split.id,
-            geometry_volume: split.geometry_volume,
-            geometry: {
-                vertices: split.geometry_data.vertices,
-                faces: split.geometry_data.faces,
-                matrix: split.geometry_data.matrix
-            },
-            // 분할 객체 메타데이터
-            isSplitElement: true,
-            rawElementId: split.raw_element_id,
-            parentSplitId: split.parent_split_id,
-            originalGeometryVolume: split.original_geometry_volume,
-            volumeRatio: split.volume_ratio,
-            splitMethod: split.split_method,
-            splitAxis: split.split_axis,
-            splitPosition: split.split_position,
-            splitPartType: split.split_part_type
-        }));
+            .map(split => {
+                // ▼▼▼ [추가] 원본 BIM 객체의 raw_data 가져오기 (재질 정보용) ▼▼▼
+                const originalBimObject = window.allRevitData.find(obj => obj.id === split.raw_element_id);
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+                return {
+                    id: split.id,
+                    geometry_volume: split.geometry_volume,
+                    raw_data: originalBimObject ? originalBimObject.raw_data : null,  // ▼▼▼ [추가] 재질 정보를 위해 raw_data 포함 ▼▼▼
+                    element_unique_id: originalBimObject ? originalBimObject.element_unique_id : null,  // ▼▼▼ [추가] element_unique_id 포함 ▼▼▼
+                    geometry: {
+                        vertices: split.geometry_data.vertices,
+                        faces: split.geometry_data.faces,
+                        matrix: split.geometry_data.matrix
+                    },
+                    // 분할 객체 메타데이터
+                    isSplitElement: true,
+                    rawElementId: split.raw_element_id,
+                    parentSplitId: split.parent_split_id,
+                    originalGeometryVolume: split.original_geometry_volume,
+                    volumeRatio: split.volume_ratio,
+                    splitMethod: split.split_method,
+                    splitAxis: split.split_axis,
+                    splitPosition: split.split_position,
+                    splitPartType: split.split_part_type
+                };
+            });
 
         console.log(`[3D Viewer] Found ${geometryObjects.length} unsplit BIM objects with geometry data.`);
         console.log(`[3D Viewer] Found ${splitObjects.length} split objects to load.`);
@@ -11928,7 +11938,7 @@
             const materials = rawData.System.Geometry.materials;
 
             // 디버깅: materials 객체 출력
-            console.log('[DEBUG] Materials data for mesh:', materials);
+            console.log('[DEBUG] ✅ Materials data found for mesh:', materials);
 
             // Diffuse 색상 추출
             if (materials.diffuse_color && Array.isArray(materials.diffuse_color) && materials.diffuse_color.length >= 3) {
