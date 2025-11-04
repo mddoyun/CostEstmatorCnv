@@ -2980,12 +2980,53 @@
             splitWrapper.id = 'split-wrapper';
             splitWrapper.style.cssText = 'display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden;';
 
-            // Create LEFT panel (3D Viewport)
-            const leftPanel = document.createElement('div');
-            leftPanel.id = 'split-left-panel';
-            leftPanel.style.cssText = 'flex: 0 0 25%; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; background: #f0f0f0;';
+            // ▼▼▼ [NEW] Create CHAT panel (leftmost) ▼▼▼
+            const chatPanel = document.createElement('div');
+            chatPanel.id = 'chat-panel';
+            chatPanel.style.cssText = 'flex: 0 0 20%; min-width: 250px; max-width: 500px; display: flex; flex-direction: column; overflow: hidden; background: #fff; border-right: 1px solid #ddd;';
 
-            // Create SPLITTER bar
+            // Chat header
+            const chatHeader = document.createElement('div');
+            chatHeader.className = 'chat-header';
+            chatHeader.style.cssText = 'padding: 12px 15px; background: #1976d2; color: white; font-weight: bold; border-bottom: 1px solid #1565c0; display: flex; align-items: center; justify-content: space-between;';
+            chatHeader.innerHTML = '<span>💬 AI Assistant</span><button id="chat-toggle-btn" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; transition: all 0.3s;">◀</button>';
+
+            // Chat messages area
+            const chatMessages = document.createElement('div');
+            chatMessages.id = 'chat-messages';
+            chatMessages.style.cssText = 'flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; background: #f5f5f5;';
+            // 초기 메시지는 제거 (필요시 나중에 추가 가능)
+
+            // Chat input area
+            const chatInputArea = document.createElement('div');
+            chatInputArea.className = 'chat-input-area';
+            chatInputArea.style.cssText = 'padding: 12px 15px; background: white; border-top: 1px solid #ddd; display: flex; gap: 8px;';
+            chatInputArea.innerHTML = `
+                <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; outline: none;" />
+                <button id="chat-send-btn" style="padding: 8px 16px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">전송</button>
+            `;
+
+            // Assemble chat panel
+            chatPanel.appendChild(chatHeader);
+            chatPanel.appendChild(chatMessages);
+            chatPanel.appendChild(chatInputArea);
+            // ▲▲▲ [NEW] Chat panel created ▲▲▲
+
+            // ▼▼▼ [NEW] Create SPLITTER between chat and viewport ▼▼▼
+            const chatSplitter = document.createElement('div');
+            chatSplitter.id = 'chat-split-bar';
+            chatSplitter.style.cssText = 'flex: 0 0 8px; background: #ddd; cursor: ew-resize; display: flex; align-items: center; justify-content: center; border-left: 1px solid #bbb; border-right: 1px solid #bbb; user-select: none;';
+            const chatSplitterHandle = document.createElement('div');
+            chatSplitterHandle.style.cssText = 'width: 4px; height: 60px; background: #999; border-radius: 2px;';
+            chatSplitter.appendChild(chatSplitterHandle);
+            // ▲▲▲ [NEW] Chat splitter created ▲▲▲
+
+            // Create MIDDLE panel (3D Viewport) - renamed from leftPanel
+            const middlePanel = document.createElement('div');
+            middlePanel.id = 'split-middle-panel';
+            middlePanel.style.cssText = 'flex: 0 0 25%; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; background: #f0f0f0;';
+
+            // Create SPLITTER bar (between viewport and right panel)
             const splitter = document.createElement('div');
             splitter.id = 'split-bar';
             splitter.style.cssText = 'flex: 0 0 8px; background: #ddd; cursor: ew-resize; display: flex; align-items: center; justify-content: center; border-left: 1px solid #bbb; border-right: 1px solid #bbb; user-select: none;';
@@ -3027,11 +3068,11 @@
                 console.log('[Layout] Moved properties panel to left bottom');
             }
 
-            // Assemble left panel
-            leftPanel.style.cssText = 'flex: 0 0 25%; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; background: #f0f0f0;';
-            leftPanel.appendChild(leftTop);
-            leftPanel.appendChild(verticalSplitter);
-            leftPanel.appendChild(leftBottom);
+            // Assemble middle panel (renamed from leftPanel)
+            middlePanel.style.cssText = 'flex: 0 0 25%; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; background: #f0f0f0;';
+            middlePanel.appendChild(leftTop);
+            middlePanel.appendChild(verticalSplitter);
+            middlePanel.appendChild(leftBottom);
 
             // Move navigation and tabs to RIGHT panel
             if (mainNav) rightPanel.appendChild(mainNav);
@@ -3046,11 +3087,14 @@
             // - BOQ table
             console.log('[Layout] 3D viewer tab remains in right panel with all other content');
 
-            // Assemble layout
-            splitWrapper.appendChild(leftPanel);
+            // ▼▼▼ [MODIFIED] Assemble layout with chat panel ▼▼▼
+            splitWrapper.appendChild(chatPanel);
+            splitWrapper.appendChild(chatSplitter);
+            splitWrapper.appendChild(middlePanel);
             splitWrapper.appendChild(splitter);
             splitWrapper.appendChild(rightPanel);
             appContainer.insertBefore(splitWrapper, header.nextSibling);
+            // ▲▲▲ [MODIFIED] Layout assembly complete ▲▲▲
 
             // Initialize 3D viewer immediately after layout is created
             setTimeout(() => {
@@ -3131,16 +3175,47 @@
                 }
             }
 
+            // ▼▼▼ [NEW] Chat splitter drag handler ▼▼▼
+            let isChatDragging = false;
+            let chatStartX = 0;
+            let chatStartWidth = 0;
+
+            chatSplitter.addEventListener('mousedown', (e) => {
+                isChatDragging = true;
+                chatStartX = e.clientX;
+                chatStartWidth = chatPanel.offsetWidth;
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            // ▲▲▲ [NEW] Chat splitter mousedown ▲▲▲
+
             splitter.addEventListener('mousedown', (e) => {
                 isDragging = true;
                 startX = e.clientX;
-                startLeftWidth = leftPanel.offsetWidth;
+                startLeftWidth = middlePanel.offsetWidth;
                 document.body.style.cursor = 'ew-resize';
                 document.body.style.userSelect = 'none';
                 e.preventDefault();
             });
 
             document.addEventListener('mousemove', (e) => {
+                // ▼▼▼ [NEW] Handle chat splitter drag ▼▼▼
+                if (isChatDragging) {
+                    const delta = e.clientX - chatStartX;
+                    const newChatWidth = chatStartWidth + delta;
+                    const minChatWidth = 250;
+                    const maxChatWidth = 500;
+
+                    if (newChatWidth >= minChatWidth && newChatWidth <= maxChatWidth) {
+                        const totalWidth = splitWrapper.offsetWidth;
+                        const percentage = (newChatWidth / totalWidth) * 100;
+                        chatPanel.style.flex = `0 0 ${percentage}%`;
+                    }
+                    return;
+                }
+                // ▲▲▲ [NEW] Chat drag handling ▲▲▲
+
                 if (!isDragging) return;
 
                 const delta = e.clientX - startX;
@@ -3151,7 +3226,7 @@
 
                 if (newLeftWidth >= minWidth && newLeftWidth <= maxWidth) {
                     const percentage = (newLeftWidth / totalWidth) * 100;
-                    leftPanel.style.flex = `0 0 ${percentage}%`;
+                    middlePanel.style.flex = `0 0 ${percentage}%`;
 
                     // ▼▼▼ [수정] setTimeout으로 DOM 업데이트 후 리사이즈 ▼▼▼
                     if (resizeFrame) {
@@ -3165,6 +3240,14 @@
             });
 
             document.addEventListener('mouseup', () => {
+                // ▼▼▼ [NEW] Handle chat drag end ▼▼▼
+                if (isChatDragging) {
+                    isChatDragging = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+                // ▲▲▲ [NEW] Chat drag end ▲▲▲
+
                 if (isDragging) {
                     isDragging = false;
                     document.body.style.cursor = '';
@@ -3243,8 +3326,51 @@
             });
 
             console.log('[Layout] Left-right split layout created successfully');
+
+            // ▼▼▼ [NEW] Chat Panel Toggle Functionality ▼▼▼
+            const chatToggleBtn = document.getElementById('chat-toggle-btn');
+            let chatPanelCollapsed = false;
+
+            if (chatToggleBtn) {
+                chatToggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // 이벤트 버블링 방지
+                    chatPanelCollapsed = !chatPanelCollapsed;
+
+                    if (chatPanelCollapsed) {
+                        // Collapse chat panel - 깔끔한 세로 바로 변경
+                        chatPanel.style.flex = '0 0 40px';
+                        chatPanel.style.minWidth = '40px';
+                        chatPanel.style.maxWidth = '40px';
+                        chatPanel.classList.add('collapsed');
+                        chatToggleBtn.innerHTML = '▶';
+                        chatToggleBtn.title = '채팅 패널 펼치기';
+                        console.log('[Chat] Panel collapsed');
+                    } else {
+                        // Expand chat panel
+                        chatPanel.style.flex = '0 0 20%';
+                        chatPanel.style.minWidth = '250px';
+                        chatPanel.style.maxWidth = '500px';
+                        chatPanel.classList.remove('collapsed');
+                        chatToggleBtn.innerHTML = '◀';
+                        chatToggleBtn.title = '채팅 패널 접기';
+                        console.log('[Chat] Panel expanded');
+                    }
+                });
+
+                // 접힌 상태에서 패널 클릭 시 펼치기
+                chatPanel.addEventListener('click', () => {
+                    if (chatPanelCollapsed) {
+                        chatToggleBtn.click();
+                    }
+                });
+            }
+            // ▲▲▲ [NEW] Chat Panel Toggle End ▲▲▲
         })();
         </script>
+
+        <!-- ▼▼▼ [NEW] Chat Command Handler Script ▼▼▼ -->
+        <script src="{% static 'connections/chat_command_handler.js' %}"></script>
+        <!-- ▲▲▲ [NEW] Chat Command Handler Script ▲▲▲ -->
 
         <script src="{% static 'connections/app_core.js' %}?v=2"></script>
         <script src="{% static 'connections/boq_detailed_estimation_handlers.js' %}"></script>

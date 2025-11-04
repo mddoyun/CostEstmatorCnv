@@ -165,4 +165,9 @@ urlpatterns = [
     path('api/projects/<uuid:project_id>/work-calendars/', views.work_calendars_api, name='work_calendars_api'),
     path('api/projects/<uuid:project_id>/work-calendars/<uuid:calendar_id>/', views.work_calendars_api, name='work_calendar_detail_api'),
     # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    # ▼▼▼ [NEW] Chat AI APIs ▼▼▼
+    path('api/chat-ai-command/', views.chat_ai_command_api, name='chat_ai_command_api'),
+    path('api/chat-conversation/', views.chat_conversation_api, name='chat_conversation_api'),
+    # ▲▲▲ [NEW] Chat AI APIs End ▲▲▲
 ]

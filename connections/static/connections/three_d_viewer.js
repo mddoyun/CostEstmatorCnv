@@ -12601,4 +12601,141 @@
     // ============================================================
     // animate 함수 찾아서 updateMeasurementLabels() 호출 추가 필요
 
+    // ============================================================
+    // ▼▼▼ [NEW] Chat Command Integration Functions ▼▼▼
+    // ============================================================
+
+    /**
+     * 채팅 명령으로부터 객체 선택
+     * @param {Array} objects - 선택할 객체 배열 (allRevitData 항목들)
+     */
+    window.selectObjectsInViewer = function(objects) {
+        console.log('[3D Viewer] Selecting objects from chat command:', objects.length);
+
+        if (!objects || objects.length === 0) {
+            selectedObjects = [];
+            updateAllObjectsAppearance();
+            return;
+        }
+
+        // 선택할 객체의 UniqueId 목록 생성
+        const uniqueIds = new Set(objects.map(obj => obj.UniqueId).filter(id => id));
+
+        // Scene에서 해당 객체들 찾아서 선택
+        const meshesToSelect = [];
+        scene.traverse((object) => {
+            if (object.isMesh && object.userData.rawData) {
+                const uniqueId = object.userData.rawData.UniqueId;
+                if (uniqueIds.has(uniqueId)) {
+                    meshesToSelect.push(object);
+                }
+            }
+        });
+
+        console.log('[3D Viewer] Found meshes to select:', meshesToSelect.length);
+
+        // 선택 상태 업데이트
+        selectedObjects = meshesToSelect;
+
+        // 모든 객체의 외관 업데이트 (선택/비선택 스타일 적용)
+        updateAllObjectsAppearance();
+
+        // 선택된 객체들로 카메라 포커스 (선택 사항)
+        if (meshesToSelect.length > 0 && typeof window.focusOnSelectedObjects === 'function') {
+            // Auto-focus는 선택 사항으로 비활성화
+            // window.focusOnSelectedObjects();
+        }
+    };
+
+    /**
+     * 선택된 객체들로 카메라 포커스
+     */
+    window.focusOnSelectedObjects = function() {
+        if (!selectedObjects || selectedObjects.length === 0) {
+            console.warn('[3D Viewer] No objects selected to focus on');
+            return;
+        }
+
+        // Bounding box 계산
+        const box = new THREE.Box3();
+        selectedObjects.forEach(mesh => {
+            box.expandByObject(mesh);
+        });
+
+        if (box.isEmpty()) {
+            console.warn('[3D Viewer] Selected objects have no geometry');
+            return;
+        }
+
+        // Bounding box 중심점
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+
+        // Bounding box 크기
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+
+        // 카메라 거리 계산 (객체가 화면에 잘 보이도록)
+        const distance = maxDim * 2;
+
+        // OrbitControls의 target 업데이트
+        if (window.controls) {
+            window.controls.target.copy(center);
+            window.controls.update();
+        }
+
+        // 카메라 위치 업데이트
+        if (window.camera) {
+            const direction = new THREE.Vector3();
+            window.camera.getWorldDirection(direction);
+            direction.negate().normalize();
+
+            window.camera.position.copy(center).add(direction.multiplyScalar(distance));
+            window.camera.lookAt(center);
+            window.camera.updateProjectionMatrix();
+        }
+
+        console.log('[3D Viewer] Focused on selected objects:', selectedObjects.length);
+    };
+
+    /**
+     * 카메라 리셋
+     */
+    window.resetCamera = function() {
+        if (!window.camera || !window.controls) {
+            console.warn('[3D Viewer] Camera or controls not initialized');
+            return;
+        }
+
+        // 기본 카메라 위치로 복귀
+        window.camera.position.set(50, 50, 50);
+        window.controls.target.set(0, 0, 0);
+        window.controls.update();
+
+        console.log('[3D Viewer] Camera reset to default position');
+    };
+
+    /**
+     * 모든 객체의 외관 업데이트 (선택 상태 반영)
+     */
+    function updateAllObjectsAppearance() {
+        if (!scene) return;
+
+        const selectedSet = new Set(selectedObjects);
+
+        scene.traverse((object) => {
+            if (object.isMesh && object.userData.rawData) {
+                const isSelected = selectedSet.has(object);
+
+                // 렌더링 모드에 따라 외관 업데이트
+                if (typeof window.applyRenderingModeToMesh === 'function') {
+                    window.applyRenderingModeToMesh(object, isSelected);
+                }
+            }
+        });
+    }
+
+    // ▲▲▲ [NEW] Chat Command Integration Functions End ▲▲▲
+
 })();

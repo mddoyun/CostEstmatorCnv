@@ -6379,3 +6379,392 @@ def create_activity_objects_auto_view(request, project_id):
         import traceback
         print(traceback.format_exc())
         return JsonResponse({'status': 'error', 'message': f'자동 생성 중 오류 발생: {str(e)}'}, status=500)
+
+
+# ============================================================
+# ▼▼▼ [NEW] Chat AI Command Processing API ▼▼▼
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def chat_ai_command_api(request):
+    """
+    채팅 명령을 AI(Ollama)로 파싱하여 구조화된 명령 반환
+    """
+    import requests
+
+    try:
+        message = request.POST.get('message', '').strip()
+
+        if not message:
+            return JsonResponse({
+                'success': False,
+                'error': '메시지가 비어있습니다.'
+            }, status=400)
+
+        print(f"[Chat AI] Processing message: {message}")
+
+        # Ollama API 호출
+        try:
+            ollama_response = requests.post(
+                'http://localhost:11434/api/generate',
+                json={
+                    'model': 'llama3.2:3b',
+                    'prompt': f"""당신은 BIM 명령 파서입니다. 한국어 명령을 JSON으로 변환하세요.
+
+명령: "{message}"
+
+반드시 이 형식의 JSON만 출력하세요:
+{{"action": "액션", "target": "대상", "parameters": {{}}}}
+
+가능한 액션:
+- select: 객체 선택
+- hide: 숨기기
+- show: 보이기
+- showAll: 모두 보이기
+- changeColor: 색상 변경 (parameters에 "color" 필요)
+- filterSelect: 속성 필터 (parameters에 "property", "value" 필요)
+- count: 개수 세기
+- showProperties: 속성 표시
+- zoomTo: 줌
+- reset: 초기화
+
+대상 객체 (한국어 → IFC):
+벽=IfcWall, 문=IfcDoor, 창=IfcWindow, 창문=IfcWindow, 슬래브=IfcSlab, 바닥=IfcSlab, 기둥=IfcColumn, 보=IfcBeam
+
+예시:
+"벽만 선택해줘" → {{"action":"select","target":"벽","parameters":{{}}}}
+"문 숨겨줘" → {{"action":"hide","target":"문","parameters":{{}}}}
+"슬래브 빨간색" → {{"action":"changeColor","target":"슬래브","parameters":{{"color":"빨강"}}}}
+"모두 보여줘" → {{"action":"showAll","target":"","parameters":{{}}}}
+
+지금 파싱: "{message}"
+JSON만 출력:""",
+                    'stream': False,
+                    'options': {
+                        'temperature': 0.1,
+                        'num_predict': 80,
+                        'top_p': 0.9
+                    }
+                },
+                timeout=30
+            )
+
+            if ollama_response.status_code == 200:
+                result = ollama_response.json()
+                ai_text = result.get('response', '').strip()
+
+                print(f"[Chat AI] Ollama response: {ai_text}")
+
+                # JSON 추출 시도
+                try:
+                    # JSON 블록 찾기
+                    json_start = ai_text.find('{')
+                    json_end = ai_text.rfind('}') + 1
+
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = ai_text[json_start:json_end]
+                        command = json.loads(json_str)
+
+                        # 유효성 검증
+                        if 'action' in command:
+                            print(f"[Chat AI] Parsed command: {command}")
+                            return JsonResponse({
+                                'success': True,
+                                'command': command,
+                                'raw_response': ai_text
+                            })
+                        else:
+                            raise ValueError("Missing 'action' field")
+                    else:
+                        raise ValueError("No JSON found in response")
+
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"[Chat AI] JSON parsing failed: {e}")
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'AI 응답을 파싱할 수 없습니다.',
+                        'raw_response': ai_text,
+                        'fallback': True  # 프론트엔드에서 로컬 패턴으로 fallback
+                    })
+            else:
+                print(f"[Chat AI] Ollama error: {ollama_response.status_code}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Ollama 서버 오류: {ollama_response.status_code}',
+                    'fallback': True
+                }, status=500)
+
+        except requests.exceptions.ConnectionError:
+            print("[Chat AI] Ollama server not running")
+            return JsonResponse({
+                'success': False,
+                'error': 'Ollama 서버가 실행 중이지 않습니다. 로컬 패턴 매칭을 사용합니다.',
+                'fallback': True,
+                'install_guide': 'brew install ollama && ollama serve'
+            })
+        except requests.exceptions.Timeout:
+            print("[Chat AI] Ollama timeout")
+            return JsonResponse({
+                'success': False,
+                'error': 'AI 응답 시간 초과',
+                'fallback': True
+            })
+
+    except Exception as e:
+        print(f"[Chat AI] Unexpected error: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({
+            'success': False,
+            'error': f'오류 발생: {str(e)}',
+            'fallback': True
+        }, status=500)
+
+# ▲▲▲ [NEW] Chat AI Command Processing API End ▲▲▲
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def chat_conversation_api(request):
+    """
+    일반 대화 + 명령 자동 감지
+    Ollama를 사용한 자연스러운 대화 시스템
+    """
+    import requests
+    import re
+
+    try:
+        message = request.POST.get('message', '').strip()
+        history_json = request.POST.get('history', '[]')
+
+        if not message:
+            return JsonResponse({
+                'success': False,
+                'error': '메시지가 비어있습니다.'
+            }, status=400)
+
+        print(f"[Chat Conversation] User message: {message}")
+
+        # 히스토리 파싱
+        try:
+            history = json.loads(history_json)
+        except:
+            history = []
+
+        # 대화 컨텍스트 구성
+        conversation_context = ""
+        for entry in history[-10:]:  # 최근 10개만
+            role = entry.get('role', 'user')
+            content = entry.get('content', '')
+            if role == 'user':
+                conversation_context += f"\n사용자: {content}"
+            else:
+                conversation_context += f"\n어시스턴트: {content}"
+
+        # 1단계: 로컬 패턴으로 명령 감지
+        command_detected = None
+        command_keywords = {
+            'select': ['선택', 'select', '찾아', '골라'],
+            'count': ['개수', '몇 개', '몇개', 'count', '카운트'],
+            'hide': ['숨겨', '숨기', 'hide', '안 보이', '안보이'],
+            'show': ['보여', '보이', 'show', '표시'],
+            'focus': ['줌', 'zoom', '포커스', 'focus', '확대'],
+            'deselect': ['해제', 'clear', 'deselect'],
+            'reset': ['초기화', 'reset', '리셋']
+        }
+
+        message_lower = message.lower()
+        for action, keywords in command_keywords.items():
+            if any(keyword in message_lower for keyword in keywords):
+                command_detected = action
+                print(f"[Chat Conversation] Command detected locally: {action}")
+                break
+
+        # Ollama API 호출
+        try:
+            if command_detected:
+                # 명령이 감지된 경우: 대상 추출 + 짧은 응답
+                system_prompt = f"""당신은 BIM 명령 어시스턴트입니다.
+
+사용자가 "{command_detected}" 명령을 요청했습니다.
+
+**임무:**
+1. 사용자 메시지에서 대상 객체를 찾으세요
+2. 짧은 확인 응답을 하세요
+3. 반드시 마지막에 [TARGET]대상명[/TARGET] 형식으로 대상을 표시하세요
+
+**예시:**
+사용자: "벽을 선택해줘"
+어시스턴트: "벽 객체를 선택하겠습니다. [TARGET]벽[/TARGET]"
+
+사용자: "brick을 3d뷰포트에서 선택해줘"
+어시스턴트: "brick 객체를 찾아 선택하겠습니다. [TARGET]brick[/TARGET]"
+
+사용자: "문 객체 몇 개야?"
+어시스턴트: "문 객체의 개수를 확인하겠습니다. [TARGET]문[/TARGET]"
+
+사용자: "wall 찾아줘"
+어시스턴트: "wall 객체를 찾겠습니다. [TARGET]wall[/TARGET]"
+
+**대상을 찾을 수 없으면:**
+[TARGET]unknown[/TARGET]로 표시하세요.
+
+지금 처리할 메시지:"""
+
+                full_prompt = f"""{system_prompt}
+
+사용자: {message}
+어시스턴트: """
+
+                print(f"[Chat Conversation] Extracting target from command...")
+
+                ollama_response = requests.post(
+                    'http://localhost:11434/api/generate',
+                    json={
+                        'model': 'llama3.2:3b',
+                        'prompt': full_prompt,
+                        'stream': False,
+                        'options': {
+                            'temperature': 0.1,  # 명령이므로 정확하게
+                            'num_predict': 80,   # 짧은 응답
+                            'top_p': 0.9
+                        }
+                    },
+                    timeout=30
+                )
+            else:
+                # 일반 대화
+                system_prompt = """당신은 BIM(Building Information Modeling) 소프트웨어의 친절한 AI 어시스턴트입니다.
+
+**역할:**
+- 사용자와 자연스럽게 대화합니다
+- BIM, 건축, 공사 관련 질문에 답변합니다
+- 프로그램 사용법을 안내합니다
+
+**답변 스타일:**
+- 친절하고 전문적으로
+- 간결하게 2-3문장으로
+- 기술 용어는 쉽게 설명
+
+예시:
+사용자: "안녕하세요"
+어시스턴트: "안녕하세요! BIM 소프트웨어 사용을 도와드리겠습니다. 무엇을 도와드릴까요?"
+
+사용자: "BIM이 뭐야?"
+어시스턴트: "BIM은 Building Information Modeling의 약자로, 건축물의 3D 모델에 다양한 정보를 담아 설계, 시공, 유지관리를 효율적으로 하는 기술입니다."
+"""
+
+                full_prompt = f"""{system_prompt}
+
+{conversation_context}
+
+사용자: {message}
+어시스턴트: """
+
+                print(f"[Chat Conversation] General conversation mode...")
+
+                ollama_response = requests.post(
+                    'http://localhost:11434/api/generate',
+                    json={
+                        'model': 'llama3.2:3b',
+                        'prompt': full_prompt,
+                        'stream': False,
+                        'options': {
+                            'temperature': 0.7,  # 대화이므로 약간 더 창의적
+                            'num_predict': 150,  # 적당한 길이
+                            'top_p': 0.9
+                        }
+                    },
+                    timeout=30
+                )
+
+            if ollama_response.status_code == 200:
+                result = ollama_response.json()
+                ai_response = result.get('response', '').strip()
+
+                print(f"[Chat Conversation] Ollama response: {ai_response}")
+
+                command = None
+                clean_response = ai_response
+
+                # 명령이 감지된 경우
+                if command_detected:
+                    # [TARGET]...[/TARGET] 태그에서 대상 추출
+                    target_pattern = r'\[TARGET\](.+?)\[/TARGET\]'
+                    target_match = re.search(target_pattern, ai_response)
+
+                    if target_match:
+                        target = target_match.group(1).strip()
+                        # 응답에서 TARGET 태그 제거
+                        clean_response = re.sub(target_pattern, '', ai_response).strip()
+
+                        # unknown이 아니면 명령 구성
+                        if target.lower() != 'unknown':
+                            command = {
+                                'action': command_detected,
+                                'target': target,
+                                'parameters': {}
+                            }
+                            print(f"[Chat Conversation] Command built: {command}")
+                        else:
+                            print(f"[Chat Conversation] Target unknown, no command")
+                    else:
+                        # 태그가 없으면 메시지에서 직접 추출 시도
+                        # 명사들 추출 (간단한 방식)
+                        import re
+                        # 한글, 영문, 숫자로 이루어진 단어 찾기
+                        words = re.findall(r'[가-힣a-zA-Z]+', message)
+                        # 명령 키워드 제외
+                        excluded = ['선택', 'select', '찾아', '골라', '개수', '몇', '몇개', 'count',
+                                    '숨겨', '숨기', 'hide', '보여', '보이', 'show', '줌', 'zoom',
+                                    '포커스', 'focus', '해제', 'clear', '초기화', 'reset',
+                                    '을', '를', '이', '가', '에서', '해줘', '줘', '뷰포트', '객체']
+                        targets = [w for w in words if w not in excluded and len(w) >= 2]
+
+                        if targets:
+                            target = targets[0]  # 첫 번째 명사 사용
+                            command = {
+                                'action': command_detected,
+                                'target': target,
+                                'parameters': {}
+                            }
+                            print(f"[Chat Conversation] Command built from fallback: {command}")
+
+                return JsonResponse({
+                    'success': True,
+                    'response': clean_response,
+                    'command': command,  # None이면 일반 대화, 있으면 명령 포함
+                    'raw_response': ai_response
+                })
+
+            else:
+                print(f"[Chat Conversation] Ollama error: {ollama_response.status_code}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Ollama 서버 오류: {ollama_response.status_code}'
+                }, status=500)
+
+        except requests.exceptions.ConnectionError:
+            print("[Chat Conversation] Ollama server not running")
+            return JsonResponse({
+                'success': False,
+                'error': 'AI 서버(Ollama)가 실행 중이지 않습니다.\n\n터미널에서 다음 명령어를 실행해주세요:\n\nbrew install ollama\nollama serve\nollama pull llama3.2:3b'
+            })
+        except requests.exceptions.Timeout:
+            print("[Chat Conversation] Ollama timeout")
+            return JsonResponse({
+                'success': False,
+                'error': 'AI 응답 시간 초과. 잠시 후 다시 시도해주세요.'
+            })
+
+    except Exception as e:
+        print(f"[Chat Conversation] Unexpected error: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({
+            'success': False,
+            'error': f'오류 발생: {str(e)}'
+        }, status=500)
+
+# ▲▲▲ [NEW] Chat Conversation API End ▲▲▲
