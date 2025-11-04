@@ -116,7 +116,7 @@ class UnitPrice(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='unit_prices')
     cost_code = models.ForeignKey(CostCode, on_delete=models.CASCADE, related_name='unit_prices')
-    unit_price_type = models.ForeignKey(UnitPriceType, on_delete=models.PROTECT, related_name='unit_prices', help_text="단가 구분")
+    unit_price_type = models.ForeignKey(UnitPriceType, on_delete=models.CASCADE, related_name='unit_prices', help_text="단가 구분")
 
     # ▼▼▼ [수정] DecimalField로 변경하여 정확도 향상 ▼▼▼
     material_cost = models.DecimalField(max_digits=19, decimal_places=4, default=decimal.Decimal('0.0'), help_text="재료비 단가")
@@ -826,7 +826,7 @@ class CostItem(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='cost_items')
     quantity_member = models.ForeignKey(QuantityMember, on_delete=models.CASCADE, null=True, blank=True, related_name='cost_items')
-    cost_code = models.ForeignKey(CostCode, on_delete=models.PROTECT, related_name='cost_items')
+    cost_code = models.ForeignKey(CostCode, on_delete=models.CASCADE, related_name='cost_items')
     quantity = models.FloatField(default=0.0)
     is_manual_quantity = models.BooleanField(default=False, help_text="수동으로 입력된 수량 여부 (True면 자동 생성 시 수량 유지)")
 

@@ -222,6 +222,72 @@ function enableHomeProjectButtons() {
 
 
 /**
+ * 홈 탭의 "새 프로젝트" 버튼 핸들러
+ */
+async function handleHomeCreateProject() {
+    console.log('[DEBUG][handleHomeCreateProject] Create project button clicked');
+
+    const nameInput = document.getElementById('home-new-project-name');
+    if (!nameInput) {
+        console.error('[ERROR][handleHomeCreateProject] Name input not found');
+        showToast('프로젝트 이름 입력란을 찾을 수 없습니다.', 'error');
+        return;
+    }
+
+    const projectName = nameInput.value.trim();
+    if (!projectName) {
+        showToast('프로젝트 이름을 입력하세요.', 'error');
+        nameInput.focus();
+        return;
+    }
+
+    try {
+        const response = await fetch('/connections/create-project/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken,
+            },
+            body: JSON.stringify({ name: projectName })
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showToast(`프로젝트 '${data.project_name}' 생성 완료.`, 'success');
+            console.log(`[DEBUG][handleHomeCreateProject] Project created:`, data);
+
+            // 입력 필드 초기화
+            nameInput.value = '';
+
+            // 프로젝트 셀렉터에 새 프로젝트 추가 (기존 createNewProject와 동일한 방식)
+            const projectSelector = document.getElementById('project-selector');
+            if (projectSelector) {
+                const newOption = new Option(
+                    data.project_name,
+                    data.project_id,
+                    true,
+                    true
+                );
+                projectSelector.add(newOption, projectSelector.options[1]);
+                projectSelector.dispatchEvent(new Event('change'));
+            }
+
+            // 약간의 지연 후 홈 탭 프로젝트 목록 새로고침
+            setTimeout(() => {
+                loadHomeProjectList();
+            }, 100);
+        } else {
+            showToast('프로젝트 생성 실패: ' + data.message, 'error');
+        }
+
+    } catch (error) {
+        console.error('[ERROR][handleHomeCreateProject] Failed to create project:', error);
+        showToast(`프로젝트 생성 실패: ${error.message}`, 'error');
+    }
+}
+
+/**
  * 홈 탭의 "프로젝트 삭제" 버튼 핸들러
  */
 async function handleHomeDeleteProject() {
@@ -381,14 +447,30 @@ function setupHomeTabListeners() {
     console.log('[DEBUG][setupHomeTabListeners] Current timestamp:', new Date().toISOString());
 
     // 프로젝트 관리 버튼들
+    const createBtn = document.getElementById('home-create-project-btn');
     const importBtn = document.getElementById('home-import-project-btn');
     const exportBtn = document.getElementById('home-export-project-btn');
     const deleteBtn = document.getElementById('home-delete-project-btn');
+    const nameInput = document.getElementById('home-new-project-name');
 
+    console.log('[DEBUG][setupHomeTabListeners] Create button found:', !!createBtn);
     console.log('[DEBUG][setupHomeTabListeners] Import button found:', !!importBtn);
     console.log('[DEBUG][setupHomeTabListeners] Export button found:', !!exportBtn);
     console.log('[DEBUG][setupHomeTabListeners] Delete button found:', !!deleteBtn);
 
+    if (createBtn) {
+        createBtn.addEventListener('click', handleHomeCreateProject);
+        console.log('[DEBUG][setupHomeTabListeners] Create button listener attached');
+    }
+    if (nameInput) {
+        // Enter 키로도 프로젝트 생성 가능
+        nameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleHomeCreateProject();
+            }
+        });
+        console.log('[DEBUG][setupHomeTabListeners] Name input Enter key listener attached');
+    }
     if (importBtn) {
         importBtn.addEventListener('click', handleHomeImportProject);
         console.log('[DEBUG][setupHomeTabListeners] Import button listener attached');
@@ -428,6 +510,7 @@ window.loadHomeProjectList = loadHomeProjectList;
 window.updateHomeProjectListSelection = updateHomeProjectListSelection;
 window.updateHomeCurrentProjectInfo = updateHomeCurrentProjectInfo;
 window.enableHomeProjectButtons = enableHomeProjectButtons;
+window.handleHomeCreateProject = handleHomeCreateProject;
 window.handleHomeDeleteProject = handleHomeDeleteProject;
 window.setupHomeTabListeners = setupHomeTabListeners;
 window.navigateToTab = navigateToTab;

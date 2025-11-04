@@ -108,7 +108,51 @@ def serialize_ifc_elements_to_string_list(ifc_file):
     
     for element in products:
         if not element.GlobalId: continue
-        element_dict = { "Name": element.Name or "이름 없음", "IfcClass": element.is_a(), "ElementId": element.id(), "UniqueId": element.GlobalId, "Parameters": {}, "TypeParameters": {}, "RelatingType": None, "SpatialContainer": None, "Aggregates": None, "Nests": None, }
+        element_dict = {
+            "Name": element.Name or "이름 없음",
+            "IfcClass": element.is_a(),
+            "ElementId": element.id(),
+            "UniqueId": element.GlobalId,
+            "Attributes": {},           # IFC 기본 속성들
+            "PropertySet": {},          # Property Sets (Pset_*)
+            "QuantitySet": {},          # Quantity Sets (Qto_*)
+            "Spatial_Container": {},    # 공간 컨테이너 정보
+            "Aggregates_Whole": {},     # 집합 관계 - 전체 객체 정보
+            "Aggregates_Parts": {},     # 집합 관계 - 부분 객체들 정보
+            "Nest_Host": {},            # Nest 관계 - 호스트 정보
+            "Nest_Components": {},      # Nest 관계 - 구성요소들 정보
+            "Type": {},                 # 타입 정보
+            "System": {},               # 시스템 정보 (웹에서 추가)
+        }
+
+        # ▼▼▼ IFC 요소의 모든 Attributes 동적 추출 ▼▼▼
+        # element.get_info()는 모든 IFC 속성을 딕셔너리로 반환
+        # GlobalId, Name, Description, ObjectType, Tag, PredefinedType 등 포함
+        info = element.get_info()
+
+        for attr_name, attr_value in info.items():
+            # 내부 속성만 제외 (type, id는 내부용, GlobalId는 UniqueId로 이미 저장)
+            if attr_name in ['type', 'id', 'GlobalId']:
+                continue
+
+            # 관계형 속성은 제외 (별도 섹션에서 처리)
+            # 리스트/튜플이면서 대문자로 시작하는 것들 (IsDefinedBy, ContainsElements 등)
+            if isinstance(attr_value, (list, tuple)) and attr_name[0].isupper():
+                continue
+
+            # 모든 Attributes를 추가 (None 값도 포함 - 속성이 있다는 것 자체가 의미)
+            if hasattr(attr_value, 'is_a'):
+                # IFC 엔티티 참조인 경우
+                element_dict["Attributes"][attr_name] = f"{attr_value.is_a()}: {getattr(attr_value, 'Name', str(attr_value))}"
+            elif attr_value is not None:
+                # 일반 값
+                element_dict["Attributes"][attr_name] = attr_value
+            else:
+                # None 값도 저장 (속성이 정의되어 있다는 정보)
+                element_dict["Attributes"][attr_name] = None
+
+        print(f"[DEBUG] Element {element.id()} Attributes extracted: {list(element_dict['Attributes'].keys())}")
+        # ▲▲▲ Attributes 추출 끝 ▲▲▲
         
         # Add Geometry Data
         try:
@@ -182,17 +226,83 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                 print(f"[ERROR] Matrix extraction failed for element {element.id()}: {str(matrix_error)}")
                 matrix = None
 
-            element_dict["Parameters"]["Geometry"] = {
+            # ▼▼▼ 색상 및 재질 정보 추출 ▼▼▼
+            colors = None
+            materials = {}
+
+            try:
+                # IFC 스타일 색상 정보 추출
+                if hasattr(shape, 'styles') and shape.styles:
+                    # shape.styles는 (style_id, surface_style) 튜플 리스트
+                    for style_id, surface_style in shape.styles:
+                        if surface_style and hasattr(surface_style, 'Styles'):
+                            for style in surface_style.Styles:
+                                if style.is_a('IfcSurfaceStyleRendering'):
+                                    # Diffuse 색상 추출
+                                    if hasattr(style, 'SurfaceColour') and style.SurfaceColour:
+                                        color = style.SurfaceColour
+                                        materials['diffuse_color'] = [
+                                            float(getattr(color, 'Red', 0.8)),
+                                            float(getattr(color, 'Green', 0.8)),
+                                            float(getattr(color, 'Blue', 0.8))
+                                        ]
+
+                                    # Transparency 정보
+                                    if hasattr(style, 'Transparency') and style.Transparency is not None:
+                                        materials['transparency'] = float(style.Transparency)
+
+                                    # Reflectance method
+                                    if hasattr(style, 'ReflectanceMethod'):
+                                        materials['reflectance_method'] = str(style.ReflectanceMethod)
+
+                                    # Specular color
+                                    if hasattr(style, 'SpecularColour') and style.SpecularColour:
+                                        spec_color = style.SpecularColour
+                                        materials['specular_color'] = [
+                                            float(getattr(spec_color, 'Red', 0.0)),
+                                            float(getattr(spec_color, 'Green', 0.0)),
+                                            float(getattr(spec_color, 'Blue', 0.0))
+                                        ]
+
+                # Material name 추출 (IfcMaterial 관계에서)
+                if hasattr(element, 'HasAssociations'):
+                    for association in element.HasAssociations:
+                        if association.is_a('IfcRelAssociatesMaterial'):
+                            material = association.RelatingMaterial
+                            if material:
+                                if material.is_a('IfcMaterial'):
+                                    materials['name'] = material.Name or 'Unknown'
+                                elif material.is_a('IfcMaterialLayerSetUsage'):
+                                    if hasattr(material, 'ForLayerSet') and material.ForLayerSet:
+                                        layer_set = material.ForLayerSet
+                                        if hasattr(layer_set, 'MaterialLayers') and layer_set.MaterialLayers:
+                                            # 첫 번째 레이어의 재질 이름
+                                            first_layer = layer_set.MaterialLayers[0]
+                                            if hasattr(first_layer, 'Material') and first_layer.Material:
+                                                materials['name'] = first_layer.Material.Name or 'Unknown'
+
+                # 기본 색상이 없으면 회색 설정
+                if 'diffuse_color' not in materials:
+                    materials['diffuse_color'] = [0.8, 0.8, 0.8]
+
+            except Exception as color_error:
+                print(f"[WARN] Color/Material extraction failed for element {element.id()}: {str(color_error)}")
+                materials['diffuse_color'] = [0.8, 0.8, 0.8]  # 기본 회색
+            # ▲▲▲ 색상 및 재질 정보 추출 끝 ▲▲▲
+
+            element_dict["System"]["Geometry"] = {
                 "verts": verts.tolist(), # Use .tolist() for robust conversion
                 "faces": faces.tolist(),  # Use .tolist() for robust conversion
-                "matrix": matrix  # Add transformation matrix
+                "matrix": matrix,  # Add transformation matrix
+                "materials": materials  # ▼▼▼ [추가] 재질 및 색상 정보 ▼▼▼
             }
         except Exception as e:
             print(f"Could not get geometry for element {element.id()}: {e}")
-            element_dict["Parameters"]["Geometry"] = None
+            element_dict["System"]["Geometry"] = None
 
         is_spatial_element = element.is_a("IfcSpatialStructureElement")
         try:
+            # ▼▼▼ PropertySet 추출 ▼▼▼
             if hasattr(element, 'IsDefinedBy') and element.IsDefinedBy:
                 for definition in element.IsDefinedBy:
                     if definition.is_a("IfcRelDefinesByProperties"):
@@ -200,11 +310,11 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                         if prop_set and prop_set.is_a("IfcPropertySet"):
                             if hasattr(prop_set, 'HasProperties') and prop_set.HasProperties:
                                 for prop in prop_set.HasProperties:
-                                    # ▼▼▼ [수정] 구분자를 '.'에서 '__'로 변경 ▼▼▼
-                                    if prop.is_a("IfcPropertySingleValue"): 
+                                    if prop.is_a("IfcPropertySingleValue"):
                                         prop_key = f"{prop_set.Name}__{prop.Name}"
-                                        element_dict["Parameters"][prop_key] = prop.NominalValue.wrappedValue if prop.NominalValue else None
-                                        # print(f"  - 파라미터 추가: {prop_key}") # 상세 디버깅 필요시 주석 해제
+                                        element_dict["PropertySet"][prop_key] = prop.NominalValue.wrappedValue if prop.NominalValue else None
+
+            # ▼▼▼ QuantitySet 추출 ▼▼▼
             if not is_spatial_element:
                 if hasattr(element, 'IsDefinedBy') and element.IsDefinedBy:
                     for definition in element.IsDefinedBy:
@@ -215,30 +325,77 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                     for quantity in prop_set.Quantities:
                                         prop_value = get_quantity_value(quantity)
                                         if prop_value is not None:
-                                            # ▼▼▼ [수정] 구분자를 '.'에서 '__'로 변경 ▼▼▼
                                             prop_key = f"{prop_set.Name}__{quantity.Name}"
-                                            element_dict["Parameters"][prop_key] = prop_value
-                                            # print(f"  - 수량 파라미터 추가: {prop_key}") # 상세 디버깅 필요시 주석 해제
-                if hasattr(element, 'IsTypedBy') and element.IsTypedBy:
-                    type_definition = element.IsTypedBy[0]
-                    if type_definition and type_definition.is_a("IfcRelDefinesByType"):
-                        relating_type = type_definition.RelatingType
-                        if relating_type:
-                            element_dict["RelatingType"] = relating_type.Name
-                            if hasattr(relating_type, 'HasPropertySets') and relating_type.HasPropertySets:
-                                for prop_set in relating_type.HasPropertySets:
-                                    if prop_set and prop_set.is_a("IfcPropertySet"):
-                                        if hasattr(prop_set, 'HasProperties') and prop_set.HasProperties:
-                                            for prop in prop_set.HasProperties:
-                                                # ▼▼▼ [수정] 구분자를 '.'에서 '__'로 변경 ▼▼▼
-                                                if prop.is_a("IfcPropertySingleValue"): 
-                                                    prop_key = f"{prop_set.Name}__{prop.Name}"
-                                                    element_dict["TypeParameters"][prop_key] = prop.NominalValue.wrappedValue if prop.NominalValue else None
-                                                    # print(f"  - 타입 파라미터 추가: {prop_key}") # 상세 디버깅 필요시 주석 해제
-                if hasattr(element, 'ContainedInStructure') and element.ContainedInStructure: element_dict["SpatialContainer"] = f"{element.ContainedInStructure[0].RelatingStructure.is_a()}: {element.ContainedInStructure[0].RelatingStructure.Name}"
-            if hasattr(element, 'Decomposes') and element.Decomposes: element_dict["Aggregates"] = f"{element.Decomposes[0].RelatingObject.is_a()}: {element.Decomposes[0].RelatingObject.Name}"
-            if hasattr(element, 'Nests') and element.Nests: element_dict["Nests"] = f"{element.Nests[0].RelatingObject.is_a()}: {element.Nests[0].RelatingObject.Name}"
-        except (AttributeError, IndexError, TypeError): pass
+                                            element_dict["QuantitySet"][prop_key] = prop_value
+
+            # ▼▼▼ Type 정보 추출 ▼▼▼
+            if hasattr(element, 'IsTypedBy') and element.IsTypedBy:
+                type_definition = element.IsTypedBy[0]
+                if type_definition and type_definition.is_a("IfcRelDefinesByType"):
+                    relating_type = type_definition.RelatingType
+                    if relating_type:
+                        element_dict["Type"]["Name"] = relating_type.Name
+                        element_dict["Type"]["IfcClass"] = relating_type.is_a()
+                        if hasattr(relating_type, 'HasPropertySets') and relating_type.HasPropertySets:
+                            for prop_set in relating_type.HasPropertySets:
+                                if prop_set and prop_set.is_a("IfcPropertySet"):
+                                    if hasattr(prop_set, 'HasProperties') and prop_set.HasProperties:
+                                        for prop in prop_set.HasProperties:
+                                            if prop.is_a("IfcPropertySingleValue"):
+                                                prop_key = f"{prop_set.Name}__{prop.Name}"
+                                                element_dict["Type"][prop_key] = prop.NominalValue.wrappedValue if prop.NominalValue else None
+
+            # ▼▼▼ Spatial Container 정보 추출 ▼▼▼
+            if hasattr(element, 'ContainedInStructure') and element.ContainedInStructure:
+                relating_structure = element.ContainedInStructure[0].RelatingStructure
+                element_dict["Spatial_Container"]["IfcClass"] = relating_structure.is_a()
+                element_dict["Spatial_Container"]["Name"] = relating_structure.Name
+                element_dict["Spatial_Container"]["GlobalId"] = relating_structure.GlobalId
+
+            # ▼▼▼ Aggregates (Decomposes) 정보 추출 ▼▼▼
+            if hasattr(element, 'Decomposes') and element.Decomposes:
+                relating_object = element.Decomposes[0].RelatingObject
+                element_dict["Aggregates_Whole"]["IfcClass"] = relating_object.is_a()
+                element_dict["Aggregates_Whole"]["Name"] = relating_object.Name
+                element_dict["Aggregates_Whole"]["GlobalId"] = relating_object.GlobalId
+
+            # ▼▼▼ Aggregates Parts (IsDecomposedBy) 정보 추출 ▼▼▼
+            if hasattr(element, 'IsDecomposedBy') and element.IsDecomposedBy:
+                parts = []
+                for decomposition in element.IsDecomposedBy:
+                    if hasattr(decomposition, 'RelatedObjects'):
+                        for part in decomposition.RelatedObjects:
+                            parts.append({
+                                "IfcClass": part.is_a(),
+                                "Name": part.Name,
+                                "GlobalId": part.GlobalId
+                            })
+                if parts:
+                    element_dict["Aggregates_Parts"]["Parts"] = parts
+
+            # ▼▼▼ Nest Host 정보 추출 ▼▼▼
+            if hasattr(element, 'Nests') and element.Nests:
+                relating_object = element.Nests[0].RelatingObject
+                element_dict["Nest_Host"]["IfcClass"] = relating_object.is_a()
+                element_dict["Nest_Host"]["Name"] = relating_object.Name
+                element_dict["Nest_Host"]["GlobalId"] = relating_object.GlobalId
+
+            # ▼▼▼ Nest Components (IsNestedBy) 정보 추출 ▼▼▼
+            if hasattr(element, 'IsNestedBy') and element.IsNestedBy:
+                components = []
+                for nesting in element.IsNestedBy:
+                    if hasattr(nesting, 'RelatedObjects'):
+                        for component in nesting.RelatedObjects:
+                            components.append({
+                                "IfcClass": component.is_a(),
+                                "Name": component.Name,
+                                "GlobalId": component.GlobalId
+                            })
+                if components:
+                    element_dict["Nest_Components"]["Components"] = components
+
+        except (AttributeError, IndexError, TypeError) as e:
+            print(f"[WARN] Error extracting properties for element {element.id()}: {e}")
         elements_data.append(json.dumps(element_dict))
     print(f"✅ [Blender] 객체 데이터 직렬화 완료.") # 디버깅 추가
     return elements_data
@@ -318,10 +475,44 @@ def run_websocket_in_thread(uri):
     thread = threading.Thread(target=loop_in_thread, daemon=True); thread.start()
 
 timer_call_count = 0
+last_timer_tick_time = 0
+
+def watchdog_timer():
+    """타이머가 정지되었는지 확인하고 재등록하는 감시 타이머"""
+    global last_timer_tick_time, timer_call_count
+
+    import time
+    current_time = time.time()
+
+    # 메인 타이머가 1초 이상 응답이 없으면 재등록
+    if current_time - last_timer_tick_time > 1.0:
+        if not bpy.app.timers.is_registered(process_event_queue_timer):
+            print(f"[WATCHDOG] Main timer is dead (last tick: {timer_call_count}). Re-registering...")
+            try:
+                bpy.app.timers.register(process_event_queue_timer)
+                print("[WATCHDOG] Successfully re-registered main timer")
+            except Exception as e:
+                print(f"[WATCHDOG ERROR] Failed to re-register: {e}")
+        else:
+            print(f"[WATCHDOG] Timer registered but not ticking (last: {timer_call_count})")
+
+    return 0.5  # Check every 0.5 seconds
 
 def process_event_queue_timer():
-    global timer_call_count
+    global timer_call_count, last_timer_tick_time
     timer_call_count += 1
+
+    # ▼▼▼ [추가] 타이머 활동 시간 업데이트 (watchdog용) ▼▼▼
+    import time
+    last_timer_tick_time = time.time()
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    # ▼▼▼ [추가] 타이머가 해제되었는지 확인하고 재등록 ▼▼▼
+    if not bpy.app.timers.is_registered(process_event_queue_timer):
+        print("[WARN] Timer was unregistered! Re-registering...")
+        bpy.app.timers.register(process_event_queue_timer)
+        return 0.1
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     # ▼▼▼ [CRITICAL FIX] 전체를 try로 감싸고 qsize() 제거 ▼▼▼
     try:
@@ -492,11 +683,31 @@ class COSTESTIMATOR_OT_Connect(bpy.types.Operator):
     bl_description = "서버에 웹소켓으로 연결하고, 웹 브라우저에서 제어판을 엽니다."
     
     def execute(self, context):
-        global status_message
+        global status_message, last_timer_tick_time
         if websocket_client:
             self.report({'WARNING'}, "이미 연결되어 있습니다.")
             return {'CANCELLED'}
-        
+
+        # ▼▼▼ [추가] 타이머 등록 (Connect 버튼 클릭 시) ▼▼▼
+        print("[DEBUG] Registering timers on Connect...")
+
+        # 메인 타이머 등록
+        if not bpy.app.timers.is_registered(process_event_queue_timer):
+            bpy.app.timers.register(process_event_queue_timer)
+            print("[DEBUG] Main timer registered successfully")
+        else:
+            print("[DEBUG] Main timer already registered")
+
+        # Watchdog 타이머 등록
+        if not bpy.app.timers.is_registered(watchdog_timer):
+            import time
+            last_timer_tick_time = time.time()
+            bpy.app.timers.register(watchdog_timer)
+            print("[DEBUG] Watchdog timer registered successfully")
+        else:
+            print("[DEBUG] Watchdog timer already registered")
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
+
         uri = context.scene.costestimator_server_url
         try:
             base_address = uri.replace("ws://", "http://").replace("wss://", "").split("/ws/")[0]
@@ -515,7 +726,19 @@ class COSTESTIMATOR_OT_Disconnect(bpy.types.Operator):
 
     def execute(self, context):
         global websocket_client, status_message, websocket_thread_loop
-        
+
+        # ▼▼▼ [추가] 타이머 해제 (Disconnect 버튼 클릭 시) ▼▼▼
+        print("[DEBUG] Unregistering timers on Disconnect...")
+
+        if bpy.app.timers.is_registered(process_event_queue_timer):
+            bpy.app.timers.unregister(process_event_queue_timer)
+            print("[DEBUG] Main timer unregistered")
+
+        if bpy.app.timers.is_registered(watchdog_timer):
+            bpy.app.timers.unregister(watchdog_timer)
+            print("[DEBUG] Watchdog timer unregistered")
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
+
         if websocket_client:
             if websocket_thread_loop:
                 asyncio.run_coroutine_threadsafe(websocket_client.close(), websocket_thread_loop)
@@ -527,7 +750,7 @@ class COSTESTIMATOR_OT_Disconnect(bpy.types.Operator):
 
         stop_server_process()
         self.report({'INFO'}, "서버가 종료되었습니다.")
-        
+
         return {'FINISHED'}
 
 
@@ -581,16 +804,22 @@ def register():
     bpy.types.Scene.costestimator_server_url = bpy.props.StringProperty(
         name="서버 주소", default="ws://127.0.0.1:8000/ws/blender-connector/"
     )
-    print("[DEBUG] Registering process_event_queue_timer")
-    bpy.app.timers.register(process_event_queue_timer)
-    print("[DEBUG] Timer registered successfully")
+
+    # 타이머는 애드온 설치 시가 아닌, Connect 버튼 클릭 시 시작됩니다.
 
 def unregister():
     stop_server_process()
 
+    # ▼▼▼ [수정] 메인 타이머와 watchdog 타이머 모두 해제 ▼▼▼
     if bpy.app.timers.is_registered(process_event_queue_timer):
         bpy.app.timers.unregister(process_event_queue_timer)
-    
+        print("[DEBUG] Main timer unregistered")
+
+    if bpy.app.timers.is_registered(watchdog_timer):
+        bpy.app.timers.unregister(watchdog_timer)
+        print("[DEBUG] Watchdog timer unregistered")
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
+
     global websocket_client, websocket_thread_loop
     if websocket_client and websocket_thread_loop:
         asyncio.run_coroutine_threadsafe(websocket_client.close(), websocket_thread_loop)

@@ -98,6 +98,11 @@
     // ▼▼▼ [추가] 수량산출부재 선택 추적 변수 ▼▼▼
     let selectedQuantityMemberIdsInViewer = new Set();
     let currentDisplayedQMs = []; // 현재 표시중인 수량산출부재 목록
+
+    // ▼▼▼ [추가] 렌더링 모드 관리 변수 ▼▼▼
+    let renderingMode = 'realistic'; // 'realistic', 'white', 'wireframe', 'material'
+    let shadowsEnabled = false;
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     window.initThreeDViewer = function() {
@@ -1014,6 +1019,74 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+        // ▼▼▼ [추가] 렌더링 모드 버튼 이벤트 ▼▼▼
+        const realisticModeBtn = document.getElementById('realistic-mode-btn');
+        const whiteModeBtn = document.getElementById('white-mode-btn');
+        const wireframeModeBtn = document.getElementById('wireframe-mode-btn');
+        const materialModeBtn = document.getElementById('material-mode-btn');
+        const edgesModeBtn = document.getElementById('edges-mode-btn');
+        const sunlightModeBtn = document.getElementById('sunlight-mode-btn');
+        const shadowToggleBtn = document.getElementById('shadow-toggle-btn');
+
+        // 렌더링 모드 버튼 active 상태 전환 헬퍼
+        function setActiveRenderingMode(activeBtn) {
+            [realisticModeBtn, whiteModeBtn, wireframeModeBtn, materialModeBtn, edgesModeBtn, sunlightModeBtn].forEach(btn => {
+                if (btn) btn.classList.remove('active');
+            });
+            if (activeBtn) activeBtn.classList.add('active');
+        }
+
+        if (realisticModeBtn) {
+            realisticModeBtn.onclick = function() {
+                window.setRenderingMode('realistic');
+                setActiveRenderingMode(realisticModeBtn);
+            };
+        }
+
+        if (whiteModeBtn) {
+            whiteModeBtn.onclick = function() {
+                window.setRenderingMode('white');
+                setActiveRenderingMode(whiteModeBtn);
+            };
+        }
+
+        if (wireframeModeBtn) {
+            wireframeModeBtn.onclick = function() {
+                window.setRenderingMode('wireframe');
+                setActiveRenderingMode(wireframeModeBtn);
+            };
+        }
+
+        if (materialModeBtn) {
+            materialModeBtn.onclick = function() {
+                window.setRenderingMode('material');
+                setActiveRenderingMode(materialModeBtn);
+            };
+        }
+
+        if (edgesModeBtn) {
+            edgesModeBtn.onclick = function() {
+                window.setRenderingMode('edges');
+                setActiveRenderingMode(edgesModeBtn);
+            };
+        }
+
+        if (sunlightModeBtn) {
+            sunlightModeBtn.onclick = function() {
+                window.setRenderingMode('sunlight');
+                setActiveRenderingMode(sunlightModeBtn);
+            };
+        }
+
+        if (shadowToggleBtn) {
+            shadowToggleBtn.onclick = function() {
+                shadowsEnabled = !shadowsEnabled;
+                window.toggleShadows(shadowsEnabled);
+                shadowToggleBtn.textContent = shadowsEnabled ? '그림자 ON' : '그림자 OFF';
+            };
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         // Split mode controls
         const splitControlsPanel = document.getElementById('split-controls-panel');
         const splitAxisSelect = document.getElementById('split-axis-select');
@@ -1559,21 +1632,22 @@
                 geometry.computeVertexNormals();
                 geometry.normalizeNormals();
 
-                // Create material with light gray color and flat shading
+                // ▼▼▼ [수정] 초기 재질은 임시로 생성 (나중에 렌더링 모드 적용) ▼▼▼
                 const material = new THREE.MeshStandardMaterial({
-                    color: 0xcccccc,        // Light gray
+                    color: 0xcccccc,        // Light gray (임시)
                     metalness: 0.0,
-                    roughness: 1.0,         // High roughness for more uniform appearance
-                    flatShading: true,      // Flat shading to eliminate diagonal shading artifacts
+                    roughness: 1.0,
+                    flatShading: false,
                     side: THREE.DoubleSide
                 });
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 // Create mesh and add to scene
                 const mesh = new THREE.Mesh(geometry, material);
 
                 // Enable shadow casting and receiving
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
+                mesh.castShadow = shadowsEnabled;
+                mesh.receiveShadow = shadowsEnabled;
 
                 // Add only boundary edges (external outline, no internal triangulation)
                 const boundaryGeometry = getBoundaryEdges(geometry);
@@ -1637,14 +1711,18 @@
                         splitAxis: bimObject.splitAxis,
                         splitPosition: bimObject.splitPosition,
                         splitPartType: bimObject.splitPartType,
-                        originalColor: new THREE.Color(0xcccccc)  // 기본 색상 저장
+                        originalColor: new THREE.Color(0xcccccc),  // 기본 색상 저장
+                        rawData: bimObject.raw_data,  // ▼▼▼ [추가] 렌더링 모드용 ▼▼▼
+                        elementUniqueId: bimObject.element_unique_id  // ▼▼▼ [추가] 렌더링 모드용 ▼▼▼
                     };
                 } else {
                     // BIM 원본 객체인 경우
                     mesh.userData = {
                         bimObjectId: bimObject.id || index,
                         rawElementId: bimObject.id || index,  // Same as bimObjectId, used for split DB storage
-                        geometry_volume: bimObject.geometry_volume  // DB volume for original BIM object
+                        geometry_volume: bimObject.geometry_volume,  // DB volume for original BIM object
+                        rawData: bimObject.raw_data,  // ▼▼▼ [추가] 렌더링 모드용 ▼▼▼
+                        elementUniqueId: bimObject.element_unique_id  // ▼▼▼ [추가] 렌더링 모드용 ▼▼▼
                     };
                 }
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -1673,6 +1751,13 @@
         geometryLoaded = true;
         console.log(`[3D Viewer] BIM geometry loaded. ${geometryData.length} objects processed.`);
         console.log(`[3D Viewer] Total objects in scene:`, scene.children.length);
+
+        // ▼▼▼ [추가] 로드 완료 후 전체 씬에 렌더링 모드 적용 ▼▼▼
+        if (typeof applyRenderingModeToScene === 'function') {
+            applyRenderingModeToScene();
+            console.log('[3D Viewer] Rendering mode applied to all loaded objects');
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Center camera on loaded geometry
         centerCameraOnGeometry();
@@ -1962,21 +2047,15 @@
 
             // Update hover state
             if (newHoveredObject !== hoveredObject) {
-                // Clear old hover
+                // Clear old hover - 렌더링 모드 재적용
                 if (hoveredObject && !selectedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
-                    if (originalMaterials.has(hoveredObject)) {
-                        hoveredObject.material = originalMaterials.get(hoveredObject);
-                        hoveredObject.material.needsUpdate = true;
-                    }
+                    // ▼▼▼ [수정] 렌더링 모드를 재적용하여 설정된 색상 유지 ▼▼▼
+                    applyRenderingModeToMesh(hoveredObject);
                 }
 
                 // Apply new hover
                 hoveredObject = newHoveredObject;
                 if (hoveredObject && !selectedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
-                    if (!originalMaterials.has(hoveredObject)) {
-                        originalMaterials.set(hoveredObject, hoveredObject.material);
-                    }
-
                     // Hover highlight - light blue
                     const hoverMaterial = new THREE.MeshStandardMaterial({
                         color: 0x4dd0e1,           // Light cyan
@@ -2000,12 +2079,10 @@
 
     // Pointer leave - clear hover effect when leaving canvas
     function onPointerLeave(event) {
-        // Clear hover effect
+        // Clear hover effect - 렌더링 모드 재적용
         if (hoveredObject && !selectedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
-            if (originalMaterials.has(hoveredObject)) {
-                hoveredObject.material = originalMaterials.get(hoveredObject);
-                hoveredObject.material.needsUpdate = true;
-            }
+            // ▼▼▼ [수정] 렌더링 모드를 재적용하여 설정된 색상 유지 ▼▼▼
+            applyRenderingModeToMesh(hoveredObject);
         }
         hoveredObject = null;
     }
@@ -2090,17 +2167,14 @@
             selectionBox.style.display = 'none';
         }
 
-        // ▼▼▼ [추가] 미리보기 하이라이트 정리 ▼▼▼
+        // ▼▼▼ [수정] 미리보기 하이라이트 정리 - 렌더링 모드 재적용 ▼▼▼
         previewHighlightedObjects.forEach(obj => {
             if (!selectedObjects.includes(obj) && obj !== selectedObject) {
-                if (originalMaterials.has(obj)) {
-                    obj.material = originalMaterials.get(obj);
-                    obj.material.needsUpdate = true;
-                }
+                applyRenderingModeToMesh(obj);
             }
         });
         previewHighlightedObjects = [];
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
 
     // Update selection box UI during drag
@@ -2150,13 +2224,10 @@
         const selMinY = Math.min(dragStart.y, dragCurrent.y);
         const selMaxY = Math.max(dragStart.y, dragCurrent.y);
 
-        // Clear previous preview highlights
+        // Clear previous preview highlights - 렌더링 모드 재적용
         previewHighlightedObjects.forEach(obj => {
             if (!selectedObjects.includes(obj) && obj !== selectedObject) {
-                if (originalMaterials.has(obj)) {
-                    obj.material = originalMaterials.get(obj);
-                    obj.material.needsUpdate = true;
-                }
+                applyRenderingModeToMesh(obj);
             }
         });
         previewHighlightedObjects = [];
@@ -2692,10 +2763,15 @@
         displayCostItemsRetryCount.delete(object);
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // Store original material
+        // ▼▼▼ [수정] 하이라이트 재질 적용 전에 현재 렌더링 모드로 재질 복원 ▼▼▼
+        // 선택 시점에 렌더링 모드에 맞는 재질을 먼저 적용 (이전 하이라이트 제거)
+        applyRenderingModeToMesh(object);
+
+        // 이제 현재 렌더링 모드의 재질을 originalMaterials에 저장
         if (!originalMaterials.has(object)) {
-            originalMaterials.set(object, object.material);
+            originalMaterials.set(object, object.material.clone());
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Create new highlight material - orange semi-transparent
         const highlightMaterial = new THREE.MeshStandardMaterial({
@@ -2815,15 +2891,18 @@
     function deselectObject() {
         if (!selectedObject) return;
 
-        // Restore original material
-        if (originalMaterials.has(selectedObject)) {
-            selectedObject.material = originalMaterials.get(selectedObject);
-            selectedObject.material.needsUpdate = true;
-            originalMaterials.delete(selectedObject); // IMPORTANT: Remove from map after restoration
-        }
+        // ▼▼▼ [수정] 렌더링 모드를 재적용하여 설정된 색상 유지 ▼▼▼
+        const objectToDeselect = selectedObject;
 
-        console.log("[3D Viewer] Object deselected");
+        // 먼저 변수들을 클리어 (이렇게 해야 applyRenderingModeToMesh에서 isSelected가 false가 됨)
         selectedObject = null;
+        selectedObjects = []; // selectedObjects 배열도 클리어
+
+        // 이제 렌더링 모드 재적용
+        applyRenderingModeToMesh(objectToDeselect);
+
+        console.log("[3D Viewer] Object deselected - rendering mode restored");
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Disable split button
         const splitBtn = document.getElementById('split-object-btn');
@@ -2917,27 +2996,27 @@
     function deselectAllObjects() {
         if (selectedObjects.length === 0 && !selectedObject) return;
 
-        // Deselect all objects in array
-        selectedObjects.forEach(object => {
-            if (originalMaterials.has(object)) {
-                object.material = originalMaterials.get(object);
-                object.material.needsUpdate = true;
-                originalMaterials.delete(object); // IMPORTANT: Remove from map after restoration
-            }
-        });
+        console.log(`[3D Viewer] Deselecting ${selectedObjects.length} objects`);
 
-        // Also deselect single selectedObject if exists
-        if (selectedObject && !selectedObjects.includes(selectedObject)) {
-            if (originalMaterials.has(selectedObject)) {
-                selectedObject.material = originalMaterials.get(selectedObject);
-                selectedObject.material.needsUpdate = true;
-                originalMaterials.delete(selectedObject); // IMPORTANT: Remove from map after restoration
-            }
-        }
+        // ▼▼▼ [수정] 배열을 먼저 복사한 후 클리어하고, 그 다음에 렌더링 모드 재적용 ▼▼▼
+        // 이렇게 해야 applyRenderingModeToMesh에서 isSelected 체크 시 false가 나옴
+        const objectsToDeselect = [...selectedObjects];
+        const singleObjectToDeselect = selectedObject;
 
-        console.log(`[3D Viewer] Deselected ${selectedObjects.length} objects`);
+        // 배열과 변수를 먼저 클리어
         selectedObjects = [];
         selectedObject = null;
+
+        // 이제 렌더링 모드 재적용 (이때 isSelected는 false가 됨)
+        objectsToDeselect.forEach(object => {
+            applyRenderingModeToMesh(object);
+        });
+
+        if (singleObjectToDeselect && !objectsToDeselect.includes(singleObjectToDeselect)) {
+            applyRenderingModeToMesh(singleObjectToDeselect);
+        }
+
+        console.log(`[3D Viewer] Deselected ${objectsToDeselect.length} objects - rendering mode restored`);
 
         // Disable split buttons
         const splitBtn = document.getElementById('split-object-btn');
@@ -3206,21 +3285,52 @@
         html += '</tbody></table>';
         html += '</div>';
 
-        // Basic Information
-        html += '<div class="property-section">';
-        html += '<h4>Basic Information</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">${getDisplayFieldName('Name')}</td><td class="prop-value">${rawData.Name || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${getDisplayFieldName('IfcClass')}</td><td class="prop-value">${rawData.IfcClass || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${getDisplayFieldName('ElementId')}</td><td class="prop-value">${rawData.ElementId || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${getDisplayFieldName('UniqueId')}</td><td class="prop-value">${rawData.UniqueId || 'N/A'}</td></tr>`;
-        html += '</tbody></table>';
-        html += '</div>';
+        // ▼▼▼ [제거] "기본 정보" 섹션 제거 - Attributes에 통합됨 ▼▼▼
+        // Name, IfcClass, ElementId, UniqueId는 이제 Attributes.* 로 평탄화되어 표시됨
+        // ▲▲▲ [제거] 여기까지 ▲▲▲
 
-        // Parameters - with detailed nested rendering
+        // ▼▼▼ [수정] 동적 카테고리 감지 - BIM 도구에서 보낸 모든 평탄화된 필드를 자동 그룹화 ▼▼▼
+        const FIXED_FIELDS = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Parameters', 'TypeParameters', 'System'];
+        const dynamicCategories = {}; // 카테고리명 -> [{key, value}]
+
+        // 모든 raw_data 필드를 순회하면서 동적으로 카테고리 추출
+        for (const [key, value] of Object.entries(rawData)) {
+            // 고정 필드는 스킵 (이미 위에서 또는 아래에서 표시)
+            if (FIXED_FIELDS.includes(key)) {
+                continue;
+            }
+
+            // 평탄화된 필드 감지 (점이 포함된 필드명: "CategoryName.PropertyName")
+            if (key.includes('.')) {
+                const category = key.split('.')[0]; // 첫 번째 점 앞의 카테고리명 추출
+                if (!dynamicCategories[category]) {
+                    dynamicCategories[category] = [];
+                }
+                dynamicCategories[category].push({ key, value });
+            }
+        }
+
+        // 각 동적 카테고리별로 섹션 표시
+        for (const [category, fields] of Object.entries(dynamicCategories)) {
+            if (fields.length > 0) {
+                html += '<div class="property-section">';
+                html += `<h4>${category.replace(/_/g, ' ')}</h4>`;
+                html += '<table class="properties-table"><tbody>';
+                for (const { key, value } of fields) {
+                    const displayName = getDisplayFieldName(key);
+                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">`;
+                    html += renderNestedValue(value, 1);
+                    html += '</td></tr>';
+                }
+                html += '</tbody></table>';
+                html += '</div>';
+            }
+        }
+
+        // Parameters (기존 Revit 데이터와 호환성 유지)
         if (rawData.Parameters && Object.keys(rawData.Parameters).length > 0) {
             html += '<div class="property-section">';
-            html += '<h4>Parameters</h4>';
+            html += '<h4>BIM 파라메터 (BIM.Parameters.*)</h4>';
             html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(rawData.Parameters)) {
                 // Skip Geometry parameter (too large)
@@ -3235,10 +3345,10 @@
             html += '</div>';
         }
 
-        // Type Parameters - with detailed nested rendering
+        // Type Parameters (기존 Revit 데이터와 호환성 유지)
         if (rawData.TypeParameters && Object.keys(rawData.TypeParameters).length > 0) {
             html += '<div class="property-section">';
-            html += '<h4>Type Parameters</h4>';
+            html += '<h4>BIM 타입 파라메터 (BIM.TypeParameters.*)</h4>';
             html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(rawData.TypeParameters)) {
                 const displayName = getDisplayFieldName(`TypeParameters.${key}`);
@@ -3250,20 +3360,24 @@
             html += '</div>';
         }
 
-        // Relationships
-        html += '<div class="property-section">';
-        html += '<h4>Relationships</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">${getDisplayFieldName('RelatingType')}</td><td class="prop-value">${rawData.RelatingType || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${getDisplayFieldName('SpatialContainer')}</td><td class="prop-value">${rawData.SpatialContainer || 'N/A'}</td></tr>`;
-        if (rawData.Aggregates) {
-            html += `<tr><td class="prop-name">${getDisplayFieldName('Aggregates')}</td><td class="prop-value">${rawData.Aggregates}</td></tr>`;
+        // System (Geometry 등)
+        if (rawData.System && Object.keys(rawData.System).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4>시스템 (BIM.System.*)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            for (const [key, value] of Object.entries(rawData.System)) {
+                // Skip Geometry parameter (too large)
+                if (key === 'Geometry') continue;
+
+                const displayName = getDisplayFieldName(`System.${key}`);
+                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">`;
+                html += renderNestedValue(value, 1);
+                html += '</td></tr>';
+            }
+            html += '</tbody></table>';
+            html += '</div>';
         }
-        if (rawData.Nests) {
-            html += `<tr><td class="prop-name">${getDisplayFieldName('Nests')}</td><td class="prop-value">${rawData.Nests}</td></tr>`;
-        }
-        html += '</tbody></table>';
-        html += '</div>';
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         propertiesContent.innerHTML = html;
     }
@@ -11448,6 +11562,263 @@
             console.warn('[3D Viewer API] No meshes found to select');
         }
     };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [추가] 렌더링 모드 전환 함수들 ▼▼▼
+
+    // 렌더링 모드 변경
+    window.setRenderingMode = function(mode) {
+        renderingMode = mode;
+        applyRenderingModeToScene();
+        console.log(`[3D Viewer] Rendering mode changed to: ${mode}`);
+    };
+
+    // 그림자 토글
+    window.toggleShadows = function(enabled) {
+        shadowsEnabled = enabled;
+        if (renderer) {
+            renderer.shadowMap.enabled = enabled;
+        }
+        if (dataMgmtRenderer) {
+            dataMgmtRenderer.shadowMap.enabled = enabled;
+        }
+        if (simRenderer) {
+            simRenderer.shadowMap.enabled = enabled;
+        }
+        applyRenderingModeToScene();
+        console.log(`[3D Viewer] Shadows ${enabled ? 'enabled' : 'disabled'}`);
+    };
+
+    // 모든 메시에 렌더링 모드 적용
+    window.applyRenderingModeToScene = function() {
+        console.log('[3D Viewer] applyRenderingModeToScene called, current mode:', renderingMode);
+        if (!scene) {
+            console.warn('[3D Viewer] Scene not available');
+            return;
+        }
+
+        let meshCount = 0;
+        let totalObjects = 0;
+        scene.traverse((object) => {
+            totalObjects++;
+            // BIM 객체 mesh만 처리 (bimObjectId 또는 rawElementId가 있는 경우)
+            if (object.isMesh && (object.userData.bimObjectId || object.userData.rawElementId || object.userData.elementUniqueId)) {
+                applyRenderingModeToMesh(object);
+                meshCount++;
+            }
+        });
+        console.log('[3D Viewer] Applied rendering mode to', meshCount, 'meshes out of', totalObjects, 'total objects in main scene');
+
+        // 데이터 관리 씬도 업데이트
+        if (dataMgmtScene) {
+            let dataMgmtMeshCount = 0;
+            dataMgmtScene.traverse((object) => {
+                if (object.isMesh && (object.userData.bimObjectId || object.userData.rawElementId || object.userData.elementUniqueId)) {
+                    applyRenderingModeToMesh(object);
+                    dataMgmtMeshCount++;
+                }
+            });
+            console.log('[3D Viewer] Applied rendering mode to', dataMgmtMeshCount, 'meshes in data mgmt scene');
+        }
+
+        // 시뮬레이션 씬도 업데이트
+        if (simScene) {
+            let simMeshCount = 0;
+            simScene.traverse((object) => {
+                if (object.isMesh && (object.userData.bimObjectId || object.userData.rawElementId || object.userData.elementUniqueId)) {
+                    applyRenderingModeToMesh(object);
+                    simMeshCount++;
+                }
+            });
+            console.log('[3D Viewer] Applied rendering mode to', simMeshCount, 'meshes in sim scene');
+        }
+    }
+
+    // 개별 메시에 렌더링 모드 적용
+    function applyRenderingModeToMesh(mesh) {
+        if (!mesh.isMesh) return;
+
+        // 원본 재질 정보 저장 (처음 한 번만)
+        if (!originalMaterials.has(mesh.uuid) && mesh.material) {
+            originalMaterials.set(mesh.uuid, mesh.material.clone());
+        }
+
+        // 선택된 객체는 하이라이트 유지
+        const isSelected = selectedObjects.includes(mesh) ||
+                          dataMgmtSelectedObjects.includes(mesh) ||
+                          simSelectedObjects.includes(mesh);
+
+        // [디버그 로그 제거 - 성능 향상]
+        // console.log('[3D Viewer] applyRenderingModeToMesh - mesh:', mesh.userData.bimObjectId, 'isSelected:', isSelected, 'mode:', renderingMode);
+
+        switch (renderingMode) {
+            case 'realistic':
+                // 원본 색상 적용
+                applyRealisticMaterial(mesh, isSelected);
+                break;
+
+            case 'white':
+                // 모두 하얀색
+                mesh.material = new THREE.MeshStandardMaterial({
+                    color: isSelected ? 0xffff00 : 0xffffff,
+                    flatShading: false,
+                    side: THREE.DoubleSide
+                });
+                mesh.material.needsUpdate = true;
+                break;
+
+            case 'wireframe':
+                // 와이어프레임 모드
+                const wireColor = isSelected ? 0xffff00 : 0x000000;
+                mesh.material = new THREE.MeshBasicMaterial({
+                    color: wireColor,
+                    wireframe: true,
+                    side: THREE.DoubleSide
+                });
+                mesh.material.needsUpdate = true;
+                break;
+
+            case 'material':
+                // 재질별 색상 (재질 이름 기반)
+                applyMaterialBasedColor(mesh, isSelected);
+                break;
+
+            case 'edges':
+                // 테두리선 모드 (흰색 면 + 검은색 테두리)
+                mesh.material = new THREE.MeshStandardMaterial({
+                    color: isSelected ? 0xffff00 : 0xffffff,
+                    flatShading: false,
+                    side: THREE.DoubleSide,
+                    polygonOffset: true,
+                    polygonOffsetFactor: 1,
+                    polygonOffsetUnits: 1
+                });
+                mesh.material.needsUpdate = true;
+
+                // 테두리 라인 추가
+                if (!mesh.userData.edgesLine) {
+                    const edges = new THREE.EdgesGeometry(mesh.geometry);
+                    const lineMaterial = new THREE.LineBasicMaterial({
+                        color: isSelected ? 0xffff00 : 0x000000,
+                        linewidth: 1
+                    });
+                    const line = new THREE.LineSegments(edges, lineMaterial);
+                    line.userData.isEdgeLine = true;
+                    mesh.add(line);
+                    mesh.userData.edgesLine = line;
+                } else {
+                    // 기존 라인 색상 업데이트
+                    mesh.userData.edgesLine.material.color.setHex(isSelected ? 0xffff00 : 0x000000);
+                }
+                break;
+
+            case 'sunlight':
+                // 태양광 그림자 모드 (밝은 음영)
+                mesh.material = new THREE.MeshPhongMaterial({
+                    color: isSelected ? 0xffff00 : 0xffffff,
+                    flatShading: false,
+                    side: THREE.DoubleSide,
+                    shininess: 10,
+                    specular: 0x222222
+                });
+                mesh.material.needsUpdate = true;
+                break;
+
+            default:
+                // 기본값 - realistic 모드
+                applyRealisticMaterial(mesh, isSelected);
+                break;
+        }
+
+        // 테두리선 모드가 아닌 경우 기존 테두리 제거
+        if (renderingMode !== 'edges' && mesh.userData.edgesLine) {
+            mesh.remove(mesh.userData.edgesLine);
+            mesh.userData.edgesLine.geometry.dispose();
+            mesh.userData.edgesLine.material.dispose();
+            delete mesh.userData.edgesLine;
+        }
+
+        // 그림자 설정
+        mesh.castShadow = shadowsEnabled;
+        mesh.receiveShadow = shadowsEnabled;
+    }
+
+    // 실제 색상 적용 (IFC에서 가져온 색상)
+    function applyRealisticMaterial(mesh, isSelected) {
+        const rawData = mesh.userData.rawData;
+        let color = 0x808080; // 기본 회색
+
+        // System.Geometry.materials에서 색상 정보 추출
+        if (rawData && rawData.System && rawData.System.Geometry && rawData.System.Geometry.materials) {
+            const materials = rawData.System.Geometry.materials;
+            if (materials.diffuse_color && Array.isArray(materials.diffuse_color) && materials.diffuse_color.length >= 3) {
+                const r = materials.diffuse_color[0];
+                const g = materials.diffuse_color[1];
+                const b = materials.diffuse_color[2];
+                color = new THREE.Color(r, g, b).getHex();
+            }
+        }
+
+        // 선택된 경우 노란색 하이라이트
+        if (isSelected) {
+            color = 0xffff00;
+        }
+
+        mesh.material = new THREE.MeshStandardMaterial({
+            color: color,
+            flatShading: false,
+            side: THREE.DoubleSide,
+            metalness: 0.1,
+            roughness: 0.8
+        });
+        mesh.material.needsUpdate = true;
+    }
+
+    // 재질 이름 기반 색상 적용
+    function applyMaterialBasedColor(mesh, isSelected) {
+        const rawData = mesh.userData.rawData;
+        let color = 0x808080; // 기본 회색
+
+        // System.Geometry.materials.name에서 재질 이름 추출
+        if (rawData && rawData.System && rawData.System.Geometry && rawData.System.Geometry.materials) {
+            const materialName = rawData.System.Geometry.materials.name || '';
+
+            // 재질 이름 기반 색상 매핑
+            const materialColors = {
+                'Concrete': 0x888888,
+                'Steel': 0x555555,
+                'Glass': 0x88ccff,
+                'Wood': 0x8B4513,
+                'Brick': 0xB22222,
+                'Aluminum': 0xC0C0C0,
+                'Gypsum': 0xF5F5DC,
+                'Default': 0x808080
+            };
+
+            // 부분 문자열 매칭
+            for (const [key, value] of Object.entries(materialColors)) {
+                if (materialName.toLowerCase().includes(key.toLowerCase())) {
+                    color = value;
+                    break;
+                }
+            }
+        }
+
+        // 선택된 경우 노란색 하이라이트
+        if (isSelected) {
+            color = 0xffff00;
+        }
+
+        mesh.material = new THREE.MeshStandardMaterial({
+            color: color,
+            flatShading: false,
+            side: THREE.DoubleSide,
+            metalness: 0.3,
+            roughness: 0.7
+        });
+        mesh.material.needsUpdate = true;
+    }
+
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 })();

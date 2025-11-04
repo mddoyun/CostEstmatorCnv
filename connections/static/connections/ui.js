@@ -12,13 +12,22 @@ function getDisplayFieldName(internalField) {
         return `BIM.System.${internalField}`;
     }
 
-    // BIM.TypeParameters.* - 타입 파라미터
+    // ▼▼▼ [수정] 동적 평탄화된 필드 감지 (점이 포함된 모든 필드) ▼▼▼
+    // BIM 도구에서 보낸 모든 평탄화된 필드를 자동 감지
+    // 예: Attributes.Description, PropertySet.Pset_WallCommon__IsExternal
+    if (internalField.includes('.')) {
+        // 이미 평탄화된 필드는 BIM. 접두어만 추가
+        return `BIM.${internalField}`;
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    // BIM.TypeParameters.* - 타입 파라미터 (하위 호환성)
     if (internalField.startsWith('TypeParameters.')) {
         const subKey = internalField.substring(15);
         return `BIM.TypeParameters.${subKey}`;
     }
 
-    // BIM.Attributes.* - IFC raw_data 직접 속성 (Blender/IFC 전용)
+    // BIM.Attributes.* - IFC raw_data 직접 속성 (하위 호환성)
     const ifcAttributeProps = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description',
                                 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
     if (ifcAttributeProps.includes(internalField)) {
@@ -39,23 +48,21 @@ function getInternalFieldName(displayField) {
         return displayField;
     }
 
-    // BIM.System.* - Cost Estimator 자체 속성
-    if (displayField.startsWith('BIM.System.')) {
-        return displayField.substring(11); // 'BIM.System.' 제거
+    // ▼▼▼ [수정] 동적 평탄화된 필드 역변환 ▼▼▼
+    // BIM.Category.Property 형식을 Category.Property로 변환
+    // 점이 2개 이상 포함되어 있으면 평탄화된 필드로 간주
+    if (displayField.startsWith('BIM.') && displayField.split('.').length >= 3) {
+        return displayField.substring(4); // 'BIM.' 제거
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // BIM.TypeParameters.*
+    // BIM.TypeParameters.* (하위 호환성)
     if (displayField.startsWith('BIM.TypeParameters.')) {
         const subKey = displayField.substring(19); // 'BIM.TypeParameters.' 제거
         return `TypeParameters.${subKey}`;
     }
 
-    // BIM.Attributes.* - IFC raw_data 직접 속성
-    if (displayField.startsWith('BIM.Attributes.')) {
-        return displayField.substring(15); // 'BIM.Attributes.' 제거
-    }
-
-    // BIM.Parameters.*
+    // BIM.Parameters.* (하위 호환성)
     if (displayField.startsWith('BIM.Parameters.')) {
         return displayField.substring(15); // 'BIM.Parameters.' 제거
     }
@@ -196,6 +203,32 @@ function populateFieldSelection() {
 
     restoreCheckedState('#data-management', dmCheckedFields);
     restoreCheckedState('#space-management', smCheckedFields);
+
+    // ▼▼▼ [추가] 기본값으로 BIM.System.id 체크 (처음 로드 시에만) ▼▼▼
+    if (dmCheckedFields.length === 0 && smCheckedFields.length === 0) {
+        // 아무것도 체크되지 않은 경우 (첫 로드)
+        const defaultCheckbox = document.querySelector(
+            '#data-management .field-checkbox[value="BIM.System.id"]'
+        );
+        if (defaultCheckbox) {
+            defaultCheckbox.checked = true;
+        }
+    }
+
+    // ▼▼▼ [추가] 체크박스 실시간 변경 이벤트 리스너 ▼▼▼
+    const attachCheckboxListeners = (contextSelector, tableContainerId, contextPrefix) => {
+        const checkboxes = document.querySelectorAll(`${contextSelector} .field-checkbox`);
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                // 체크박스 변경 시 즉시 테이블 업데이트
+                renderDataTable(tableContainerId, contextPrefix);
+            });
+        });
+    };
+
+    attachCheckboxListeners('#data-management', 'data-management-data-table-container', 'data-management');
+    attachCheckboxListeners('#space-management', 'space-management-data-table-container', 'space-management');
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // 5. 기존 로직: 모든 그룹핑 드롭다운 메뉴를 업데이트합니다 - 표시명 적용
     const allKeysDisplayNames = [...systemKeys, ...sortedRevitKeys]
@@ -4179,18 +4212,50 @@ function renderBimPropertiesTable(contextPrefix) {
     html += '</tbody></table>';
     html += '</div>';
 
-    // Basic Information
-    html += '<div class="property-section">';
-    html += '<h4>BIM 기본 속성 (BIM.Attributes.*)</h4>';
-    html += '<table class="properties-table"><tbody>';
-    html += `<tr><td class="prop-name">${getDisplayFieldName('Name')}</td><td class="prop-value">${rawData.Name || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">${getDisplayFieldName('IfcClass')}</td><td class="prop-value">${rawData.IfcClass || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">${getDisplayFieldName('ElementId')}</td><td class="prop-value">${rawData.ElementId || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">${getDisplayFieldName('UniqueId')}</td><td class="prop-value">${rawData.UniqueId || 'N/A'}</td></tr>`;
-    html += '</tbody></table>';
-    html += '</div>';
+    // ▼▼▼ [제거] "기본 정보" 섹션 제거 - Attributes에 통합됨 ▼▼▼
+    // Name, IfcClass, ElementId, UniqueId는 이제 Attributes.* 로 평탄화되어 표시됨
+    // ▲▲▲ [제거] 여기까지 ▲▲▲
 
-    // Parameters - with detailed nested rendering
+    // ▼▼▼ [수정] 동적 카테고리 감지 - BIM 도구에서 보낸 모든 평탄화된 필드를 자동 그룹화 ▼▼▼
+    const FIXED_FIELDS = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Parameters', 'TypeParameters', 'System'];
+    const dynamicCategories = {}; // 카테고리명 -> [{key, value}]
+
+    // 모든 raw_data 필드를 순회하면서 동적으로 카테고리 추출
+    for (const [key, value] of Object.entries(rawData)) {
+        // 고정 필드는 스킵 (이미 위에서 또는 아래에서 표시)
+        if (FIXED_FIELDS.includes(key)) {
+            continue;
+        }
+
+        // 평탄화된 필드 감지 (점이 포함된 필드명: "CategoryName.PropertyName")
+        if (key.includes('.')) {
+            const category = key.split('.')[0]; // 첫 번째 점 앞의 카테고리명 추출
+            if (!dynamicCategories[category]) {
+                dynamicCategories[category] = [];
+            }
+            dynamicCategories[category].push({ key, value });
+        }
+    }
+
+    // 각 동적 카테고리별로 섹션 표시
+    for (const [category, fields] of Object.entries(dynamicCategories)) {
+        if (fields.length > 0) {
+            html += '<div class="property-section">';
+            html += `<h4>${category.replace(/_/g, ' ')}</h4>`;
+            html += '<table class="properties-table"><tbody>';
+            for (const { key, value } of fields) {
+                const displayName = getDisplayFieldName(key);
+                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">`;
+                html += renderNestedValue(value, 1);
+                html += '</td></tr>';
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    // Parameters (기존 Revit 데이터와 호환성 유지)
     if (rawData.Parameters && Object.keys(rawData.Parameters).length > 0) {
         html += '<div class="property-section">';
         html += '<h4>BIM 파라메터 (BIM.Parameters.*)</h4>';
@@ -4208,7 +4273,7 @@ function renderBimPropertiesTable(contextPrefix) {
         html += '</div>';
     }
 
-    // TypeParameters
+    // TypeParameters (기존 Revit 데이터와 호환성 유지)
     if (rawData.TypeParameters && Object.keys(rawData.TypeParameters).length > 0) {
         html += '<div class="property-section">';
         html += '<h4>BIM 타입 파라메터 (BIM.TypeParameters.*)</h4>';
@@ -4223,20 +4288,23 @@ function renderBimPropertiesTable(contextPrefix) {
         html += '</div>';
     }
 
-    // Relationships
-    html += '<div class="property-section">';
-    html += '<h4>Relationships</h4>';
-    html += '<table class="properties-table"><tbody>';
-    html += `<tr><td class="prop-name">${getDisplayFieldName('RelatingType')}</td><td class="prop-value">${rawData.RelatingType || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">${getDisplayFieldName('SpatialContainer')}</td><td class="prop-value">${rawData.SpatialContainer || 'N/A'}</td></tr>`;
-    if (rawData.Aggregates) {
-        html += `<tr><td class="prop-name">${getDisplayFieldName('Aggregates')}</td><td class="prop-value">${rawData.Aggregates}</td></tr>`;
+    // System (Geometry 등)
+    if (rawData.System && Object.keys(rawData.System).length > 0) {
+        html += '<div class="property-section">';
+        html += '<h4>시스템 (BIM.System.*)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        for (const [key, value] of Object.entries(rawData.System)) {
+            // Skip Geometry parameter (too large)
+            if (key === 'Geometry') continue;
+
+            const displayName = getDisplayFieldName(`System.${key}`);
+            html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">`;
+            html += renderNestedValue(value, 1);
+            html += '</td></tr>';
+        }
+        html += '</tbody></table>';
+        html += '</div>';
     }
-    if (rawData.Nests) {
-        html += `<tr><td class="prop-name">${getDisplayFieldName('Nests')}</td><td class="prop-value">${rawData.Nests}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    html += '</div>';
 
     container.innerHTML = html;
     console.log(

@@ -10,6 +10,52 @@ from django.db.models import Count
 from .models import Project, RawElement, QuantityClassificationTag, QuantityMember, AIModel, SplitElement, CostItem
 # ▲▲▲ [수정] 여기까지 ▲▲▲
 import asyncio
+
+# --- 데이터 평탄화 헬퍼 함수 ---
+def flatten_bim_data(element_data):
+    """
+    BIM 도구에서 전송한 데이터를 평탄화하여 계층적 필드명을 생성합니다.
+
+    고정 필드 (평탄화하지 않음):
+    - Name, IfcClass, ElementId, UniqueId (기본 식별자)
+    - System (웹 시스템 속성 - Geometry 포함)
+
+    동적 필드 (평탄화):
+    - BIM 도구에서 보낸 모든 중첩 구조를 재귀적으로 평탄화
+    - 예: Attributes.Description, Parameters.Height, PropertySet.Pset_WallCommon__IsExternal
+    """
+    flattened = {}
+
+    # 평탄화하지 않을 고정 필드들
+    FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'System'}
+
+    def flatten_dict(data, prefix=""):
+        """재귀적으로 딕셔너리를 평탄화"""
+        for key, value in data.items():
+            new_key = f"{prefix}.{key}" if prefix else key
+
+            # Geometry는 평탄화하지 않고 그대로 유지 (렌더링용)
+            if key == 'Geometry' and isinstance(value, dict):
+                flattened[new_key] = value
+                continue
+
+            if isinstance(value, dict):
+                # 딕셔너리면 재귀적으로 평탄화
+                flatten_dict(value, new_key)
+            elif isinstance(value, list):
+                # 리스트인 경우, JSON 문자열로 변환하여 저장
+                flattened[new_key] = json.dumps(value)
+            else:
+                # 최종 값에 도달
+                flattened[new_key] = value
+
+    # 고정 필드가 아닌 모든 필드를 동적으로 평탄화
+    for key, value in element_data.items():
+        if key not in FIXED_FIELDS and isinstance(value, dict):
+            flatten_dict(value, key)
+
+    return flattened
+
 # --- 데이터 직렬화 헬퍼 함수들 ---
 def serialize_tags(tags):
     # 디버깅: 태그 직렬화 확인
@@ -351,14 +397,38 @@ class RevitConsumer(AsyncWebsocketConsumer):
             for item in parsed_data:
                 if not item or 'UniqueId' not in item: continue
                 uid = item['UniqueId']
+
+                # ▼▼▼ [수정] 동적 평탄화 처리 (BIM 도구에 구애받지 않음) ▼▼▼
+                flattened_data = flatten_bim_data(item)
+
+                # 고정 필드만 유지하고 나머지 중첩 객체는 제거 (이미 평탄화됨)
+                # FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'System'}
+                FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'System'}
+
+                # 고정 필드와 평탄화된 데이터만 유지
+                processed_item = {k: v for k, v in item.items() if k in FIXED_FIELDS}
+                processed_item.update(flattened_data)
+                # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                # ▼▼▼ [추가] 3D 뷰어 호환성: System.Geometry를 Parameters.Geometry로도 복사 ▼▼▼
+                if 'System' in processed_item and isinstance(processed_item['System'], dict):
+                    if 'Geometry' in processed_item['System']:
+                        # Parameters 필드가 없으면 생성
+                        if 'Parameters' not in processed_item:
+                            processed_item['Parameters'] = {}
+                        # System.Geometry를 Parameters.Geometry로 복사 (3D 뷰어용)
+                        processed_item['Parameters']['Geometry'] = processed_item['System']['Geometry']
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 if uid in existing_elements_map:
                     elem = existing_elements_map[uid]
                     # [개선] raw_data가 실제로 변경되었는지 확인 후 업데이트 목록에 추가 (선택 사항)
-                    if elem.raw_data != item:
-                        elem.raw_data = item
+                    if elem.raw_data != processed_item:
+                        elem.raw_data = processed_item
                         to_update.append(elem)
                 else:
-                    to_create.append(RawElement(project=project, element_unique_id=uid, raw_data=item))
+                    to_create.append(RawElement(project=project, element_unique_id=uid, raw_data=processed_item))
 
             if to_update:
                 updated_ids = [el.id for el in to_update] # 디버깅용

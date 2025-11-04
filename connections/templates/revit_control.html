@@ -207,6 +207,15 @@
                         <div style="background: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
                             <h2 style="font-size: 20px; margin: 0 0 15px 0; color: #333;">프로젝트 관리</h2>
 
+                            <!-- 프로젝트 생성 -->
+                            <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                                <input type="text" id="home-new-project-name" placeholder="새 프로젝트 이름..." style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                                <button id="home-create-project-btn" style="padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap;">
+                                    ➕ 새 프로젝트
+                                </button>
+                            </div>
+
+                            <!-- 프로젝트 관리 버튼 -->
                             <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
                                 <button id="home-import-project-btn" style="padding: 8px 16px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
                                     📥 프로젝트 가져오기
@@ -2996,7 +3005,7 @@
 
             const leftBottom = document.createElement('div');
             leftBottom.id = 'split-left-bottom';
-            leftBottom.style.cssText = 'flex: 0 0 450px; min-height: 150px; display: flex; flex-direction: column; overflow: hidden;';
+            leftBottom.style.cssText = 'flex: 1; min-height: 150px; display: flex; flex-direction: column; overflow: hidden;';
 
             // Create vertical splitter between top and bottom
             const verticalSplitter = document.createElement('div');
