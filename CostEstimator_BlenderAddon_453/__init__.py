@@ -270,13 +270,18 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                         materials['style_name'] = surface_style.Name
 
                 # Material name 추출 (IfcMaterial 관계에서)
+                # 그리고 Material → MaterialDefinitionRepresentation → StyledItem → SurfaceStyle 경로 탐색
                 if hasattr(element, 'HasAssociations'):
                     for association in element.HasAssociations:
                         if association.is_a('IfcRelAssociatesMaterial'):
                             material = association.RelatingMaterial
                             if material:
+                                # Material 객체 저장 (나중에 스타일 추출에 사용)
+                                actual_material = None
+
                                 if material.is_a('IfcMaterial'):
                                     materials['name'] = material.Name or 'Unknown'
+                                    actual_material = material
                                 elif material.is_a('IfcMaterialLayerSetUsage'):
                                     if hasattr(material, 'ForLayerSet') and material.ForLayerSet:
                                         layer_set = material.ForLayerSet
@@ -285,6 +290,57 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                             first_layer = layer_set.MaterialLayers[0]
                                             if hasattr(first_layer, 'Material') and first_layer.Material:
                                                 materials['name'] = first_layer.Material.Name or 'Unknown'
+                                                actual_material = first_layer.Material
+
+                                # ▼▼▼ Material에서 Style 정보 추출 (Material → MaterialDefinitionRepresentation 경로) ▼▼▼
+                                if actual_material and hasattr(actual_material, 'HasRepresentation'):
+                                    for mat_rep in actual_material.HasRepresentation:
+                                        if mat_rep.is_a('IfcMaterialDefinitionRepresentation'):
+                                            for representation in mat_rep.Representations:
+                                                if representation.is_a('IfcStyledRepresentation'):
+                                                    for item in representation.Items:
+                                                        if item.is_a('IfcStyledItem'):
+                                                            # StyledItem에서 Styles 추출
+                                                            if hasattr(item, 'Styles') and item.Styles:
+                                                                for style_select in item.Styles:
+                                                                    if style_select.is_a('IfcSurfaceStyle'):
+                                                                        # Surface Style 이름 추출
+                                                                        if hasattr(style_select, 'Name') and style_select.Name:
+                                                                            materials['style_name'] = style_select.Name
+
+                                                                        # Surface Style의 Styles 리스트에서 색상/투명도 추출
+                                                                        if hasattr(style_select, 'Styles') and style_select.Styles:
+                                                                            for surface_style_element in style_select.Styles:
+                                                                                # IfcSurfaceStyleShading 또는 IfcSurfaceStyleRendering
+                                                                                if surface_style_element.is_a('IfcSurfaceStyleShading') or surface_style_element.is_a('IfcSurfaceStyleRendering'):
+                                                                                    # Diffuse 색상 추출
+                                                                                    if hasattr(surface_style_element, 'SurfaceColour') and surface_style_element.SurfaceColour:
+                                                                                        color = surface_style_element.SurfaceColour
+                                                                                        materials['diffuse_color'] = [
+                                                                                            float(getattr(color, 'Red', 0.8)),
+                                                                                            float(getattr(color, 'Green', 0.8)),
+                                                                                            float(getattr(color, 'Blue', 0.8))
+                                                                                        ]
+                                                                                        print(f"[DEBUG] Extracted style color from Material->StyledRepresentation: RGB({materials['diffuse_color']})")
+
+                                                                                    # Transparency 정보
+                                                                                    if hasattr(surface_style_element, 'Transparency') and surface_style_element.Transparency is not None:
+                                                                                        materials['transparency'] = float(surface_style_element.Transparency)
+                                                                                        print(f"[DEBUG] Extracted transparency from Material->StyledRepresentation: {materials['transparency']}")
+
+                                                                                    # Reflectance method (IfcSurfaceStyleRendering에만 있음)
+                                                                                    if hasattr(surface_style_element, 'ReflectanceMethod'):
+                                                                                        materials['reflectance_method'] = str(surface_style_element.ReflectanceMethod)
+
+                                                                                    # Specular color (IfcSurfaceStyleRendering에만 있음)
+                                                                                    if hasattr(surface_style_element, 'SpecularColour') and surface_style_element.SpecularColour:
+                                                                                        spec_color = surface_style_element.SpecularColour
+                                                                                        materials['specular_color'] = [
+                                                                                            float(getattr(spec_color, 'Red', 0.0)),
+                                                                                            float(getattr(spec_color, 'Green', 0.0)),
+                                                                                            float(getattr(spec_color, 'Blue', 0.0))
+                                                                                        ]
+                                # ▲▲▲ Material에서 Style 정보 추출 끝 ▲▲▲
 
                 # 기본 색상이 없으면 회색 설정
                 if 'diffuse_color' not in materials:
