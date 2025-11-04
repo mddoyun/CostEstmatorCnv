@@ -100,11 +100,18 @@
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // ▼▼▼ [추가] 단면 자르기 (Section Plane) 변수 ▼▼▼
-    let clippingEnabled = false;
-    let clippingPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0); // Default: XY plane at Z=0
-    let clippingHelper = null; // Visual helper for the clipping plane
-    let clippingHandle = null; // Draggable handle for clipping plane
-    let isDraggingClippingPlane = false; // Is currently dragging clipping plane
+    // ▼▼▼ [수정] Section Box 방식으로 변경 ▼▼▼
+    let sectionBoxEnabled = false;
+    let sectionBoxPlanes = []; // 6개의 clipping planes (+X, -X, +Y, -Y, +Z, -Z)
+    let sectionBoxHelper = null; // Section Box 외곽선 시각화
+    let sectionBoxHandles = []; // 6개 면의 드래그 핸들
+    let draggingHandle = null; // 현재 드래그 중인 핸들
+    let sectionBoxBounds = { // Section Box 경계
+        minX: -50, maxX: 50,
+        minY: -50, maxY: 50,
+        minZ: -50, maxZ: 50
+    };
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // ▼▼▼ [추가] 치수 측정 (Distance Measurement) 변수 ▼▼▼
@@ -1135,33 +1142,18 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 단면 자르기 버튼 이벤트 리스너 ▼▼▼
+        // ▼▼▼ [수정] Section Box 버튼 이벤트 리스너 ▼▼▼
         const toggleClippingBtn = document.getElementById('toggle-clipping-btn');
-        const clipAxisXBtn = document.getElementById('clip-axis-x-btn');
-        const clipAxisYBtn = document.getElementById('clip-axis-y-btn');
-        const clipAxisZBtn = document.getElementById('clip-axis-z-btn');
-        const clipMovePlusBtn = document.getElementById('clip-move-plus-btn');
-        const clipMoveMinusBtn = document.getElementById('clip-move-minus-btn');
-
         if (toggleClippingBtn) {
-            toggleClippingBtn.onclick = () => window.toggleClipping();
+            toggleClippingBtn.onclick = () => {
+                window.toggleSectionBox();
+                // 처음 활성화 시 자동으로 Fit
+                if (sectionBoxEnabled && sectionBoxPlanes.length === 0) {
+                    window.fitSectionBox();
+                }
+            };
         }
-        if (clipAxisXBtn) {
-            clipAxisXBtn.onclick = () => window.setClippingAxis('X');
-        }
-        if (clipAxisYBtn) {
-            clipAxisYBtn.onclick = () => window.setClippingAxis('Y');
-        }
-        if (clipAxisZBtn) {
-            clipAxisZBtn.onclick = () => window.setClippingAxis('Z');
-        }
-        if (clipMovePlusBtn) {
-            clipMovePlusBtn.onclick = () => window.moveClippingPlane(1);
-        }
-        if (clipMoveMinusBtn) {
-            clipMoveMinusBtn.onclick = () => window.moveClippingPlane(-1);
-        }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // ▼▼▼ [추가] 치수 측정 버튼 이벤트 리스너 ▼▼▼
         const toggleMeasurementBtn = document.getElementById('toggle-measurement-btn');
@@ -1977,23 +1969,23 @@
         // 좌클릭: 박스 선택 또는 핸들 드래그
         if (event.button !== 0) return;
 
-        // ▼▼▼ [추가] 클리핑 핸들 드래그 체크 ▼▼▼
-        if (clippingEnabled && clippingHandle) {
+        // ▼▼▼ [수정] Section Box 핸들 드래그 체크 ▼▼▼
+        if (sectionBoxEnabled && sectionBoxHandles.length > 0) {
             const mouse = new THREE.Vector2(
                 ((event.clientX - rect.left) / rect.width) * 2 - 1,
                 -((event.clientY - rect.top) / rect.height) * 2 + 1
             );
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(clippingHandle, false);
+            const intersects = raycaster.intersectObjects(sectionBoxHandles, false);
 
             if (intersects.length > 0) {
-                isDraggingClippingPlane = true;
+                draggingHandle = intersects[0].object;
                 controls.enabled = false; // OrbitControls 비활성화
-                console.log('[3D Viewer] Started dragging clipping plane handle');
+                console.log('[3D Viewer] Started dragging Section Box handle:', draggingHandle.userData.handleName);
                 return; // 핸들 드래그 시작, 박스 선택 안 함
             }
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         dragStart = {
             x: event.clientX - rect.left,
@@ -2299,16 +2291,16 @@
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // ▼▼▼ [추가] 클리핑 핸들 드래그 종료 ▼▼▼
-        if (isDraggingClippingPlane) {
+        // ▼▼▼ [수정] Section Box 핸들 드래그 종료 ▼▼▼
+        if (draggingHandle) {
             event.preventDefault();
             event.stopImmediatePropagation();
-            console.log('[3D Viewer] Clipping plane drag ended');
-            isDraggingClippingPlane = false;
+            console.log('[3D Viewer] Section Box handle drag ended');
+            draggingHandle = null;
             controls.enabled = true; // OrbitControls 재활성화
             return;
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // ▼▼▼ [추가] 측정 모드 처리 ▼▼▼
         if (measurementMode) {
@@ -12066,37 +12058,73 @@
     /**
      * 단면 자르기 활성화/비활성화
      */
-    window.toggleClipping = function() {
-        clippingEnabled = !clippingEnabled;
+    // ▼▼▼ [수정] Section Box 방식으로 전환 ▼▼▼
 
-        console.log(`[3D Viewer] Clipping ${clippingEnabled ? 'enabled' : 'disabled'}`);
+    /**
+     * Section Box의 6개 clipping planes 초기화
+     */
+    function initializeSectionBoxPlanes() {
+        sectionBoxPlanes = [
+            new THREE.Plane(new THREE.Vector3(-1, 0, 0), sectionBoxBounds.maxX),  // +X 방향 (오른쪽 면)
+            new THREE.Plane(new THREE.Vector3(1, 0, 0), -sectionBoxBounds.minX),  // -X 방향 (왼쪽 면)
+            new THREE.Plane(new THREE.Vector3(0, -1, 0), sectionBoxBounds.maxY),  // +Y 방향 (위쪽 면)
+            new THREE.Plane(new THREE.Vector3(0, 1, 0), -sectionBoxBounds.minY),  // -Y 방향 (아래쪽 면)
+            new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionBoxBounds.maxZ),  // +Z 방향 (앞쪽 면)
+            new THREE.Plane(new THREE.Vector3(0, 0, 1), -sectionBoxBounds.minZ)   // -Z 방향 (뒤쪽 면)
+        ];
+        console.log('[3D Viewer] Section Box planes initialized:', sectionBoxBounds);
+    }
 
-        // 모든 메시에 clippingPlanes 적용/해제
-        scene.traverse((object) => {
-            if (object.isMesh && object.material) {
-                if (clippingEnabled) {
-                    object.material.clippingPlanes = [clippingPlane];
-                } else {
-                    object.material.clippingPlanes = [];
-                }
-                object.material.needsUpdate = true;
+    /**
+     * Section Box 토글
+     */
+    window.toggleSectionBox = function() {
+        sectionBoxEnabled = !sectionBoxEnabled;
+        console.log(`[3D Viewer] Section Box ${sectionBoxEnabled ? 'enabled' : 'disabled'}`);
+
+        if (sectionBoxEnabled) {
+            // Section Box 활성화
+            if (sectionBoxPlanes.length === 0) {
+                initializeSectionBoxPlanes();
             }
-        });
+
+            // 모든 메시에 6개 clipping planes 적용
+            scene.traverse((object) => {
+                if (object.isMesh && object.material && !object.userData.isSectionBoxHelper) {
+                    object.material.clippingPlanes = sectionBoxPlanes;
+                    object.material.needsUpdate = true;
+                }
+            });
+
+            // Section Box 시각화 생성
+            if (!sectionBoxHelper) {
+                createSectionBoxHelper();
+            }
+        } else {
+            // Section Box 비활성화
+            scene.traverse((object) => {
+                if (object.isMesh && object.material) {
+                    object.material.clippingPlanes = [];
+                    object.material.needsUpdate = true;
+                }
+            });
+
+            // Section Box 시각화 제거
+            if (sectionBoxHelper) {
+                scene.remove(sectionBoxHelper);
+                sectionBoxHelper = null;
+            }
+            sectionBoxHandles = [];
+        }
 
         // 버튼 상태 업데이트
-        const clippingBtn = document.getElementById('toggle-clipping-btn');
-        if (clippingBtn) {
-            clippingBtn.textContent = clippingEnabled ? '단면 ON' : '단면 OFF';
-            clippingBtn.classList.toggle('active', clippingEnabled);
-        }
-
-        // Helper 표시/숨김
-        if (clippingEnabled && !clippingHelper) {
-            createClippingHelper();
-        } else if (!clippingEnabled && clippingHelper) {
-            scene.remove(clippingHelper);
+        const btn = document.getElementById('toggle-clipping-btn');
+        if (btn) {
+            btn.textContent = sectionBoxEnabled ? '단면 ON' : '단면 OFF';
+            btn.classList.toggle('active', sectionBoxEnabled);
         }
     };
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     /**
      * 단면 평면 방향 변경 (X, Y, Z축)
@@ -12154,56 +12182,124 @@
     };
 
     /**
-     * 단면 평면의 시각적 헬퍼 생성
+     * Section Box 시각화 생성 (외곽선 + 6개 면 핸들)
      */
-    function createClippingHelper() {
-        const size = 50;
-        const geometry = new THREE.PlaneGeometry(size, size);
-        const material = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.2,
-            wireframe: false
+    function createSectionBoxHelper() {
+        const {minX, maxX, minY, maxY, minZ, maxZ} = sectionBoxBounds;
+
+        // Section Box 그룹 생성
+        sectionBoxHelper = new THREE.Group();
+        sectionBoxHelper.userData.isSectionBoxHelper = true;
+
+        // 1. 외곽선 (BoxHelper 스타일)
+        const boxGeometry = new THREE.BoxGeometry(
+            maxX - minX,
+            maxY - minY,
+            maxZ - minZ
+        );
+        const edges = new THREE.EdgesGeometry(boxGeometry);
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0x00ff00,
+            linewidth: 2
+        });
+        const boxLines = new THREE.LineSegments(edges, lineMaterial);
+        boxLines.position.set(
+            (minX + maxX) / 2,
+            (minY + maxY) / 2,
+            (minZ + maxZ) / 2
+        );
+        sectionBoxHelper.add(boxLines);
+
+        // 2. 6개 면의 드래그 핸들 생성
+        const handleSize = Math.min(maxX - minX, maxY - minY, maxZ - minZ) * 0.05;
+        const handleConfigs = [
+            { name: '+X', position: [maxX, (minY + maxY) / 2, (minZ + maxZ) / 2], axis: 'x', direction: 1, color: 0xff0000 },
+            { name: '-X', position: [minX, (minY + maxY) / 2, (minZ + maxZ) / 2], axis: 'x', direction: -1, color: 0xff8888 },
+            { name: '+Y', position: [(minX + maxX) / 2, maxY, (minZ + maxZ) / 2], axis: 'y', direction: 1, color: 0x00ff00 },
+            { name: '-Y', position: [(minX + maxX) / 2, minY, (minZ + maxZ) / 2], axis: 'y', direction: -1, color: 0x88ff88 },
+            { name: '+Z', position: [(minX + maxX) / 2, (minY + maxY) / 2, maxZ], axis: 'z', direction: 1, color: 0x0000ff },
+            { name: '-Z', position: [(minX + maxX) / 2, (minY + maxY) / 2, minZ], axis: 'z', direction: -1, color: 0x8888ff }
+        ];
+
+        sectionBoxHandles = [];
+        handleConfigs.forEach(config => {
+            const handleGeometry = new THREE.BoxGeometry(handleSize, handleSize, handleSize);
+            const handleMaterial = new THREE.MeshBasicMaterial({
+                color: config.color,
+                transparent: true,
+                opacity: 0.8,
+                depthTest: false
+            });
+            const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+            handle.position.set(...config.position);
+            handle.renderOrder = 999;
+            handle.userData = {
+                isDraggable: true,
+                isSectionBoxHandle: true,
+                handleName: config.name,
+                axis: config.axis,
+                direction: config.direction
+            };
+            sectionBoxHelper.add(handle);
+            sectionBoxHandles.push(handle);
         });
 
-        clippingHelper = new THREE.Mesh(geometry, material);
-        clippingHelper.userData.isClippingHelper = true; // ▼▼▼ [추가] 클리핑 헬퍼 마커 ▼▼▼
-
-        // 평면의 위치와 방향 설정
-        const normal = clippingPlane.normal.clone();
-        const distance = -clippingPlane.constant;
-
-        // 평면 위치
-        clippingHelper.position.copy(normal.multiplyScalar(distance));
-
-        // 평면 회전
-        const quaternion = new THREE.Quaternion();
-        quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), clippingPlane.normal);
-        clippingHelper.setRotationFromQuaternion(quaternion);
-
-        // 테두리 추가
-        const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff0000 }));
-        clippingHelper.add(line);
-
-        // ▼▼▼ [추가] 드래그 가능한 핸들 추가 (중앙 구체) ▼▼▼
-        const handleGeometry = new THREE.SphereGeometry(1, 16, 16);
-        const handleMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00,
-            transparent: false,
-            depthTest: false // 항상 보이도록
-        });
-        clippingHandle = new THREE.Mesh(handleGeometry, handleMaterial);
-        clippingHandle.userData.isDraggable = true;
-        clippingHandle.userData.isClippingHandle = true;
-        clippingHandle.position.set(0, 0, 0); // 평면 중앙
-        clippingHandle.renderOrder = 999; // 항상 위에 렌더링
-        clippingHelper.add(clippingHandle);
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
-
-        scene.add(clippingHelper);
+        scene.add(sectionBoxHelper);
+        console.log('[3D Viewer] Section Box helper created with 6 handles');
     }
+
+    /**
+     * Section Box 업데이트 (경계 변경 후 호출)
+     */
+    function updateSectionBox() {
+        // Planes 업데이트
+        sectionBoxPlanes[0].constant = sectionBoxBounds.maxX;
+        sectionBoxPlanes[1].constant = -sectionBoxBounds.minX;
+        sectionBoxPlanes[2].constant = sectionBoxBounds.maxY;
+        sectionBoxPlanes[3].constant = -sectionBoxBounds.minY;
+        sectionBoxPlanes[4].constant = sectionBoxBounds.maxZ;
+        sectionBoxPlanes[5].constant = -sectionBoxBounds.minZ;
+
+        // 모든 메시 업데이트
+        scene.traverse((object) => {
+            if (object.isMesh && object.material && !object.userData.isSectionBoxHelper) {
+                object.material.clippingPlanes = sectionBoxPlanes;
+                object.material.needsUpdate = true;
+            }
+        });
+
+        // Section Box 시각화 재생성
+        if (sectionBoxHelper) {
+            scene.remove(sectionBoxHelper);
+            createSectionBoxHelper();
+        }
+    }
+
+    /**
+     * Fit Section Box to all geometry
+     */
+    window.fitSectionBox = function() {
+        const bbox = new THREE.Box3();
+        scene.traverse((object) => {
+            if (object.isMesh && !object.userData.isSectionBoxHelper) {
+                bbox.expandByObject(object);
+            }
+        });
+
+        if (!bbox.isEmpty()) {
+            sectionBoxBounds.minX = bbox.min.x;
+            sectionBoxBounds.maxX = bbox.max.x;
+            sectionBoxBounds.minY = bbox.min.y;
+            sectionBoxBounds.maxY = bbox.max.y;
+            sectionBoxBounds.minZ = bbox.min.z;
+            sectionBoxBounds.maxZ = bbox.max.z;
+
+            if (sectionBoxEnabled) {
+                updateSectionBox();
+            }
+            console.log('[3D Viewer] Section Box fitted to geometry:', sectionBoxBounds);
+        }
+    };
 
     // ============================================================
     // 치수 측정 (Distance Measurement) 기능
