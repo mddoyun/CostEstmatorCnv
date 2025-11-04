@@ -580,22 +580,16 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
                 );
             }
             initializeBoqUI(); // DD 탭 UI 초기화 (토글 버튼, 상세 탭 등)
-            // 테이블은 '집계표 생성' 버튼 클릭 시 로드되므로 여기서는 초기화만
-            clearContainer(
-                'boq-table-container',
-                '<p style="padding: 20px;">집계 기준 설정 후 \'집계표 생성\' 버튼을 누르세요.</p>'
-            );
-            clearContainer(
-                'boq-item-list-container',
-                '<p style="padding: 10px;">상단 집계표 행을 선택하세요.</p>'
-            );
-            clearContainer(
-                'boq-bim-object-cost-summary',
-                '<p style="padding: 10px;">하단 목록에서 산출항목을 선택하면...</p>'
-            );
-            clearContainer('boq-details-member-container');
-            clearContainer('boq-details-mark-container');
-            clearContainer('boq-details-raw-container');
+
+            // 자동으로 집계표 생성 (데이터 로드 후 실행)
+            setTimeout(() => {
+                if (typeof window.generateBoqReport === 'function') {
+                    console.log('[DEBUG][loadDataForActiveTab] Auto-generating BOQ table on DD tab entry');
+                    window.generateBoqReport();
+                } else {
+                    console.warn('[WARN] generateBoqReport function not available yet');
+                }
+            }, 500); // 데이터 로드를 위한 짧은 지연
             break;
         case 'ai-model-manager': // 'AI 모델 관리' 탭 진입 시
             console.log(
@@ -1005,7 +999,7 @@ window.clearAllTabData = function clearAllTabData() {
         'boq-display-fields-container',
         '<small>프로젝트를 선택하세요.</small>'
     );
-    clearContainer('boq-grouping-controls');
+    clearContainer('boq-grouping-controls', '');
 
     // 개산견적(SD) 탭
     initializeSdUI(); // SD 탭 전용 초기화 함수 호출

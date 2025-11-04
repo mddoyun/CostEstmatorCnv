@@ -2777,12 +2777,12 @@ def generate_boq_report_api(request, project_id):
     report_data = format_to_list(root)
 
     total_summary = {
-        'total_quantity': format_quantity(sum((item['quantity'] for item in items), start=ZERO_DECIMAL)),
-        'total_count': len(items),
-        'total_material_cost': format_cost(sum((item['material_cost_total'] for item in items), start=ZERO_DECIMAL)),
-        'total_labor_cost': format_cost(sum((item['labor_cost_total'] for item in items), start=ZERO_DECIMAL)),
-        'total_expense_cost': format_cost(sum((item['expense_cost_total'] for item in items), start=ZERO_DECIMAL)),
-        'total_total_cost': format_cost(sum((item['total_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'quantity': format_quantity(sum((item['quantity'] for item in items), start=ZERO_DECIMAL)),
+        'count': len(items),
+        'material_cost_total': format_cost(sum((item['material_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'labor_cost_total': format_cost(sum((item['labor_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'expense_cost_total': format_cost(sum((item['expense_cost_total'] for item in items), start=ZERO_DECIMAL)),
+        'total_cost_total': format_cost(sum((item['total_cost_total'] for item in items), start=ZERO_DECIMAL)),
     }
 
     # --- 6. 최종 items_detail의 Decimal을 문자열로 변환 ---

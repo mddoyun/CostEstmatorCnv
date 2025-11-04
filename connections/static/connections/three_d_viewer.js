@@ -238,8 +238,9 @@
         // Handle window resize
         window.addEventListener('resize', onWindowResize, false);
 
-        // ▼▼▼ [추가] camera와 controls를 전역으로 노출 ▼▼▼
+        // ▼▼▼ [추가] camera, renderer, controls를 전역으로 노출 ▼▼▼
         window.camera = camera;
+        window.renderer = renderer;
         window.controls = controls;
         window.scene = scene;
         // ▲▲▲ [추가] 여기까지 ▲▲▲
@@ -330,10 +331,79 @@
         const width = container.clientWidth;
         const height = container.clientHeight;
 
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
+        // 카메라 타입에 따라 다르게 처리
+        if (camera.isPerspectiveCamera) {
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+        } else if (camera.isOrthographicCamera) {
+            const aspect = width / height;
+            const frustumSize = 20;
+            camera.left = frustumSize * aspect / -2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = frustumSize / -2;
+            camera.updateProjectionMatrix();
+        }
+
         renderer.setSize(width, height);
     }
+
+    // ▼▼▼ [추가] 카메라 모드 전환 함수 ▼▼▼
+    function switchCameraMode(mode) {
+        if (!camera || !controls || !renderer) {
+            console.error("[3D Viewer] Camera, controls, or renderer not initialized!");
+            return;
+        }
+
+        const container = document.querySelector('.three-d-viewer-container');
+        if (!container) {
+            console.error("[3D Viewer] Container not found!");
+            return;
+        }
+
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        // 현재 카메라의 위치와 타겟 저장
+        const position = camera.position.clone();
+        const target = controls.target.clone();
+
+        // 새로운 카메라 생성
+        let newCamera;
+        if (mode === 'perspective') {
+            newCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        } else if (mode === 'orthographic') {
+            const aspect = width / height;
+            const frustumSize = 20; // 직교 카메라의 뷰 크기 조정
+            newCamera = new THREE.OrthographicCamera(
+                frustumSize * aspect / -2,
+                frustumSize * aspect / 2,
+                frustumSize / 2,
+                frustumSize / -2,
+                0.1,
+                1000
+            );
+        } else {
+            console.error("[3D Viewer] Unknown camera mode:", mode);
+            return;
+        }
+
+        // 저장된 위치와 타겟 복원
+        newCamera.position.copy(position);
+        newCamera.lookAt(target);
+
+        // 전역 카메라 참조 업데이트
+        camera = newCamera;
+        window.camera = newCamera;
+
+        // 컨트롤 업데이트
+        controls.object = newCamera;
+        controls.target.copy(target);
+        controls.update();
+
+        console.log(`[3D Viewer] Camera mode switched to ${mode}`);
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // ▼▼▼ [수정] 전역으로 노출하여 websocket.js에서 호출 가능하도록 ▼▼▼
     window.loadPlaceholderGeometry = function() {
@@ -917,6 +987,29 @@
                     console.error('[3D Viewer] Error deleting split elements:', error);
                     showToast('분할 객체 삭제 중 오류가 발생했습니다', 'error');
                 }
+            };
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 카메라 모드 전환 버튼 ▼▼▼
+        const perspectiveModeBtn = document.getElementById('perspective-mode-btn');
+        const orthographicModeBtn = document.getElementById('orthographic-mode-btn');
+
+        if (perspectiveModeBtn && orthographicModeBtn) {
+            // 투시 모드로 전환
+            perspectiveModeBtn.onclick = function() {
+                console.log("[3D Viewer] Switching to Perspective Camera mode.");
+                switchCameraMode('perspective');
+                perspectiveModeBtn.classList.add('active');
+                orthographicModeBtn.classList.remove('active');
+            };
+
+            // 직교 모드로 전환
+            orthographicModeBtn.onclick = function() {
+                console.log("[3D Viewer] Switching to Orthographic Camera mode.");
+                switchCameraMode('orthographic');
+                orthographicModeBtn.classList.add('active');
+                perspectiveModeBtn.classList.remove('active');
             };
         }
         // ▲▲▲ [추가] 여기까지 ▲▲▲
@@ -11317,6 +11410,44 @@
 
         console.log('[Simulation Viewer] Gantt chart section visible');
     }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    // ▼▼▼ [추가] Public API for external selection ▼▼▼
+    /**
+     * Select objects in the 3D viewer by RawElement IDs
+     * @param {Array} rawElementIds - Array of RawElement ID strings
+     */
+    window.selectObjectsInViewer = function(rawElementIds) {
+        console.log(`[3D Viewer API] selectObjectsInViewer called with ${rawElementIds.length} IDs:`, rawElementIds);
+
+        if (!rawElementIds || rawElementIds.length === 0) {
+            console.warn('[3D Viewer API] No IDs provided');
+            return;
+        }
+
+        if (!scene) {
+            console.error('[3D Viewer API] Scene not initialized');
+            return;
+        }
+
+        const meshesToSelect = [];
+        // scene.children을 순회하여 meshes 찾기
+        scene.traverse((child) => {
+            if (child.isMesh && child.userData && child.userData.rawElementId) {
+                if (rawElementIds.some(id => child.userData.rawElementId.toString() === id.toString())) {
+                    meshesToSelect.push(child);
+                    console.log(`[3D Viewer API] Found mesh for RawElement ID ${child.userData.rawElementId}`);
+                }
+            }
+        });
+
+        if (meshesToSelect.length > 0) {
+            selectMultipleObjects(meshesToSelect);
+            console.log(`[3D Viewer API] Selected ${meshesToSelect.length} objects in viewer`);
+        } else {
+            console.warn('[3D Viewer API] No meshes found to select');
+        }
+    };
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 })();

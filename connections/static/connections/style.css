@@ -1704,16 +1704,19 @@ th input {
     height: 100%;
     display: flex;
     flex-direction: row;
-    gap: 20px;
+    gap: 0; /* 스플릿바 사용으로 gap 제거 */
 }
 
 /* ===== 왼쪽 패널 전체 ===== */
 .boq-left-panel {
-    width: 320px;
+    width: 250px;
+    min-width: 200px;
+    max-width: 500px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 15px;
+    transition: width 0.3s ease; /* 접기/펴기 애니메이션 */
 }
 
 /* ===== 메인 컨텐츠 전체 ===== */
@@ -2617,10 +2620,14 @@ div[id$='-grouping-controls'] {
 
 /* BOQ 오른쪽 BIM 객체 비용 요약 패널 스타일 */
 .boq-bim-object-summary-panel {
-    flex: 1; /* 왼쪽 패널과 동일한 비율 */
-    min-width: 0;
+    width: 300px; /* 초기 폭 (JavaScript에서 동적으로 조정됨) */
+    min-width: 250px;
+    max-width: 400px;
+    flex-shrink: 0;
+    flex-grow: 0; /* 크기 고정 */
     display: flex; /* 내부 요소 정렬 위해 flex 사용 */
     flex-direction: column; /* 세로 정렬 */
+    transition: width 0.3s ease; /* 접기/펴기 애니메이션 */
 }
 .boq-bim-object-summary-panel .control-box {
     height: 100%; /* 부모 높이 채우도록 */
@@ -2646,6 +2653,87 @@ div[id$='-grouping-controls'] {
     background-color: #f0f0f0; /* 합계 행 배경 약간 다르게 */
 }
 
+/* ===== BOQ 스플릿바 스타일 (3D 뷰포트 스타일) ===== */
+.boq-split-bar {
+    width: 8px;
+    background: linear-gradient(to right,
+        transparent 0%,
+        rgba(0, 0, 0, 0.05) 20%,
+        rgba(0, 0, 0, 0.1) 50%,
+        rgba(0, 0, 0, 0.05) 80%,
+        transparent 100%);
+    cursor: col-resize;
+    position: relative;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.boq-split-bar:hover {
+    background: linear-gradient(to right,
+        transparent 0%,
+        rgba(0, 120, 212, 0.1) 20%,
+        rgba(0, 120, 212, 0.2) 50%,
+        rgba(0, 120, 212, 0.1) 80%,
+        transparent 100%);
+}
+
+.boq-split-bar::before {
+    content: '⋮';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    color: rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    letter-spacing: -2px;
+}
+
+.boq-split-bar:hover::before {
+    color: var(--primary-color);
+}
+
+/* ===== BOQ 패널 접기 상태 ===== */
+.boq-container.left-panel-collapsed .boq-left-panel {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden;
+    padding: 0;
+    gap: 0;
+}
+
+.boq-container.right-panel-collapsed .boq-bim-object-summary-panel {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden;
+}
+
+/* ===== BOQ 우측 패널 토글 버튼 ===== */
+#boq-right-panel-toggle-btn {
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    transform: translateY(-50%);
+    z-index: 10;
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px 0 0 4px;
+    padding: 10px 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 12px;
+}
+
+#boq-right-panel-toggle-btn:hover {
+    background: white;
+    border-color: var(--primary-color);
+}
+
+.boq-container.right-panel-collapsed #boq-right-panel-toggle-btn {
+    transform: translateY(-50%) rotate(180deg);
+}
+
 /* BOQ 탭 전체 레이아웃 조정 (좌/중앙/우 분할) */
 .boq-container {
     padding: 20px;
@@ -2657,7 +2745,7 @@ div[id$='-grouping-controls'] {
 
 /* BOQ 왼쪽 패널 (기존 컨트롤 + 상세 속성) */
 .boq-left-panel {
-    width: 320px;
+    width: 250px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -3136,32 +3224,198 @@ div[id$='-grouping-controls'] {
     cursor: default;
 }
 
+/* 스케치 분할 컨트롤 (상단 가로 배치) */
+.sketch-controls-top {
+    position: absolute;
+    top: 10px;
+    left: 110px; /* 왼쪽 버튼 영역(90px) + 여백(20px) */
+    right: 10px; /* 오른쪽 여백 */
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 8px 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    z-index: 100;
+    overflow-x: auto; /* 가로 스크롤 활성화 */
+    overflow-y: hidden;
+    max-width: calc(100% - 120px); /* 왼쪽 버튼 영역을 제외한 최대 너비 */
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: rgba(0,0,0,0.3) rgba(0,0,0,0.1); /* Firefox */
+}
+
+/* 웹킷 브라우저용 스크롤바 스타일 */
+.sketch-controls-top::-webkit-scrollbar {
+    height: 6px;
+}
+
+.sketch-controls-top::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.05);
+    border-radius: 3px;
+}
+
+.sketch-controls-top::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.3);
+    border-radius: 3px;
+}
+
+.sketch-controls-top::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,0,0,0.5);
+}
+
+.sketch-step {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.sketch-step-label {
+    font-size: 11px;
+    font-weight: bold;
+    color: #555;
+    white-space: nowrap;
+}
+
+.sketch-step button {
+    padding: 4px 8px;
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    white-space: nowrap;
+}
+
+.sketch-step button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.sketch-step button:hover:not(:disabled) {
+    background-color: #45a049;
+}
+
+.sketch-step-separator {
+    width: 1px;
+    height: 20px;
+    background: #ddd;
+}
+
+.sketch-info {
+    font-size: 10px;
+    color: #666;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 왼쪽 세로 버튼 컨트롤 */
 .viewer-controls {
     position: absolute;
     top: 10px;
-    right: 10px;
+    left: 10px;
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    gap: 8px;
     z-index: 10;
+    max-width: 90px;
 }
 
-.viewer-controls button {
-    padding: 10px 15px;
+.viewer-controls > button {
+    padding: 5px 8px;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    white-space: nowrap;
+}
+
+.viewer-controls > button:hover:not(:disabled) {
+    background-color: #1976d2;
+}
+
+.viewer-controls > button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+/* 버튼 그룹 */
+.button-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 5px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+.button-group button {
+    padding: 5px 8px;
     background-color: #007bff;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 3px;
     cursor: pointer;
-    font-size: 14px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    font-size: 11px;
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    white-space: nowrap;
 }
 
-.viewer-controls button:hover {
+.button-group button:hover:not(:disabled) {
     background-color: #0056b3;
 }
 
-.viewer-controls button:active {
+.button-group button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.button-group button:active:not(:disabled) {
     transform: translateY(1px);
+}
+
+/* 카메라 모드 그룹 스타일 */
+.button-group.camera-group button {
+    background-color: #6c757d;
+}
+
+.button-group.camera-group button:hover:not(:disabled) {
+    background-color: #5a6268;
+}
+
+.button-group.camera-group button.active {
+    background-color: #28a745;
+}
+
+.button-group.camera-group button.active:hover {
+    background-color: #218838;
+}
+
+/* 분할 관리 그룹 스타일 */
+.button-group.split-group button {
+    background-color: #ff9800;
+}
+
+.button-group.split-group button:hover:not(:disabled) {
+    background-color: #e68900;
+}
+
+.button-group.split-group button#delete-all-splits-btn {
+    background-color: #dc3545;
+}
+
+.button-group.split-group button#delete-all-splits-btn:hover:not(:disabled) {
+    background-color: #c82333;
 }
 
 /* 3D Viewer Properties Panel */

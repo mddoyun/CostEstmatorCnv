@@ -130,24 +130,18 @@ function addBoqGroupingLevel() {
         .join("");
 
     newLevelDiv.innerHTML = `
-        <label>${newIndex + 1}차:</label>
         <select class="boq-group-by-select">${optionsHtml}</select>
         <button class="remove-boq-group-level-btn" style="padding: 2px 6px; font-size: 12px;">-</button>
     `;
     container.appendChild(newLevelDiv);
-    console.log(`[DEBUG] ${newIndex + 1}차 그룹핑 레벨 추가됨.`);
+    console.log(`[DEBUG] 그룹핑 레벨 추가됨 (레이블 없음).`);
 
     newLevelDiv
         .querySelector(".remove-boq-group-level-btn")
         .addEventListener("click", function () {
             console.log("[DEBUG] 그룹핑 레벨 제거 버튼 클릭됨");
             this.parentElement.remove();
-            container
-                .querySelectorAll(".boq-group-level label")
-                .forEach((label, index) => {
-                    label.textContent = `${index + 1}차:`;
-                });
-            console.log("[DEBUG] 그룹핑 레벨 재정렬 완료.");
+            console.log("[DEBUG] 그룹핑 레벨 제거 완료.");
         });
 }
 
@@ -479,8 +473,17 @@ function setupBoqTableInteractions() {
             const bimButton = e.target.closest(
                 "button.select-in-client-btn-detail"
             );
+            const viewerButton = e.target.closest(
+                "button.select-in-viewer-btn-detail"
+            );
 
-            if (bimButton) {
+            if (viewerButton) {
+                const costItemId = viewerButton.dataset.costItemId;
+                console.log(
+                    `[DEBUG][Event] 3D Viewer link button clicked for CostItem ID: ${costItemId}`
+                );
+                handleBoqSelectInViewerFromDetail(costItemId);
+            } else if (bimButton) {
                 const costItemId = bimButton.dataset.costItemId;
                 console.log(
                     `[DEBUG][Event] BIM link button clicked for CostItem ID: ${costItemId}`
@@ -508,9 +511,20 @@ function setupBoqTableInteractions() {
                 renderBoqItemProperties(itemId);
                 renderBoqBimObjectCostSummary(itemId);
             } else {
+                // Click outside of a row - deselect and hide properties
                 console.log(
-                    "[DEBUG][Event] Click inside bottom panel, but not on a data row or button."
+                    "[DEBUG][Event] Click inside bottom panel, but not on a data row or button. Clearing selection."
                 );
+                const currentSelectedRow =
+                    itemListContainer.querySelector("tr.selected");
+                if (currentSelectedRow) {
+                    currentSelectedRow.classList.remove("selected");
+                    console.log(
+                        `[DEBUG][UI] Removed 'selected' class from previous bottom row.`
+                    );
+                }
+                renderBoqItemProperties(null);
+                renderBoqBimObjectCostSummary(null);
             }
         });
         itemListContainer.dataset.clickListenerAttached = "true";
@@ -576,6 +590,52 @@ function handleBoqSelectInClientFromDetail(costItemId) {
 }
 
 /**
+ * BOQ 하단 상세 목록 테이블의 '3D 뷰어' 버튼 클릭 시 호출됩니다.
+ * @param {string} costItemId - 클릭된 버튼이 속한 CostItem의 ID
+ */
+function handleBoqSelectInViewerFromDetail(costItemId) {
+    console.log(
+        `[DEBUG] handleBoqSelectInViewerFromDetail called for CostItem ID: ${costItemId}`
+    );
+    if (!costItemId) return;
+
+    const costItem = (loadedDdCostItems || loadedCostItems || []).find((ci) => ci.id === costItemId);
+    const member = costItem?.quantity_member_id
+        ? loadedQuantityMembers.find(
+              (qm) => qm.id.toString() === costItem.quantity_member_id.toString()
+          )
+        : null;
+    const rawElement = member?.raw_element_id
+        ? allRevitData.find((re) => re.id.toString() === member.raw_element_id.toString())
+        : null;
+
+    if (!rawElement || !rawElement.id) {
+        showToast("이 항목과 연동된 BIM 객체를 찾을 수 없습니다.", "warning");
+        console.warn(
+            `[DEBUG] Could not find linked RawElement for CostItem ID: ${costItemId}`
+        );
+        return;
+    }
+
+    console.log(`[DEBUG] Found RawElement ID to select in viewer: ${rawElement.id}`);
+
+    // 3D 뷰어에서 객체 선택 (three_d_viewer.js의 함수 사용)
+    if (typeof selectObjectsInViewer === 'function') {
+        selectObjectsInViewer([rawElement.id]);
+        showToast("3D 뷰어에서 객체를 선택했습니다.", "success");
+        console.log(`[DEBUG] Selected object ${rawElement.id} in 3D viewer.`);
+
+        // 3D 뷰어 탭으로 전환
+        if (typeof switchTab === 'function') {
+            switchTab('three-d-viewer');
+        }
+    } else {
+        showToast("3D 뷰어 기능을 사용할 수 없습니다.", "error");
+        console.error("[ERROR] selectObjectsInViewer function not found.");
+    }
+}
+
+/**
  * 중앙 하단 패널에 포함된 산출항목 목록을 테이블로 렌더링하고, 숫자 서식을 적용합니다.
  * @param {Array<String>} itemIds - 표시할 CostItem의 ID 배열
  */
@@ -626,6 +686,7 @@ function updateBoqDetailsPanel(itemIds) {
         { id: "expense_cost_total", label: "경비", align: "right" },
         { id: "linked_member_name", label: "연관 부재" },
         { id: "linked_raw_name", label: "BIM 원본 객체" },
+        { id: "viewer_sync", label: "3D 뷰어", align: "center" },
         { id: "actions", label: "BIM 연동", align: "center" },
     ];
 
@@ -679,6 +740,9 @@ function updateBoqDetailsPanel(itemIds) {
             expense_cost_total: formatNumber(item.expense_cost_total),
             linked_member_name: linkedMemberName,
             linked_raw_name: linkedRawName,
+            viewer_sync: rawElement
+                ? `<button class="select-in-viewer-btn-detail" data-cost-item-id="${item.id}" title="3D 뷰어에서 선택 확인">🎯</button>`
+                : "",
             actions: rawElement
                 ? `<button class="select-in-client-btn-detail" data-cost-item-id="${item.id}" title="연동 프로그램에서 선택 확인">👁️</button>`
                 : "",
@@ -695,11 +759,23 @@ function updateBoqDetailsPanel(itemIds) {
     tableHtml += "</tbody></table>";
     listContainer.innerHTML = tableHtml;
     console.log(
-        "[DEBUG][UI] CostItem list table rendered in details panel (no initial selection)."
+        "[DEBUG][UI] CostItem list table rendered in details panel."
     );
 
-    renderBoqItemProperties(null);
-    renderBoqBimObjectCostSummary(null);
+    // 첫 번째 행을 자동으로 선택하고 하이라이트 표시
+    if (itemsToRender.length > 0) {
+        const firstItemId = itemsToRender[0].id;
+        const firstRow = listContainer.querySelector(`tr[data-item-id="${firstItemId}"]`);
+        if (firstRow) {
+            firstRow.classList.add('selected');
+            console.log(`[DEBUG][UI] Auto-selected first row with ID: ${firstItemId}`);
+        }
+        renderBoqItemProperties(firstItemId);
+        renderBoqBimObjectCostSummary(firstItemId);
+    } else {
+        renderBoqItemProperties(null);
+        renderBoqBimObjectCostSummary(null);
+    }
 }
 
 /**
@@ -777,79 +853,161 @@ function updateBoqLeftPanelProperties(itemIds) {
         return;
     }
 
-    // 코스트아이템 스타일로 그룹화하여 표시
+    // 코스트아이템 탭과 동일한 스타일로 그룹화하여 표시
     let html = '';
 
-    // 1. 부재 속성 그룹
-    html += '<div class="property-group" style="margin-bottom: 20px;">';
-    html += '<h4 style="margin: 0 0 10px 0; padding: 8px; background: #e3f2fd; border-left: 4px solid #2196f3; font-size: 14px; font-weight: bold; color: #1976d2;">부재 속성</h4>';
-    if (member && member.properties && Object.keys(member.properties).length > 0) {
-        html += '<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>';
-        Object.keys(member.properties).sort().forEach((key) => {
-            html += `<tr><td>${key}</td><td>${member.properties[key]}</td></tr>`;
-        });
-        html += "</tbody></table>";
-    } else {
-        html += "<p style='padding: 10px; color: #666;'>연관된 부재 속성이 없습니다.</p>";
+    // ============ 1. CI 기본 속성 (코스트아이템 고유 속성) ============
+    html += '<div class="property-section">';
+    html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📊 산출항목 기본 속성</h4>';
+    html += '<table class="properties-table"><tbody>';
+    html += `<tr><td class="prop-name">CI.id</td><td class="prop-value">${costItem.id || 'N/A'}</td></tr>`;
+    if (costItem.quantity !== undefined) {
+        html += `<tr><td class="prop-name">CI.quantity</td><td class="prop-value">${costItem.quantity}</td></tr>`;
     }
+    if (costItem.cost_code_name) {
+        html += `<tr><td class="prop-name">CI.cost_code_name</td><td class="prop-value">${costItem.cost_code_name}</td></tr>`;
+    }
+    if (costItem.description) {
+        html += `<tr><td class="prop-name">CI.description</td><td class="prop-value">${costItem.description}</td></tr>`;
+    }
+    if (costItem.quantity_member_id) {
+        html += `<tr><td class="prop-name">CI.quantity_member_id</td><td class="prop-value">${costItem.quantity_member_id}</td></tr>`;
+    }
+    if (costItem.raw_element_id) {
+        html += `<tr><td class="prop-name">CI.raw_element_id</td><td class="prop-value">${costItem.raw_element_id}</td></tr>`;
+    }
+    html += '</tbody></table>';
     html += '</div>';
 
-    // 2. 일람부호 속성 그룹
-    html += '<div class="property-group" style="margin-bottom: 20px;">';
-    html += '<h4 style="margin: 0 0 10px 0; padding: 8px; background: #fff3e0; border-left: 4px solid #ff9800; font-size: 14px; font-weight: bold; color: #f57c00;">일람부호 속성</h4>';
-    if (member && member.member_mark_id) {
-        const mark = loadedMemberMarks.find(
-            (m) => m.id.toString() === member.member_mark_id.toString()
-        );
-        if (mark) {
-            html += `<h5 style="margin: 10px 0; font-size: 13px; color: #555;">${mark.mark}</h5>`;
-            html += '<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>';
-            if (mark.properties && Object.keys(mark.properties).length > 0) {
-                Object.keys(mark.properties).sort().forEach((key) => {
-                    html += `<tr><td>${key}</td><td>${mark.properties[key]}</td></tr>`;
-                });
-            } else {
-                html += '<tr><td colspan="2">정의된 속성이 없습니다.</td></tr>';
+    // ============ 2. QM 기본 속성 (상속) ============
+    html += '<div class="property-section">';
+    html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성 (상속 from QM)</h4>';
+    html += '<table class="properties-table"><tbody>';
+    html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${member.id || 'N/A'}</td></tr>`;
+    if (member.name) {
+        html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${member.name}</td></tr>`;
+    }
+    if (member.classification_tag_name) {
+        html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${member.classification_tag_name}</td></tr>`;
+    }
+    html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${member.is_active ? 'true' : 'false'}</td></tr>`;
+    if (member.raw_element_id) {
+        html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${member.raw_element_id}</td></tr>`;
+    }
+    if (member.split_element_id) {
+        html += `<tr><td class="prop-name">QM.split_element_id</td><td class="prop-value">${member.split_element_id}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += '</div>';
+
+    // ============ 3. QM 부재 속성 (상속) ============
+    if (member.properties && Object.keys(member.properties).length > 0) {
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        for (const [key, value] of Object.entries(member.properties)) {
+            if (value !== null && value !== undefined) {
+                const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
+                html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
             }
-            html += "</tbody></table>";
-        } else {
-            html += "<p style='padding: 10px; color: #666;'>연결된 일람부호 정보를 찾을 수 없습니다.</p>";
         }
-    } else {
-        html += "<p style='padding: 10px; color: #666;'>연관된 일람부호가 없습니다.</p>";
+        html += '</tbody></table>';
+        html += '</div>';
     }
-    html += '</div>';
 
-    // 3. BIM 원본 데이터 그룹
-    html += '<div class="property-group" style="margin-bottom: 20px;">';
-    html += '<h4 style="margin: 0 0 10px 0; padding: 8px; background: #f3e5f5; border-left: 4px solid #9c27b0; font-size: 14px; font-weight: bold; color: #7b1fa2;">BIM 원본 데이터</h4>';
-    const rawElement = member?.raw_element_id
-        ? allRevitData.find(
-              (el) => el.id.toString() === member.raw_element_id.toString()
-          )
-        : null;
-    if (rawElement?.raw_data) {
-        html += `<h5 style="margin: 10px 0; font-size: 13px; color: #555;">${rawElement.raw_data.Name || "이름 없음"}</h5>`;
-        html += `<table class="properties-table"><thead><tr><th>속성</th><th>값</th></tr></thead><tbody>`;
-        const allKeys = new Set();
-        Object.keys(rawElement.raw_data).forEach((k) => allKeys.add(k));
-        Object.keys(rawElement.raw_data.Parameters || {}).forEach((k) =>
-            allKeys.add(k)
-        );
-        Object.keys(rawElement.raw_data.TypeParameters || {}).forEach((k) =>
-            allKeys.add(k)
-        );
-        Array.from(allKeys).sort().forEach((key) => {
-            const value = getValueForItem(rawElement, key);
-            if (value !== undefined && typeof value !== "object") {
-                html += `<tr><td>${key}</td><td>${value}</td></tr>`;
+    // ============ 4. MM 일람부호 (상속) ============
+    if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호 (상속 from MM)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        if (member.member_mark_mark) {
+            html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${member.member_mark_mark}</td></tr>`;
+        }
+        if (member.member_mark_properties) {
+            for (const [key, value] of Object.entries(member.member_mark_properties)) {
+                if (value !== null && value !== undefined) {
+                    html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
+                }
             }
-        });
-        html += "</tbody></table>";
-    } else {
-        html += "<p style='padding: 10px; color: #666;'>연관된 BIM 원본 데이터가 없습니다.</p>";
+        }
+        html += '</tbody></table>';
+        html += '</div>';
     }
-    html += '</div>';
+
+    // ============ 5. Space 공간분류 (상속) ============
+    if (member.space_name) {
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #388e3c; border-bottom: 2px solid #388e3c; padding-bottom: 5px;">📍 공간분류 (상속 from Space)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        html += `<tr><td class="prop-name">Space.name</td><td class="prop-value">${member.space_name}</td></tr>`;
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // ============ 6~9. BIM 원본 속성 (상속) ============
+    const elementId = member.split_element_id || member.raw_element_id;
+    const fullBimObject = elementId && window.allRevitData ?
+        window.allRevitData.find(item => item.id === elementId) : null;
+
+    if (fullBimObject && fullBimObject.raw_data) {
+        // 6. BIM 시스템 속성
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 시스템 속성 (상속 from BIM.System.*)</h4>';
+        html += '<table class="properties-table"><tbody>';
+
+        html += `<tr><td class="prop-name">BIM.System.id</td><td class="prop-value">${fullBimObject.id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">BIM.System.element_unique_id</td><td class="prop-value">${fullBimObject.element_unique_id || 'N/A'}</td></tr>`;
+        html += `<tr><td class="prop-name">BIM.System.geometry_volume</td><td class="prop-value">${fullBimObject.geometry_volume || 'N/A'}</td></tr>`;
+
+        const tagsDisplay = Array.isArray(fullBimObject.classification_tags) && fullBimObject.classification_tags.length > 0
+            ? fullBimObject.classification_tags.join(', ')
+            : '(없음)';
+        html += `<tr><td class="prop-name">BIM.System.classification_tags</td><td class="prop-value">${tagsDisplay}</td></tr>`;
+
+        html += '</tbody></table>';
+        html += '</div>';
+
+        // 7. BIM 기본 속성
+        const { Category, Family, Type, Level, Name } = fullBimObject.raw_data;
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (상속 from BIM.*)</h4>';
+        html += '<table class="properties-table"><tbody>';
+        if (Category) html += `<tr><td class="prop-name">BIM.Category</td><td class="prop-value">${Category}</td></tr>`;
+        if (Family) html += `<tr><td class="prop-name">BIM.Family</td><td class="prop-value">${Family}</td></tr>`;
+        if (Type) html += `<tr><td class="prop-name">BIM.Type</td><td class="prop-value">${Type}</td></tr>`;
+        if (Level) html += `<tr><td class="prop-name">BIM.Level</td><td class="prop-value">${Level}</td></tr>`;
+        if (Name) html += `<tr><td class="prop-name">BIM.Name</td><td class="prop-value">${Name}</td></tr>`;
+        html += '</tbody></table>';
+        html += '</div>';
+
+        // 8. BIM Parameters
+        if (fullBimObject.raw_data.Parameters && Object.keys(fullBimObject.raw_data.Parameters).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM Parameters (상속 from BIM.Parameters.*)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            for (const [key, value] of Object.entries(fullBimObject.raw_data.Parameters)) {
+                if (value !== null && value !== undefined && typeof value !== 'object') {
+                    html += `<tr><td class="prop-name">BIM.Parameters.${key}</td><td class="prop-value">${value}</td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+
+        // 9. BIM TypeParameters
+        if (fullBimObject.raw_data.TypeParameters && Object.keys(fullBimObject.raw_data.TypeParameters).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM TypeParameters (상속 from BIM.TypeParameters.*)</h4>';
+            html += '<table class="properties-table"><tbody>';
+            for (const [key, value] of Object.entries(fullBimObject.raw_data.TypeParameters)) {
+                if (value !== null && value !== undefined && typeof value !== 'object') {
+                    html += `<tr><td class="prop-name">BIM.TypeParameters.${key}</td><td class="prop-value">${value}</td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+    }
 
     propertiesContainer.innerHTML = html;
 }
@@ -858,6 +1016,128 @@ function updateBoqLeftPanelProperties(itemIds) {
 // =====================================================================
 // '집계' 탭 동적 UI 최종 완성본 (리사이저, 접기/펴기, 탭 클릭)
 // =====================================================================
+/**
+ * BOQ 스플릿바 드래그 리사이즈 기능 초기화
+ */
+function initBoqSplitBars() {
+    const splitBars = document.querySelectorAll('.boq-split-bar');
+
+    if (splitBars.length === 0) {
+        console.warn('[WARN] No split bars found in BOQ container.');
+        return;
+    }
+
+    // ▼▼▼ [추가] 오른쪽 패널의 초기 폭을 300px로 고정 설정 ▼▼▼
+    const rightPanel = document.querySelector('.boq-bim-object-summary-panel');
+    if (rightPanel) {
+        rightPanel.style.width = '300px'; // 고정 폭 300px
+        rightPanel.style.flexBasis = '300px'; // flex-basis도 명시적으로 설정
+        console.log(`[DEBUG] Set initial right panel width to 300px (fixed)`);
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    splitBars.forEach(bar => {
+        if (bar.dataset.listenerAttached) {
+            return; // 이미 리스너가 붙어있으면 스킵
+        }
+
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+        let targetPanel = null;
+
+        const handleMouseDown = (e) => {
+            isResizing = true;
+            startX = e.clientX;
+
+            const target = bar.dataset.target;
+            if (target === 'left') {
+                targetPanel = document.querySelector('.boq-left-panel');
+            } else if (target === 'right') {
+                targetPanel = document.querySelector('.boq-bim-object-summary-panel');
+            }
+
+            if (targetPanel) {
+                startWidth = targetPanel.offsetWidth;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none'; // 드래그 중 텍스트 선택 방지
+            }
+            e.preventDefault();
+        };
+
+        const handleMouseMove = (e) => {
+            if (!isResizing || !targetPanel) return;
+
+            const deltaX = e.clientX - startX;
+            const target = bar.dataset.target;
+
+            let newWidth;
+            if (target === 'left') {
+                newWidth = startWidth + deltaX;
+            } else { // target === 'right'
+                newWidth = startWidth - deltaX;
+            }
+
+            // ▼▼▼ [수정] 오른쪽 패널의 최대 폭을 400px로 변경 ▼▼▼
+            const minWidth = 250;
+            const maxWidth = target === 'right' ? 400 : 600; // 오른쪽 패널은 400px, 왼쪽은 600px
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+            const constrainedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+            targetPanel.style.width = `${constrainedWidth}px`;
+        };
+
+        const handleMouseUp = () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                console.log(`[DEBUG] Split bar resize completed. New width: ${targetPanel?.offsetWidth}px`);
+            }
+        };
+
+        bar.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        bar.dataset.listenerAttached = 'true';
+    });
+
+    console.log(`[DEBUG] Initialized ${splitBars.length} split bar(s) for BOQ panel resizing.`);
+}
+
+/**
+ * BOQ 우측 패널 토글 버튼 초기화
+ */
+function initBoqRightPanelToggle() {
+    const toggleBtn = document.getElementById('boq-right-panel-toggle-btn');
+    const container = document.querySelector('.boq-container');
+
+    if (!toggleBtn) {
+        console.warn('[WARN] Right panel toggle button not found.');
+        return;
+    }
+
+    if (!container) {
+        console.warn('[WARN] BOQ container not found.');
+        return;
+    }
+
+    if (toggleBtn.dataset.listenerAttached) {
+        return; // 이미 리스너가 붙어있으면 스킵
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        container.classList.toggle('right-panel-collapsed');
+        const isCollapsed = container.classList.contains('right-panel-collapsed');
+        toggleBtn.textContent = isCollapsed ? '◀' : '▶';
+        console.log(`[DEBUG] Right panel toggled. Collapsed: ${isCollapsed}`);
+    });
+
+    toggleBtn.dataset.listenerAttached = 'true';
+    console.log('[DEBUG] Right panel toggle listener attached.');
+}
+
 function initializeBoqUI() {
     const ddTabContainer = document.getElementById("detailed-estimation-dd");
     if (!ddTabContainer) {
@@ -963,6 +1243,13 @@ function initializeBoqUI() {
         console.warn("[WARN] BOQ left-panel-tab-container not found.");
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    // --- 4. 스플릿바 드래그 리사이즈 기능 ---
+    initBoqSplitBars();
+
+    // --- 5. 우측 패널 접기/펴기 기능 ---
+    initBoqRightPanelToggle();
+
     console.log("[DEBUG] Detailed Estimation (DD) UI initialization complete.");
 }
 
@@ -1393,55 +1680,91 @@ function renderBoqBimObjectCostSummary(itemId) {
     const summaryContainer = document.getElementById(
         "boq-bim-object-cost-summary"
     );
+    const headerElement = document.getElementById("boq-bim-object-summary-header");
+
     if (!itemId) {
         summaryContainer.innerHTML =
             '<p style="padding: 10px;">하단 목록에서 산출항목을 선택하면 연관된 BIM 객체의 비용 요약이 표시됩니다.</p>';
-        document.getElementById("boq-bim-object-summary-header").textContent =
-            "BIM 객체 비용 요약";
+        if (headerElement) {
+            headerElement.textContent = "BIM 객체 비용 요약";
+        }
         return;
     }
 
-    const costItem = loadedCostItems.find(
+    // DD 탭에서는 loadedDdCostItems 사용
+    const costItem = (loadedDdCostItems || loadedCostItems || []).find(
         (item) => item.id.toString() === itemId.toString()
     );
+
     if (!costItem || !costItem.quantity_member_id) {
         summaryContainer.innerHTML =
             '<p style="padding: 10px;">연관된 BIM 객체 정보가 없습니다.</p>';
-        document.getElementById("boq-bim-object-summary-header").textContent =
-            "BIM 객체 비용 요약";
+        if (headerElement) {
+            headerElement.textContent = "BIM 객체 비용 요약";
+        }
         return;
     }
 
-    const member = loadedQuantityMembers.find(
+    const member = (loadedQuantityMembers || []).find(
         (m) => m.id.toString() === costItem.quantity_member_id.toString()
     );
+
     if (!member || !member.raw_element_id) {
         summaryContainer.innerHTML =
             '<p style="padding: 10px;">연관된 BIM 객체 정보가 없습니다.</p>';
-        document.getElementById("boq-bim-object-summary-header").textContent =
-            "BIM 객체 비용 요약";
+        if (headerElement) {
+            headerElement.textContent = "BIM 객체 비용 요약";
+        }
         return;
     }
 
-    const rawElement = allRevitData.find(
+    const rawElement = (allRevitData || []).find(
         (re) => re.id.toString() === member.raw_element_id.toString()
     );
-    if (!rawElement || !rawElement.cost_summary) {
+
+    if (!rawElement) {
         summaryContainer.innerHTML =
-            '<p style="padding: 10px;">연관된 BIM 객체 비용 요약이 없습니다.</p>';
-        document.getElementById("boq-bim-object-summary-header").textContent =
-            "BIM 객체 비용 요약";
+            '<p style="padding: 10px;">연관된 BIM 객체를 찾을 수 없습니다.</p>';
+        if (headerElement) {
+            headerElement.textContent = "BIM 객체 비용 요약";
+        }
         return;
     }
 
-    document.getElementById(
-        "boq-bim-object-summary-header"
-    ).textContent = `BIM 객체 비용 요약: ${
-        rawElement.raw_data?.Name || "이름 없음"
-    }`;
+    // BIM 객체와 연관된 모든 산출항목 찾기
+    const relatedMembers = (loadedQuantityMembers || []).filter(
+        (m) => m.raw_element_id && m.raw_element_id.toString() === rawElement.id.toString()
+    );
 
-    const summary = rawElement.cost_summary;
-    let html = `<table class="properties-table"><tbody>`;
+    const relatedCostItems = (loadedDdCostItems || loadedCostItems || []).filter(
+        (ci) => relatedMembers.some(m => m.id.toString() === ci.quantity_member_id?.toString())
+    );
+
+    if (relatedCostItems.length === 0) {
+        summaryContainer.innerHTML =
+            '<p style="padding: 10px;">이 BIM 객체와 연관된 산출항목이 없습니다.</p>';
+        if (headerElement) {
+            headerElement.textContent = `BIM 객체 비용 요약: ${rawElement.raw_data?.Name || "이름 없음"}`;
+        }
+        return;
+    }
+
+    // 비용 합계 계산
+    let totalCost = 0;
+    let materialCost = 0;
+    let laborCost = 0;
+    let expenseCost = 0;
+
+    relatedCostItems.forEach(ci => {
+        totalCost += parseFloat(ci.total_cost_total || 0);
+        materialCost += parseFloat(ci.material_cost_total || 0);
+        laborCost += parseFloat(ci.labor_cost_total || 0);
+        expenseCost += parseFloat(ci.expense_cost_total || 0);
+    });
+
+    if (headerElement) {
+        headerElement.textContent = `BIM 객체 비용 요약: ${rawElement.raw_data?.Name || "이름 없음"}`;
+    }
 
     const formatCurrency = (value) => {
         if (typeof value !== "number") return value;
@@ -1451,19 +1774,30 @@ function renderBoqBimObjectCostSummary(itemId) {
         });
     };
 
-    html += `<tr><td>총 합계 금액</td><td>${formatCurrency(
-        summary.total_cost
-    )}</td></tr>`;
-    html += `<tr><td>재료비</td><td>${formatCurrency(
-        summary.material_cost
-    )}</td></tr>`;
-    html += `<tr><td>노무비</td><td>${formatCurrency(
-        summary.labor_cost
-    )}</td></tr>`;
-    html += `<tr><td>경비</td><td>${formatCurrency(
-        summary.expense_cost
-    )}</td></tr>`;
+    let html = `<div style="margin-bottom: 10px; padding: 8px; background: #f5f5f5; border-radius: 4px;">`;
+    html += `<strong>연관 산출항목: ${relatedCostItems.length}개</strong>`;
+    html += `</div>`;
+
+    html += `<table class="properties-table"><tbody>`;
+    html += `<tr><td><strong>총 합계 금액</strong></td><td style="text-align: right;"><strong>${formatCurrency(totalCost)}</strong></td></tr>`;
+    html += `<tr><td>재료비</td><td style="text-align: right;">${formatCurrency(materialCost)}</td></tr>`;
+    html += `<tr><td>노무비</td><td style="text-align: right;">${formatCurrency(laborCost)}</td></tr>`;
+    html += `<tr><td>경비</td><td style="text-align: right;">${formatCurrency(expenseCost)}</td></tr>`;
     html += `</tbody></table>`;
+
+    // 관련 산출항목 리스트 추가
+    html += `<div style="margin-top: 15px;">`;
+    html += `<h5 style="margin: 10px 0; padding: 5px; background: #e3f2fd; border-left: 3px solid #2196f3;">관련 산출항목</h5>`;
+    html += `<table class="properties-table"><thead><tr><th>산출항목</th><th style="text-align: right;">금액</th></tr></thead><tbody>`;
+
+    relatedCostItems.forEach(ci => {
+        html += `<tr>`;
+        html += `<td>${ci.cost_code_name || 'N/A'}</td>`;
+        html += `<td style="text-align: right;">${formatCurrency(parseFloat(ci.total_cost_total || 0))}</td>`;
+        html += `</tr>`;
+    });
+
+    html += `</tbody></table></div>`;
 
     summaryContainer.innerHTML = html;
 }
@@ -1917,4 +2251,8 @@ function handleBoqSelectInViewer() {
         // ▲▲▲ [수정] 여기까지 ▲▲▲
     }, 300); // 300ms delay to allow scene initialization
 }
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
+// ▼▼▼ [추가] window에 함수 노출 ▼▼▼
+window.generateBoqReport = generateBoqReport;
 // ▲▲▲ [추가] 여기까지 ▲▲▲
