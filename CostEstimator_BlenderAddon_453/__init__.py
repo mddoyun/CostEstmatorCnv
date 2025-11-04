@@ -457,6 +457,13 @@ def serialize_ifc_elements_to_string_list(ifc_file):
 
         except (AttributeError, IndexError, TypeError) as e:
             print(f"[WARN] Error extracting properties for element {element.id()}: {e}")
+
+        # ▼▼▼ [DEBUG] System.Geometry.materials 확인 ▼▼▼
+        if element_dict.get("System", {}).get("Geometry", {}).get("materials"):
+            mat = element_dict["System"]["Geometry"]["materials"]
+            print(f"[DEBUG] Element {element.id()} serializing with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
+        # ▲▲▲ [DEBUG] 끝 ▲▲▲
+
         elements_data.append(json.dumps(element_dict))
     print(f"✅ [Blender] 객체 데이터 직렬화 완료.") # 디버깅 추가
     return elements_data

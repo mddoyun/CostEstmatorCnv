@@ -334,6 +334,14 @@ class RevitConsumer(AsyncWebsocketConsumer):
 
             elements_data = [json.loads(s) for s in payload.get('elements', [])]
 
+            # ▼▼▼ [DEBUG] System.Geometry.materials 확인 ▼▼▼
+            for elem in elements_data:
+                if elem.get("System", {}).get("Geometry", {}).get("materials"):
+                    mat = elem["System"]["Geometry"]["materials"]
+                    print(f"[DEBUG] Received element {elem.get('UniqueId')} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
+                    break  # 하나만 출력
+            # ▲▲▲ [DEBUG] 끝 ▲▲▲
+
             chunk_uids = {item['UniqueId'] for item in elements_data if item and 'UniqueId' in item}
             self.all_incoming_uids.update(chunk_uids)
             print(f"  - 이번 청크의 UniqueId {len(chunk_uids)}개 추가. 현재까지 총 {len(self.all_incoming_uids)}개 수신.") # 기존 print 유지
@@ -449,6 +457,13 @@ class RevitConsumer(AsyncWebsocketConsumer):
             if to_create:
                 created_objs = RawElement.objects.bulk_create(to_create, ignore_conflicts=True)
                 print(f"    - {len(created_objs)}개 객체 새로 생성 완료.") # 기존 print 유지 (실제 생성된 수 사용)
+
+                # ▼▼▼ [DEBUG] 생성된 객체의 materials 확인 ▼▼▼
+                for elem in created_objs[:1]:  # 첫 번째 객체만 확인
+                    if elem.raw_data.get("System", {}).get("Geometry", {}).get("materials"):
+                        mat = elem.raw_data["System"]["Geometry"]["materials"]
+                        print(f"[DEBUG] DB saved element {elem.element_unique_id} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
+                # ▲▲▲ [DEBUG] 끝 ▲▲▲
 
                 # Geometry volume 계산 및 업데이트
                 created_with_volume = []
