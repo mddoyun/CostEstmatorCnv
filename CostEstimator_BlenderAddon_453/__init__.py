@@ -459,8 +459,9 @@ def serialize_ifc_elements_to_string_list(ifc_file):
             print(f"[WARN] Error extracting properties for element {element.id()}: {e}")
 
         # ▼▼▼ [DEBUG] System.Geometry.materials 확인 ▼▼▼
-        if element_dict.get("System", {}).get("Geometry", {}).get("materials"):
-            mat = element_dict["System"]["Geometry"]["materials"]
+        geometry = element_dict.get("System", {}).get("Geometry")
+        if geometry and isinstance(geometry, dict) and geometry.get("materials"):
+            mat = geometry["materials"]
             print(f"[DEBUG] Element {element.id()} serializing with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
         # ▲▲▲ [DEBUG] 끝 ▲▲▲
 
