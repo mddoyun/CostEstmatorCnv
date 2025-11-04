@@ -4430,3 +4430,13 @@ div[id$='-grouping-controls'] {
     border-color: #FB8C00;
 }
 /* ▲▲▲ 렌더링 모드 컨트롤 바 여기까지 ▲▲▲ */
+
+
+/* 버튼 구분선 */
+.button-separator {
+    width: 1px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.3);
+    margin: 0 4px;
+}
+
