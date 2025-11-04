@@ -121,6 +121,7 @@
     // ▼▼▼ [추가] 렌더링 모드 관리 변수 ▼▼▼
     let renderingMode = 'realistic'; // 'realistic', 'white', 'wireframe', 'material'
     let shadowsEnabled = false;
+    let edgesVisible = false; // ▼▼▼ [추가] 모든 모드에서 선 표시 여부 (독립적 토글) ▼▼▼
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -1122,6 +1123,17 @@
                 shadowToggleBtn.textContent = shadowsEnabled ? '그림자 ON' : '그림자 OFF';
             };
         }
+
+        // ▼▼▼ [추가] 선 토글 버튼 이벤트 리스너 ▼▼▼
+        const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+        if (edgesToggleBtn) {
+            edgesToggleBtn.onclick = function() {
+                edgesVisible = !edgesVisible;
+                window.toggleEdges(edgesVisible);
+                edgesToggleBtn.textContent = edgesVisible ? '선 ON' : '선 OFF';
+            };
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // ▼▼▼ [추가] 단면 자르기 버튼 이벤트 리스너 ▼▼▼
         const toggleClippingBtn = document.getElementById('toggle-clipping-btn');
@@ -11772,6 +11784,14 @@
         console.log(`[3D Viewer] Shadows ${enabled ? 'enabled' : 'disabled'}`);
     };
 
+    // ▼▼▼ [추가] 선(Edges) 토글 ▼▼▼
+    window.toggleEdges = function(enabled) {
+        edgesVisible = enabled;
+        applyRenderingModeToScene();
+        console.log(`[3D Viewer] Edges ${enabled ? 'enabled' : 'disabled'}`);
+    };
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // 모든 메시에 렌더링 모드 적용
     window.applyRenderingModeToScene = function() {
         console.log('[3D Viewer] applyRenderingModeToScene called, current mode:', renderingMode);
@@ -11867,7 +11887,7 @@
                 break;
 
             case 'edges':
-                // 테두리선 모드 (흰색 면 + 검은색 테두리)
+                // ▼▼▼ [수정] 테두리선 모드 (흰색 면만, 선은 하단 통합 로직에서 처리) ▼▼▼
                 mesh.material = new THREE.MeshStandardMaterial({
                     color: isSelected ? 0xffff00 : 0xffffff,
                     flatShading: false,
@@ -11877,23 +11897,9 @@
                     polygonOffsetUnits: 1
                 });
                 mesh.material.needsUpdate = true;
-
-                // 테두리 라인 추가
-                if (!mesh.userData.edgesLine) {
-                    const edges = new THREE.EdgesGeometry(mesh.geometry);
-                    const lineMaterial = new THREE.LineBasicMaterial({
-                        color: isSelected ? 0xffff00 : 0x000000,
-                        linewidth: 1
-                    });
-                    const line = new THREE.LineSegments(edges, lineMaterial);
-                    line.userData.isEdgeLine = true;
-                    mesh.add(line);
-                    mesh.userData.edgesLine = line;
-                } else {
-                    // 기존 라인 색상 업데이트
-                    mesh.userData.edgesLine.material.color.setHex(isSelected ? 0xffff00 : 0x000000);
-                }
+                // 테두리 라인은 하단의 통합된 선 표시 로직에서 처리됨
                 break;
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             case 'sunlight':
                 // 태양광 그림자 모드 (밝은 음영)
@@ -11913,13 +11919,36 @@
                 break;
         }
 
-        // 테두리선 모드가 아닌 경우 기존 테두리 제거
-        if (renderingMode !== 'edges' && mesh.userData.edgesLine) {
-            mesh.remove(mesh.userData.edgesLine);
-            mesh.userData.edgesLine.geometry.dispose();
-            mesh.userData.edgesLine.material.dispose();
-            delete mesh.userData.edgesLine;
+        // ▼▼▼ [수정] 선 표시 로직: edgesVisible 토글 또는 edges 모드일 때 표시 ▼▼▼
+        const shouldShowEdges = edgesVisible || renderingMode === 'edges';
+
+        if (shouldShowEdges) {
+            // 선을 표시해야 하는 경우
+            if (!mesh.userData.edgesLine) {
+                // 선이 없으면 생성
+                const edges = new THREE.EdgesGeometry(mesh.geometry);
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: isSelected ? 0xffff00 : 0x000000,
+                    linewidth: 1
+                });
+                const line = new THREE.LineSegments(edges, lineMaterial);
+                line.userData.isEdgeLine = true;
+                mesh.add(line);
+                mesh.userData.edgesLine = line;
+            } else {
+                // 선이 있으면 색상만 업데이트
+                mesh.userData.edgesLine.material.color.setHex(isSelected ? 0xffff00 : 0x000000);
+            }
+        } else {
+            // 선을 숨겨야 하는 경우
+            if (mesh.userData.edgesLine) {
+                mesh.remove(mesh.userData.edgesLine);
+                mesh.userData.edgesLine.geometry.dispose();
+                mesh.userData.edgesLine.material.dispose();
+                delete mesh.userData.edgesLine;
+            }
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // 그림자 설정
         mesh.castShadow = shadowsEnabled;
