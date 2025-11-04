@@ -237,7 +237,8 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                     for style_id, surface_style in shape.styles:
                         if surface_style and hasattr(surface_style, 'Styles'):
                             for style in surface_style.Styles:
-                                if style.is_a('IfcSurfaceStyleRendering'):
+                                # IfcSurfaceStyleShading 또는 IfcSurfaceStyleRendering (Rendering은 Shading의 하위 클래스)
+                                if style.is_a('IfcSurfaceStyleShading') or style.is_a('IfcSurfaceStyleRendering'):
                                     # Diffuse 색상 추출
                                     if hasattr(style, 'SurfaceColour') and style.SurfaceColour:
                                         color = style.SurfaceColour
@@ -251,11 +252,11 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                     if hasattr(style, 'Transparency') and style.Transparency is not None:
                                         materials['transparency'] = float(style.Transparency)
 
-                                    # Reflectance method
+                                    # Reflectance method (IfcSurfaceStyleRendering에만 있음)
                                     if hasattr(style, 'ReflectanceMethod'):
                                         materials['reflectance_method'] = str(style.ReflectanceMethod)
 
-                                    # Specular color
+                                    # Specular color (IfcSurfaceStyleRendering에만 있음)
                                     if hasattr(style, 'SpecularColour') and style.SpecularColour:
                                         spec_color = style.SpecularColour
                                         materials['specular_color'] = [
@@ -263,6 +264,10 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                             float(getattr(spec_color, 'Green', 0.0)),
                                             float(getattr(spec_color, 'Blue', 0.0))
                                         ]
+
+                                    # Style name 추출
+                                    if hasattr(surface_style, 'Name') and surface_style.Name:
+                                        materials['style_name'] = surface_style.Name
 
                 # Material name 추출 (IfcMaterial 관계에서)
                 if hasattr(element, 'HasAssociations'):
