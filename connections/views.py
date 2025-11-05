@@ -3187,14 +3187,16 @@ def export_classification_rules(request, project_id):
     response['Content-Disposition'] = f'attachment; filename="{project.name}_classification_rules.csv"'
     
     writer = csv.writer(response)
-    writer.writerow(['priority', 'description', 'target_tag_name', 'conditions'])
+    # ▼▼▼ [수정] priority 필드 제거 (2025-11-05) ▼▼▼
+    writer.writerow(['id', 'description', 'target_tag_name', 'conditions'])
     for rule in rules:
         writer.writerow([
-            rule.priority,
+            str(rule.id),
             rule.description,
             rule.target_tag.name if rule.target_tag else '',
             json.dumps(rule.conditions)
         ])
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     return response
 
 @require_http_methods(["POST"])
@@ -3213,13 +3215,14 @@ def import_classification_rules(request, project_id):
             tag_name = row.get('target_tag_name')
             try:
                 target_tag = QuantityClassificationTag.objects.get(project=project, name=tag_name)
+                # ▼▼▼ [수정] priority 필드 제거 (2025-11-05) ▼▼▼
                 ClassificationRule.objects.create(
                     project=project,
-                    priority=int(row.get('priority', 0)),
                     description=row.get('description', ''),
                     target_tag=target_tag,
                     conditions=json.loads(row.get('conditions', '[]'))
                 )
+                # ▲▲▲ [수정] 여기까지 ▲▲▲
             except QuantityClassificationTag.DoesNotExist:
                 print(f"경고: '{tag_name}' 태그를 찾을 수 없어 해당 규칙을 건너뜁니다.")
                 continue
