@@ -43,6 +43,51 @@ function getDisplayFieldName(internalField) {
 function getInternalFieldName(displayField) {
     if (!displayField) return '';
 
+    // ▼▼▼ [추가] QM.*, MM.*, SC.*, CI.*, CC.*, AO.*, AC.* 처리 (2025-11-05) ▼▼▼
+    // QM.System.* -> 수량산출부재 시스템 속성
+    if (displayField.startsWith('QM.System.')) {
+        return displayField.substring(10); // 'QM.System.' 제거
+    }
+    // QM.Properties.* -> 수량산출부재 사용자 정의 속성
+    if (displayField.startsWith('QM.Properties.')) {
+        return displayField.substring(14); // 'QM.Properties.' 제거
+    }
+
+    // MM.System.* -> 일람부호 시스템 속성
+    if (displayField.startsWith('MM.System.')) {
+        return displayField.substring(10); // 'MM.System.' 제거
+    }
+    // MM.Properties.* -> 일람부호 사용자 정의 속성
+    if (displayField.startsWith('MM.Properties.')) {
+        return displayField.substring(14); // 'MM.Properties.' 제거
+    }
+
+    // SC.System.* -> 공간분류 시스템 속성
+    if (displayField.startsWith('SC.System.')) {
+        return displayField.substring(10); // 'SC.System.' 제거
+    }
+
+    // CI.System.* -> 코스트아이템 시스템 속성
+    if (displayField.startsWith('CI.System.')) {
+        return displayField.substring(10); // 'CI.System.' 제거
+    }
+
+    // CC.System.* -> 공사코드 시스템 속성
+    if (displayField.startsWith('CC.System.')) {
+        return displayField.substring(10); // 'CC.System.' 제거
+    }
+
+    // AO.System.* -> 액티비티객체 시스템 속성
+    if (displayField.startsWith('AO.System.')) {
+        return displayField.substring(10); // 'AO.System.' 제거
+    }
+
+    // AC.System.* -> 액티비티코드 시스템 속성
+    if (displayField.startsWith('AC.System.')) {
+        return displayField.substring(10); // 'AC.System.' 제거
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // BIM. 접두어가 없으면 그대로 반환 (하위 호환성)
     if (!displayField.startsWith('BIM.')) {
         return displayField;
@@ -52,6 +97,16 @@ function getInternalFieldName(displayField) {
     // BIM.Attributes.IfcClass -> IfcClass
     if (displayField.startsWith('BIM.Attributes.')) {
         return displayField.substring(15); // 'BIM.Attributes.' 제거
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    // ▼▼▼ [수정] BIM.System.* 처리 추가 (2025-11-05) ▼▼▼
+    // BIM.System.classification_tags -> classification_tags
+    // BIM.System.id -> id
+    // BIM.System.element_unique_id -> element_unique_id
+    // BIM.System.geometry_volume -> geometry_volume
+    if (displayField.startsWith('BIM.System.')) {
+        return displayField.substring(11); // 'BIM.System.' 제거
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
@@ -90,6 +145,13 @@ function getValueForItem(item, field) {
     // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
     if (internalField === 'classification_tags') {
+        // ▼▼▼ [디버깅] classification_tags 데이터 확인 (2025-11-05) ▼▼▼
+        console.log('[getValueForItem] classification_tags check for item:', item.id, {
+            'classification_tags': item.classification_tags,
+            'classification_tags_details': item.classification_tags_details
+        });
+        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
         // classification_tags_details가 있으면 할당 타입 표시 포함
         if (Array.isArray(item.classification_tags_details) && item.classification_tags_details.length > 0) {
             return item.classification_tags_details.map(detail => {
@@ -849,46 +911,126 @@ function renderRawQmTable(members, editingMemberId = null) {
     const getQmValue = (item, field) => {
         if (!field) return '';
 
-        // ▼▼▼ [수정] QM.properties 속성 처리 (2025-11-05) ▼▼▼
-        // 이제 산출식은 저장 시점에 계산되므로, 테이블에서는 저장된 값만 표시
-        if (field.startsWith('qm_prop_')) {
-            const propName = field.substring(8); // 'qm_prop_' 제거
+        // ▼▼▼ [수정] 새로운 필드명 형식 지원 (BIM_System_id, QM_Properties_xxx 등) (2025-11-05) ▼▼▼
+        // ▼▼▼ [수정] 점 표기법과 언더스코어 표기법 모두 지원 (2025-11-05) ▼▼▼
+        // QM.System.* 필드
+        if (field.startsWith('QM.System.') || field.startsWith('QM_System_')) {
+            const fieldName = field.startsWith('QM.System.')
+                ? field.substring(10)  // 'QM.System.' 제거
+                : field.substring(10); // 'QM_System_' 제거
+            return item[fieldName] ?? '';
+        }
+
+        // QM.Properties.* 필드
+        if (field.startsWith('QM.Properties.') || field.startsWith('QM_Properties_')) {
+            const propName = field.startsWith('QM.Properties.')
+                ? field.substring(14)  // 'QM.Properties.' 제거
+                : field.substring(14); // 'QM_Properties_' 제거
             return item.properties?.[propName] ?? '';
         }
-        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-        // MM 속성 처리 (mm_prop_*, member_mark_mark)
-        if (field === 'member_mark_mark') {
-            return item.member_mark_mark ?? '';
+        // MM.System.* 필드
+        if (field.startsWith('MM.System.') || field.startsWith('MM_System_')) {
+            const fieldName = field.startsWith('MM.System.')
+                ? field.substring(10)  // 'MM.System.' 제거
+                : field.substring(10); // 'MM_System_' 제거
+            if (fieldName === 'mark') {
+                return item.member_mark_mark ?? '';
+            }
+            return item[`member_mark_${fieldName}`] ?? '';
         }
-        if (field.startsWith('mm_prop_')) {
-            const propName = field.substring(8); // 'mm_prop_' 제거
+
+        // MM.Properties.* 필드
+        if (field.startsWith('MM.Properties.') || field.startsWith('MM_Properties_')) {
+            const propName = field.startsWith('MM.Properties.')
+                ? field.substring(14)  // 'MM.Properties.' 제거
+                : field.substring(14); // 'MM_Properties_' 제거
             return item.member_mark_properties?.[propName] ?? '';
         }
 
-        // BIM 속성 처리 (bim_attr_*, bim_param_*, bim_tparam_*, bim_system_*)
-        if (field.startsWith('bim_')) {
-            if (!item.raw_element) return '';
-            const rawData = item.raw_element;
+        // SC.System.* 필드
+        if (field.startsWith('SC.System.') || field.startsWith('SC_System_')) {
+            const fieldName = field.startsWith('SC.System.')
+                ? field.substring(10)  // 'SC.System.' 제거
+                : field.substring(10); // 'SC_System_' 제거
+            return item[`space_${fieldName}`] ?? '';
+        }
 
-            if (field.startsWith('bim_attr_')) {
-                const attrName = field.substring(9); // 'bim_attr_' 제거
-                return rawData[attrName] ?? '';
-            } else if (field.startsWith('bim_param_')) {
-                const paramName = field.substring(10); // 'bim_param_' 제거
-                return rawData.Parameters?.[paramName] ?? '';
-            } else if (field.startsWith('bim_tparam_')) {
-                const tparamName = field.substring(11); // 'bim_tparam_' 제거
-                return rawData.TypeParameters?.[tparamName] ?? '';
-            } else if (field.startsWith('bim_system_')) {
-                const sysName = field.substring(11); // 'bim_system_' 제거
-                const value = rawData[sysName];
+        // BIM 속성 처리 (BIM.System.*, BIM.Attributes.*, BIM.Parameters.*, BIM.TypeParameters.* 및 언더스코어 표기법)
+        if (field.startsWith('BIM.') || field.startsWith('BIM_')) {
+            // raw_element 객체 가져오기
+            const elementId = item.split_element_id || item.raw_element_id;
+            if (!elementId) return '';
+
+            const rawElement = allRevitData ? allRevitData.find(el => el.id === elementId) : null;
+            if (!rawElement) return '';
+
+            if (field.startsWith('BIM.System.') || field.startsWith('BIM_System_')) {
+                const sysName = field.startsWith('BIM.System.')
+                    ? field.substring(11)  // 'BIM.System.' 제거
+                    : field.substring(11); // 'BIM_System_' 제거
+                const value = rawElement[sysName];
                 if (Array.isArray(value)) {
                     return value.join(', ');
                 }
                 return value ?? '';
+            } else if (field.startsWith('BIM.Attributes.') || field.startsWith('BIM_Attributes_')) {
+                const attrName = field.startsWith('BIM.Attributes.')
+                    ? field.substring(15)  // 'BIM.Attributes.' 제거
+                    : field.substring(15); // 'BIM_Attributes_' 제거
+                return rawElement.raw_data?.[attrName] ?? '';
+            } else if (field.startsWith('BIM.Parameters.') || field.startsWith('BIM_Parameters_')) {
+                const paramName = field.startsWith('BIM.Parameters.')
+                    ? field.substring(15)  // 'BIM.Parameters.' 제거
+                    : field.substring(15); // 'BIM_Parameters_' 제거
+                return rawElement.raw_data?.Parameters?.[paramName] ?? '';
+            } else if (field.startsWith('BIM.TypeParameters.') || field.startsWith('BIM_TypeParameters_')) {
+                const tparamName = field.startsWith('BIM.TypeParameters.')
+                    ? field.substring(19)  // 'BIM.TypeParameters.' 제거
+                    : field.substring(19); // 'BIM_TypeParameters_' 제거
+                return rawElement.raw_data?.TypeParameters?.[tparamName] ?? '';
             }
+            // ▼▼▼ [수정] QuantitySet, PropertySet 등 처리 (2025-11-05) ▼▼▼
+            else if (field.startsWith('BIM.QuantitySet.') || field.startsWith('BIM_QuantitySet_')) {
+                const qsName = field.startsWith('BIM.QuantitySet.')
+                    ? field.substring(16)  // 'BIM.QuantitySet.' 제거
+                    : field.substring(16); // 'BIM_QuantitySet_' 제거
+                // raw_data에서 'QuantitySet.XXX' 형태로 저장된 키 찾기
+                return rawElement.raw_data?.[`QuantitySet.${qsName}`] ?? '';
+            } else if (field.startsWith('BIM.PropertySet.') || field.startsWith('BIM_PropertySet_')) {
+                const psName = field.startsWith('BIM.PropertySet.')
+                    ? field.substring(16)  // 'BIM.PropertySet.' 제거
+                    : field.substring(16); // 'BIM_PropertySet_' 제거
+                return rawElement.raw_data?.[`PropertySet.${psName}`] ?? '';
+            } else if (field.startsWith('BIM.Spatial_Container.') || field.startsWith('BIM_Spatial_Container_')) {
+                const scName = field.startsWith('BIM.Spatial_Container.')
+                    ? field.substring(22)  // 'BIM.Spatial_Container.' 제거
+                    : field.substring(22); // 'BIM_Spatial_Container_' 제거
+                return rawElement.raw_data?.[`Spatial_Container.${scName}`] ?? '';
+            } else if (field.startsWith('BIM.Type.') || field.startsWith('BIM_Type_')) {
+                const typeName = field.startsWith('BIM.Type.')
+                    ? field.substring(9)   // 'BIM.Type.' 제거
+                    : field.substring(9);  // 'BIM_Type_' 제거
+                return rawElement.raw_data?.[`Type.${typeName}`] ?? '';
+            }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
             return '';
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // 레거시 지원
+        if (field.startsWith('qm_prop_')) {
+            const propName = field.substring(8);
+            return item.properties?.[propName] ?? '';
+        }
+
+        if (field === 'member_mark_mark') {
+            return item.member_mark_mark ?? '';
+        }
+
+        if (field.startsWith('mm_prop_')) {
+            const propName = field.substring(8);
+            return item.member_mark_properties?.[propName] ?? '';
         }
 
         if (field.startsWith('BIM원본.')) {
@@ -958,36 +1100,43 @@ function renderRawQmTable(members, editingMemberId = null) {
 
     // 필드 라벨 가져오기 함수
     const getFieldLabel = (fieldKey) => {
-        // QM 필드
+        // ▼▼▼ [수정] 새로운 필드명 형식 지원 (언더스코어를 점으로 변환) (2025-11-05) ▼▼▼
+        // 새로운 형식: QM_System_id -> QM.System.id
+        if (fieldKey.includes('_')) {
+            // BIM_, QM_, MM_, SC_, CI_, CC_ 등으로 시작하는 경우
+            if (/^(BIM|QM|MM|SC|CI|CC|AO|AC)_/.test(fieldKey)) {
+                return fieldKey.replace(/_/g, '.');
+            }
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // 레거시 필드 라벨
         const qmFieldLabels = {
-            'id': 'QM.id',
-            'name': 'QM.name',
-            'classification_tag_name': 'QM.classification_tag',
-            'raw_element_id': 'QM.raw_element_id',
-            'is_active': 'QM.is_active',
-            'member_mark_name': 'QM.member_mark',
-            'member_mark_mark': 'MM.mark',
-            'space_name': 'QM.space',
-            'properties': 'QM.properties',
-            'cost_codes': 'QM.cost_codes'
+            'id': 'QM.System.id',
+            'name': 'QM.System.name',
+            'classification_tag_name': 'QM.System.classification_tag',
+            'raw_element_id': 'QM.System.raw_element_id',
+            'is_active': 'QM.System.is_active',
+            'member_mark_name': 'QM.System.member_mark',
+            'member_mark_mark': 'MM.System.mark',
+            'space_name': 'SC.System.name',
+            'properties': 'QM.Properties',
+            'cost_codes': 'QM.System.cost_codes'
         };
 
         if (qmFieldLabels[fieldKey]) {
             return qmFieldLabels[fieldKey];
         }
 
-        // ▼▼▼ [추가] QM.properties 필드 처리 (2025-11-05) ▼▼▼
+        // 레거시 지원
         if (fieldKey.startsWith('qm_prop_')) {
-            return `QM.properties.${fieldKey.substring(8)}`;
+            return `QM.Properties.${fieldKey.substring(8)}`;
         }
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        // MM 필드
         if (fieldKey.startsWith('mm_prop_')) {
-            return `MM.properties.${fieldKey.substring(8)}`;
+            return `MM.Properties.${fieldKey.substring(8)}`;
         }
 
-        // BIM 필드
         if (fieldKey.startsWith('bim_attr_')) {
             return `BIM.Attributes.${fieldKey.substring(9)}`;
         } else if (fieldKey.startsWith('bim_param_')) {
@@ -1320,6 +1469,109 @@ function renderCostCodeViewTable(members) {
     const getQmValue = (item, field) => {
         if (!field) return '';
 
+        // ▼▼▼ [수정] 점 표기법과 언더스코어 표기법 모두 지원 (2025-11-05) ▼▼▼
+        // QM.System.* 필드
+        if (field.startsWith('QM.System.') || field.startsWith('QM_System_')) {
+            const fieldName = field.startsWith('QM.System.')
+                ? field.substring(10)  // 'QM.System.' 제거
+                : field.substring(10); // 'QM_System_' 제거
+            return item[fieldName] ?? '';
+        }
+
+        // QM.Properties.* 필드
+        if (field.startsWith('QM.Properties.') || field.startsWith('QM_Properties_')) {
+            const propName = field.startsWith('QM.Properties.')
+                ? field.substring(14)  // 'QM.Properties.' 제거
+                : field.substring(14); // 'QM_Properties_' 제거
+            return item.properties?.[propName] ?? '';
+        }
+
+        // MM.System.* 필드
+        if (field.startsWith('MM.System.') || field.startsWith('MM_System_')) {
+            const fieldName = field.startsWith('MM.System.')
+                ? field.substring(10)  // 'MM.System.' 제거
+                : field.substring(10); // 'MM_System_' 제거
+            if (fieldName === 'mark') {
+                return item.member_mark_mark ?? '';
+            }
+            return item[`member_mark_${fieldName}`] ?? '';
+        }
+
+        // MM.Properties.* 필드
+        if (field.startsWith('MM.Properties.') || field.startsWith('MM_Properties_')) {
+            const propName = field.startsWith('MM.Properties.')
+                ? field.substring(14)  // 'MM.Properties.' 제거
+                : field.substring(14); // 'MM_Properties_' 제거
+            return item.member_mark_properties?.[propName] ?? '';
+        }
+
+        // SC.System.* 필드
+        if (field.startsWith('SC.System.') || field.startsWith('SC_System_')) {
+            const fieldName = field.startsWith('SC.System.')
+                ? field.substring(10)  // 'SC.System.' 제거
+                : field.substring(10); // 'SC_System_' 제거
+            return item[`space_${fieldName}`] ?? '';
+        }
+
+        // BIM 속성 처리 (BIM.System.*, BIM.Attributes.*, BIM.Parameters.*, BIM.TypeParameters.* 및 언더스코어 표기법)
+        if (field.startsWith('BIM.') || field.startsWith('BIM_')) {
+            // raw_element 객체 가져오기
+            const elementId = item.split_element_id || item.raw_element_id;
+            if (!elementId) return '';
+
+            const rawElement = allRevitData ? allRevitData.find(el => el.id === elementId) : null;
+            if (!rawElement) return '';
+
+            if (field.startsWith('BIM.System.') || field.startsWith('BIM_System_')) {
+                const sysName = field.startsWith('BIM.System.')
+                    ? field.substring(11)  // 'BIM.System.' 제거
+                    : field.substring(11); // 'BIM_System_' 제거
+                const value = rawElement[sysName];
+                if (Array.isArray(value)) {
+                    return value.join(', ');
+                }
+                return value ?? '';
+            } else if (field.startsWith('BIM.Attributes.') || field.startsWith('BIM_Attributes_')) {
+                const attrName = field.startsWith('BIM.Attributes.')
+                    ? field.substring(15)  // 'BIM.Attributes.' 제거
+                    : field.substring(15); // 'BIM_Attributes_' 제거
+                return rawElement.raw_data?.[attrName] ?? '';
+            } else if (field.startsWith('BIM.Parameters.') || field.startsWith('BIM_Parameters_')) {
+                const paramName = field.startsWith('BIM.Parameters.')
+                    ? field.substring(15)  // 'BIM.Parameters.' 제거
+                    : field.substring(15); // 'BIM_Parameters_' 제거
+                return rawElement.raw_data?.Parameters?.[paramName] ?? '';
+            } else if (field.startsWith('BIM.TypeParameters.') || field.startsWith('BIM_TypeParameters_')) {
+                const tparamName = field.startsWith('BIM.TypeParameters.')
+                    ? field.substring(19)  // 'BIM.TypeParameters.' 제거
+                    : field.substring(19); // 'BIM_TypeParameters_' 제거
+                return rawElement.raw_data?.TypeParameters?.[tparamName] ?? '';
+            } else if (field.startsWith('BIM.QuantitySet.') || field.startsWith('BIM_QuantitySet_')) {
+                const qsName = field.startsWith('BIM.QuantitySet.')
+                    ? field.substring(16)  // 'BIM.QuantitySet.' 제거
+                    : field.substring(16); // 'BIM_QuantitySet_' 제거
+                return rawElement.raw_data?.[`QuantitySet.${qsName}`] ?? '';
+            } else if (field.startsWith('BIM.PropertySet.') || field.startsWith('BIM_PropertySet_')) {
+                const psName = field.startsWith('BIM.PropertySet.')
+                    ? field.substring(16)  // 'BIM.PropertySet.' 제거
+                    : field.substring(16); // 'BIM_PropertySet_' 제거
+                return rawElement.raw_data?.[`PropertySet.${psName}`] ?? '';
+            } else if (field.startsWith('BIM.Spatial_Container.') || field.startsWith('BIM_Spatial_Container_')) {
+                const scName = field.startsWith('BIM.Spatial_Container.')
+                    ? field.substring(22)  // 'BIM.Spatial_Container.' 제거
+                    : field.substring(22); // 'BIM_Spatial_Container_' 제거
+                return rawElement.raw_data?.[`Spatial_Container.${scName}`] ?? '';
+            } else if (field.startsWith('BIM.Type.') || field.startsWith('BIM_Type_')) {
+                const typeName = field.startsWith('BIM.Type.')
+                    ? field.substring(9)   // 'BIM.Type.' 제거
+                    : field.substring(9);  // 'BIM_Type_' 제거
+                return rawElement.raw_data?.[`Type.${typeName}`] ?? '';
+            }
+            return '';
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // 레거시 지원
         // MM 속성 처리 (mm_prop_*, member_mark_mark)
         if (field === 'member_mark_mark') {
             return item.member_mark_mark ?? '';
@@ -1863,47 +2115,134 @@ function renderCostItemsTable(items, editingItemId = null) {
     const getCiValue = (item, field) => {
         if (!field) return '';
 
-        // Activity.* 필드 (액티비티별 뷰에서 추가된 필드)
-        if (field.startsWith('Activity.')) {
-            return item[field] ?? '';
+        // ▼▼▼ [수정] 새로운 필드명 형식 지원 (언더스코어 형식과 점 형식 모두 지원) (2025-11-05) ▼▼▼
+        // CI.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('CI.System.') || field.startsWith('CI_System_')) {
+            const fieldName = field.startsWith('CI.System.')
+                ? field.substring(10)  // 'CI.System.' 제거
+                : field.substring(10); // 'CI_System_' 제거
+            return item[fieldName] ?? '';
         }
 
-        // QM.properties.* 필드
-        if (field.startsWith('QM.properties.')) {
-            const propName = field.substring(14); // 'QM.properties.'.length === 14
+        // QM.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('QM.System.') || field.startsWith('QM_System_')) {
+            const fieldName = field.startsWith('QM.System.')
+                ? field.substring(10)  // 'QM.System.' 제거
+                : field.substring(10); // 'QM_System_' 제거
+            // quantity_member_ 접두어가 붙은 필드로 접근
+            return item[`quantity_member_${fieldName}`] ?? '';
+        }
+
+        // QM.Properties.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('QM.Properties.') || field.startsWith('QM_Properties_')) {
+            const propName = field.startsWith('QM.Properties.')
+                ? field.substring(14)  // 'QM.Properties.' 제거
+                : field.substring(14); // 'QM_Properties_' 제거
             return item.quantity_member_properties?.[propName] ?? '';
         }
 
-        // MM.properties.* 필드
-        if (field.startsWith('MM.properties.')) {
-            const propName = field.substring(14); // 'MM.properties.'.length === 14
+        // MM.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('MM.System.') || field.startsWith('MM_System_')) {
+            const fieldName = field.startsWith('MM.System.')
+                ? field.substring(10)  // 'MM.System.' 제거
+                : field.substring(10); // 'MM_System_' 제거
+            if (fieldName === 'mark') {
+                return item.member_mark_mark ?? '';
+            }
+            return item[`member_mark_${fieldName}`] ?? '';
+        }
+
+        // MM.Properties.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('MM.Properties.') || field.startsWith('MM_Properties_')) {
+            const propName = field.startsWith('MM.Properties.')
+                ? field.substring(14)  // 'MM.Properties.' 제거
+                : field.substring(14); // 'MM_Properties_' 제거
             return item.member_mark_properties?.[propName] ?? '';
         }
 
-        // BIM.Attributes.* 필드
-        if (field.startsWith('BIM.Attributes.')) {
-            const attrName = field.substring(15); // 'BIM.Attributes.'.length === 15
+        // BIM.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.System.') || field.startsWith('BIM_System_')) {
+            const sysName = field.startsWith('BIM.System.')
+                ? field.substring(11)  // 'BIM.System.' 제거
+                : field.substring(11); // 'BIM_System_' 제거
+            return item[`raw_element_${sysName}`] ?? '';
+        }
+
+        // BIM.Attributes.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.Attributes.') || field.startsWith('BIM_Attributes_')) {
+            const attrName = field.startsWith('BIM.Attributes.')
+                ? field.substring(15)  // 'BIM.Attributes.' 제거
+                : field.substring(15); // 'BIM_Attributes_' 제거
             return item.raw_element_properties?.[attrName] ?? '';
         }
 
-        // BIM.Parameters.* 필드
-        if (field.startsWith('BIM.Parameters.')) {
-            const paramName = field.substring(15); // 'BIM.Parameters.'.length === 15
+        // BIM.Parameters.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.Parameters.') || field.startsWith('BIM_Parameters_')) {
+            const paramName = field.startsWith('BIM.Parameters.')
+                ? field.substring(15)  // 'BIM.Parameters.' 제거
+                : field.substring(15); // 'BIM_Parameters_' 제거
             return item.raw_element_properties?.[paramName] ?? '';
         }
 
-        // BIM.TypeParameters.* 필드
-        if (field.startsWith('BIM.TypeParameters.')) {
-            const tparamName = field.substring(19); // 'BIM.TypeParameters.'.length === 19
+        // BIM.TypeParameters.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.TypeParameters.') || field.startsWith('BIM_TypeParameters_')) {
+            const tparamName = field.startsWith('BIM.TypeParameters.')
+                ? field.substring(19)  // 'BIM.TypeParameters.' 제거
+                : field.substring(19); // 'BIM_TypeParameters_' 제거
             return item.raw_element_properties?.[tparamName] ?? '';
         }
 
-        // BIM.System.* 필드
-        if (field.startsWith('BIM.System.')) {
-            const sysName = field.substring(11); // 'BIM.System.'.length === 11
-            // System 필드는 item 자체에 있을 수도 있음
-            if (sysName === 'id') return item.raw_element_id ?? '';
-            return item.raw_element_properties?.[sysName] ?? item[sysName] ?? '';
+        // ▼▼▼ [추가] BIM.QuantitySet.*, PropertySet.*, Spatial_Container.*, Type.* 지원 (2025-11-05) ▼▼▼
+        // BIM.QuantitySet.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.QuantitySet.') || field.startsWith('BIM_QuantitySet_')) {
+            const qsName = field.startsWith('BIM.QuantitySet.')
+                ? field.substring(16)  // 'BIM.QuantitySet.' 제거
+                : field.substring(16); // 'BIM_QuantitySet_' 제거
+            return item.raw_element_properties?.[`QuantitySet.${qsName}`] ?? '';
+        }
+
+        // BIM.PropertySet.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.PropertySet.') || field.startsWith('BIM_PropertySet_')) {
+            const psName = field.startsWith('BIM.PropertySet.')
+                ? field.substring(16)  // 'BIM.PropertySet.' 제거
+                : field.substring(16); // 'BIM_PropertySet_' 제거
+            return item.raw_element_properties?.[`PropertySet.${psName}`] ?? '';
+        }
+
+        // BIM.Spatial_Container.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.Spatial_Container.') || field.startsWith('BIM_Spatial_Container_')) {
+            const scName = field.startsWith('BIM.Spatial_Container.')
+                ? field.substring(22)  // 'BIM.Spatial_Container.' 제거
+                : field.substring(22); // 'BIM_Spatial_Container_' 제거
+            return item.raw_element_properties?.[`Spatial_Container.${scName}`] ?? '';
+        }
+
+        // BIM.Type.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('BIM.Type.') || field.startsWith('BIM_Type_')) {
+            const typeName = field.startsWith('BIM.Type.')
+                ? field.substring(9)  // 'BIM.Type.' 제거
+                : field.substring(9); // 'BIM_Type_' 제거
+            return item.raw_element_properties?.[`Type.${typeName}`] ?? '';
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        // CC.System.* 필드 (CostCode) (점 형식과 언더스코어 형식 모두 지원)
+        if (field.startsWith('CC.System.') || field.startsWith('CC_System_')) {
+            const fieldName = field.startsWith('CC.System.')
+                ? field.substring(10)  // 'CC.System.' 제거
+                : field.substring(10); // 'CC_System_' 제거
+            // ▼▼▼ [수정] 'code' 필드는 'cost_code'에 직접 저장됨 (2025-11-05) ▼▼▼
+            if (fieldName === 'code') {
+                return item['cost_code'] ?? '';
+            }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
+            return item[`cost_code_${fieldName}`] ?? '';
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // Activity.* 필드 (액티비티별 뷰에서 추가된 필드)
+        if (field.startsWith('Activity.')) {
+            return item[field] ?? '';
         }
 
         // 기존 필드 처리
@@ -2675,6 +3014,12 @@ function renderMemberMarkAssignmentRulesetTable(rules, editId = null) {
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
+
+    // ▼▼▼ [추가] 조건 빌더 리스너 설정 (2025-11-05) ▼▼▼
+    if (editId) {
+        setupConditionBuilderListeners();
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 }
 
 /**
@@ -3119,6 +3464,8 @@ function renderConditionRowForQM(condition, index) {
 /**
  * allRevitData로부터 BIM 속성 옵션을 동적으로 생성합니다.
  * 계층적 명명 규칙을 적용하여 그룹화된 옵션 배열을 반환합니다.
+ *
+ * ▼▼▼ [수정] QuantitySet, PropertySet 등 모든 BIM 속성 동적 수집 (2025-11-05) ▼▼▼
  */
 function generateBIMPropertyOptions() {
     if (!allRevitData || allRevitData.length === 0) {
@@ -3130,6 +3477,11 @@ function generateBIMPropertyOptions() {
     const attributeProps = new Set();
     const instanceParams = new Set();
     const typeParams = new Set();
+    const quantitySetProps = new Set();
+    const propertySetProps = new Set();
+    const spatialContainerProps = new Set();
+    const typeInfoProps = new Set();
+    const otherProps = new Set();
 
     // 시스템 속성 (Cost Estimator 관리)
     const systemKeys = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
@@ -3155,14 +3507,40 @@ function generateBIMPropertyOptions() {
                     instanceParams.add(k);
                 });
             }
-            // raw_data 직접 속성 수집 (IFC Attributes)
+            // raw_data의 모든 top-level 키 수집
             Object.keys(raw).forEach((k) => {
-                if (k !== 'Parameters' && k !== 'TypeParameters') {
-                    if (ifcAttributeKeys.includes(k)) {
-                        attributeProps.add(k);
-                    } else {
-                        instanceParams.add(k);
-                    }
+                // Parameters, TypeParameters는 이미 처리했으므로 제외
+                if (k === 'Parameters' || k === 'TypeParameters') {
+                    return;
+                }
+
+                // QuantitySet.* 형태의 속성
+                if (k.startsWith('QuantitySet.')) {
+                    quantitySetProps.add(k);
+                }
+                // PropertySet.* 형태의 속성
+                else if (k.startsWith('PropertySet.')) {
+                    propertySetProps.add(k);
+                }
+                // Spatial_Container.* 형태의 속성
+                else if (k.startsWith('Spatial_Container.')) {
+                    spatialContainerProps.add(k);
+                }
+                // Type.* 형태의 속성
+                else if (k.startsWith('Type.')) {
+                    typeInfoProps.add(k);
+                }
+                // Attributes.* 형태의 속성
+                else if (k.startsWith('Attributes.')) {
+                    attributeProps.add(k.substring(11)); // "Attributes." 제거
+                }
+                // 하드코딩된 IFC Attributes
+                else if (ifcAttributeKeys.includes(k)) {
+                    attributeProps.add(k);
+                }
+                // 그 외 모든 속성
+                else {
+                    otherProps.add(k);
                 }
             });
         }
@@ -3195,6 +3573,58 @@ function generateBIMPropertyOptions() {
         });
     }
 
+    // BIM.QuantitySet.* 그룹 (새로 추가!)
+    if (quantitySetProps.size > 0) {
+        const options = Array.from(quantitySetProps).sort().map(prop => {
+            // QuantitySet.XXX -> BIM.QuantitySet.XXX 형태로 표시
+            const displayName = `BIM.${prop}`;
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM QuantitySet (수량 속성)',
+            options: options
+        });
+    }
+
+    // BIM.PropertySet.* 그룹 (새로 추가!)
+    if (propertySetProps.size > 0) {
+        const options = Array.from(propertySetProps).sort().map(prop => {
+            // PropertySet.XXX -> BIM.PropertySet.XXX 형태로 표시
+            const displayName = `BIM.${prop}`;
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM PropertySet (속성 세트)',
+            options: options
+        });
+    }
+
+    // BIM.Spatial_Container.* 그룹 (새로 추가!)
+    if (spatialContainerProps.size > 0) {
+        const options = Array.from(spatialContainerProps).sort().map(prop => {
+            // Spatial_Container.XXX -> BIM.Spatial_Container.XXX 형태로 표시
+            const displayName = `BIM.${prop}`;
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM Spatial Container (공간 컨테이너)',
+            options: options
+        });
+    }
+
+    // BIM.Type.* 그룹 (새로 추가!)
+    if (typeInfoProps.size > 0) {
+        const options = Array.from(typeInfoProps).sort().map(prop => {
+            // Type.XXX -> BIM.Type.XXX 형태로 표시
+            const displayName = `BIM.${prop}`;
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM Type Info (타입 정보)',
+            options: options
+        });
+    }
+
     // BIM.Parameters.* 그룹
     if (instanceParams.size > 0) {
         const options = Array.from(instanceParams).sort().map(prop => {
@@ -3219,7 +3649,244 @@ function generateBIMPropertyOptions() {
         });
     }
 
+    // 기타 속성들 (분류되지 않은 것들)
+    if (otherProps.size > 0) {
+        const options = Array.from(otherProps).sort().map(prop => {
+            const displayName = getDisplayFieldName(prop);
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM 기타 속성',
+            options: options
+        });
+    }
+
     return propertyOptions;
+}
+// ▲▲▲ [수정] 여기까지 ▲▲▲
+
+/**
+ * 수량산출부재(QuantityMember)용 속성 옵션 생성
+ * BIM.* + QM.* + MM.* + SC.* 속성을 모두 포함합니다.
+ */
+function generateQMPropertyOptions() {
+    const propertyOptions = [];
+
+    // 1. BIM 속성 (RawElement로부터 상속)
+    const bimOptions = generateBIMPropertyOptions();
+    propertyOptions.push(...bimOptions);
+
+    // 2. QM.* - 수량산출부재 자체 속성
+    const qmFields = [
+        { value: 'QM.System.id', label: 'QM.System.id' },
+        { value: 'QM.System.name', label: 'QM.System.name' },
+        { value: 'QM.System.quantity', label: 'QM.System.quantity' },
+        { value: 'QM.System.is_manual_quantity', label: 'QM.System.is_manual_quantity' },
+        { value: 'QM.System.note', label: 'QM.System.note' },
+        { value: 'QM.System.classification_tag', label: 'QM.System.classification_tag' }
+    ];
+    propertyOptions.push({
+        group: 'QM 시스템 속성 (수량산출부재 자체)',
+        options: qmFields
+    });
+
+    // 3. QM.Properties.* - 사용자 정의 속성 (동적으로 수집 필요)
+    // 현재 로드된 QuantityMember 데이터에서 properties 수집
+    if (window.currentQuantityMembers && window.currentQuantityMembers.length > 0) {
+        const qmPropertiesSet = new Set();
+        window.currentQuantityMembers.forEach(qm => {
+            if (qm.properties && typeof qm.properties === 'object') {
+                Object.keys(qm.properties).forEach(key => {
+                    qmPropertiesSet.add(key);
+                });
+            }
+        });
+
+        if (qmPropertiesSet.size > 0) {
+            const qmPropOptions = Array.from(qmPropertiesSet).sort().map(prop => {
+                return { value: `QM.Properties.${prop}`, label: `QM.Properties.${prop}` };
+            });
+            propertyOptions.push({
+                group: 'QM Properties (사용자 정의 속성)',
+                options: qmPropOptions
+            });
+        }
+    }
+
+    // 4. MM.* - 일람부호 속성 (MemberMark)
+    const mmFields = [
+        { value: 'MM.System.id', label: 'MM.System.id' },
+        { value: 'MM.System.mark', label: 'MM.System.mark' },
+        { value: 'MM.System.description', label: 'MM.System.description' }
+    ];
+
+    // MM.Properties.* 동적 수집
+    if (window.currentMemberMarks && window.currentMemberMarks.length > 0) {
+        const mmPropertiesSet = new Set();
+        window.currentMemberMarks.forEach(mm => {
+            if (mm.properties && typeof mm.properties === 'object') {
+                Object.keys(mm.properties).forEach(key => {
+                    mmPropertiesSet.add(key);
+                });
+            }
+        });
+
+        if (mmPropertiesSet.size > 0) {
+            mmPropertiesSet.forEach(prop => {
+                mmFields.push({ value: `MM.Properties.${prop}`, label: `MM.Properties.${prop}` });
+            });
+        }
+    }
+
+    propertyOptions.push({
+        group: 'MM 일람부호 속성',
+        options: mmFields
+    });
+
+    // 5. SC.* - 공간분류 속성 (SpaceClassification)
+    const scFields = [
+        { value: 'SC.System.id', label: 'SC.System.id' },
+        { value: 'SC.System.name', label: 'SC.System.name' },
+        { value: 'SC.System.level', label: 'SC.System.level' },
+        { value: 'SC.System.parent_id', label: 'SC.System.parent_id' }
+    ];
+
+    propertyOptions.push({
+        group: 'SC 공간분류 속성',
+        options: scFields
+    });
+
+    return propertyOptions;
+}
+
+/**
+ * 코스트아이템(CostItem)용 속성 옵션 생성
+ * BIM.* + QM.* + MM.* + SC.* + CI.* + CC.* 속성을 모두 포함합니다.
+ */
+function generateCIPropertyOptions() {
+    const propertyOptions = [];
+
+    // 1~5. 수량산출부재로부터 상속된 모든 속성
+    const qmOptions = generateQMPropertyOptions();
+    propertyOptions.push(...qmOptions);
+
+    // 6. CI.* - 코스트아이템 자체 속성
+    const ciFields = [
+        { value: 'CI.System.id', label: 'CI.System.id' },
+        { value: 'CI.System.name', label: 'CI.System.name' },
+        { value: 'CI.System.quantity', label: 'CI.System.quantity' },
+        { value: 'CI.System.is_manual_quantity', label: 'CI.System.is_manual_quantity' },
+        { value: 'CI.System.group', label: 'CI.System.group' },
+        { value: 'CI.System.note', label: 'CI.System.note' }
+    ];
+    propertyOptions.push({
+        group: 'CI 시스템 속성 (코스트아이템 자체)',
+        options: ciFields
+    });
+
+    // 7. CC.* - 공사코드 속성 (CostCode)
+    const ccFields = [
+        { value: 'CC.System.id', label: 'CC.System.id' },
+        { value: 'CC.System.code', label: 'CC.System.code' },
+        { value: 'CC.System.name', label: 'CC.System.name' },
+        { value: 'CC.System.detail_code', label: 'CC.System.detail_code' },
+        { value: 'CC.System.note', label: 'CC.System.note' },
+        { value: 'CC.System.unit', label: 'CC.System.unit' },
+        { value: 'CC.System.is_sd_enabled', label: 'CC.System.is_sd_enabled' }
+    ];
+
+    propertyOptions.push({
+        group: 'CC 공사코드 속성',
+        options: ccFields
+    });
+
+    return propertyOptions;
+}
+
+/**
+ * 액티비티객체(ActivityObject)용 속성 옵션 생성
+ * BIM.* + QM.* + MM.* + SC.* + CI.* + CC.* + AO.* + AC.* 속성을 모두 포함합니다.
+ */
+function generateAOPropertyOptions() {
+    const propertyOptions = [];
+
+    // 1~7. 코스트아이템으로부터 상속된 모든 속성
+    const ciOptions = generateCIPropertyOptions();
+    propertyOptions.push(...ciOptions);
+
+    // 8. AO.* - 액티비티객체 자체 속성
+    const aoFields = [
+        { value: 'AO.System.id', label: 'AO.System.id' },
+        { value: 'AO.System.name', label: 'AO.System.name' },
+        { value: 'AO.System.quantity', label: 'AO.System.quantity' },
+        { value: 'AO.System.is_manual_quantity', label: 'AO.System.is_manual_quantity' },
+        { value: 'AO.System.note', label: 'AO.System.note' }
+    ];
+    propertyOptions.push({
+        group: 'AO 시스템 속성 (액티비티객체 자체)',
+        options: aoFields
+    });
+
+    // 9. AC.* - 액티비티코드 속성 (Activity)
+    const acFields = [
+        { value: 'AC.System.id', label: 'AC.System.id' },
+        { value: 'AC.System.code', label: 'AC.System.code' },
+        { value: 'AC.System.name', label: 'AC.System.name' },
+        { value: 'AC.System.description', label: 'AC.System.description' },
+        { value: 'AC.System.start_date', label: 'AC.System.start_date' },
+        { value: 'AC.System.end_date', label: 'AC.System.end_date' },
+        { value: 'AC.System.duration_days', label: 'AC.System.duration_days' },
+        { value: 'AC.System.predecessor_codes', label: 'AC.System.predecessor_codes' }
+    ];
+
+    propertyOptions.push({
+        group: 'AC 액티비티코드 속성',
+        options: acFields
+    });
+
+    return propertyOptions;
+}
+
+/**
+ * 첫 번째 접두어 추출 (BIM.System.id -> BIM)
+ */
+function getFirstPrefix(label) {
+    if (!label || !label.includes('.')) return label;
+    return label.split('.')[0];
+}
+
+/**
+ * 통일된 섹션 정의 (첫 번째 접두어 기준)
+ * 모든 탭에서 동일하게 사용
+ */
+function getSectionDefinitions() {
+    return [
+        { key: 'BIM', title: '🏗️ BIM 속성', color: '#1976d2' },
+        { key: 'QM', title: '📌 수량산출부재 속성', color: '#388e3c' },
+        { key: 'MM', title: '📋 일람부호 속성', color: '#7b1fa2' },
+        { key: 'SC', title: '🏢 공간분류 속성', color: '#00796b' },
+        { key: 'CI', title: '💰 코스트아이템 속성', color: '#ff6f00' },
+        { key: 'CC', title: '📋 공사코드 속성', color: '#d32f2f' },
+        { key: 'AO', title: '📅 액티비티객체 속성', color: '#303f9f' },
+        { key: 'AC', title: '📆 액티비티코드 속성', color: '#c2185b' }
+    ];
+}
+
+/**
+ * 필드들을 첫 번째 접두어 기준으로 그룹화
+ * @param {Array} fields - 필드 배열 (각 필드는 label 속성을 가짐)
+ * @returns {Object} 섹션별로 그룹화된 필드 맵
+ */
+function groupFieldsByPrefix(fields) {
+    const sectionMap = {};
+    fields.forEach(field => {
+        const prefix = getFirstPrefix(field.label);
+        if (!sectionMap[prefix]) {
+            sectionMap[prefix] = [];
+        }
+        sectionMap[prefix].push(field);
+    });
+    return sectionMap;
 }
 
 /**
@@ -3289,20 +3956,39 @@ function renderConditionRowForRE(condition, index) {
  * @param {Number} index - 행 번호
  */
 function renderMappingRow(key = '', value = '', index = 0) {
+    // 객체 조건과 동일한 속성 목록 사용
+    const propertyOptionGroups = generateBIMPropertyOptions();
+
+    let propertyOptionsHtml = '<option value="">-- 속성 선택하여 추가 --</option>';
+    propertyOptionGroups.forEach(group => {
+        propertyOptionsHtml += `<optgroup label="${group.group}">`;
+        group.options.forEach(opt => {
+            propertyOptionsHtml += `<option value="${opt.value}">${opt.label}</option>`;
+        });
+        propertyOptionsHtml += '</optgroup>';
+    });
+
     return `
-        <div class="mapping-row" style="display: flex; gap: 10px; margin-bottom: 8px; align-items: center;">
+        <div class="mapping-row" style="display: flex; gap: 5px; margin-bottom: 8px; align-items: flex-start;">
             <input type="text"
                    class="mapping-key-input"
                    value="${key}"
                    placeholder="속성 이름 (예: 체적)"
                    style="flex: 1; padding: 5px;">
-            <input type="text"
-                   class="mapping-value-input"
-                   value="${value}"
-                   placeholder="표현식 (예: {Volume}, {Area} * 2)"
-                   style="flex: 2; padding: 5px;">
-            <button type="button" class="remove-mapping-btn" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                🗑️ 삭제
+            <div style="flex: 2; display: flex; flex-direction: column; gap: 5px;">
+                <input type="text"
+                       class="mapping-value-input"
+                       value="${value}"
+                       placeholder="표현식 (예: {BIM.Parameters.Volume}, {BIM.Parameters.Area} * 2)"
+                       style="width: 100%; padding: 5px;">
+                <select class="mapping-property-select"
+                        style="width: 100%; padding: 5px; font-size: 11px;"
+                        title="속성을 선택하면 입력란에 {속성명} 형태로 추가됩니다">
+                    ${propertyOptionsHtml}
+                </select>
+            </div>
+            <button type="button" class="remove-mapping-btn" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer; flex-shrink: 0;">
+                🗑️
             </button>
         </div>
     `;
@@ -3378,6 +4064,33 @@ function setupConditionBuilderListeners() {
     document.querySelectorAll('.remove-mapping-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.target.closest('.mapping-row').remove();
+        });
+    });
+
+    // 맵핑 속성 콤보박스 선택 시 입력란에 추가
+    document.querySelectorAll('.mapping-property-select').forEach(select => {
+        select.addEventListener('change', (e) => {
+            const selectedProperty = e.target.value;
+            if (!selectedProperty) return;
+
+            const mappingRow = e.target.closest('.mapping-row');
+            const valueInput = mappingRow.querySelector('.mapping-value-input');
+
+            // 커서 위치에 {속성명} 추가
+            const cursorPos = valueInput.selectionStart;
+            const currentValue = valueInput.value;
+            const beforeCursor = currentValue.substring(0, cursorPos);
+            const afterCursor = currentValue.substring(cursorPos);
+
+            valueInput.value = beforeCursor + `{${selectedProperty}}` + afterCursor;
+
+            // 커서를 추가된 텍스트 뒤로 이동
+            const newCursorPos = cursorPos + selectedProperty.length + 2;
+            valueInput.setSelectionRange(newCursorPos, newCursorPos);
+            valueInput.focus();
+
+            // 콤보박스 초기화
+            e.target.value = '';
         });
     });
 }

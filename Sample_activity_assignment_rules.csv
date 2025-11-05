@@ -1,0 +1,2 @@
+﻿﻿﻿name,description,priority,conditions,target_activity_code
+﻿ㅁㅁ,ㅁㅁ,0,"[{""property"": ""CC_System_detail_code"", ""operator"": ""equals"", ""value"": ""c-001""}]",wk-002

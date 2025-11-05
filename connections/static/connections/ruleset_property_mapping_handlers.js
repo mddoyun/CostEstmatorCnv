@@ -146,16 +146,27 @@ function renderPropertyMappingRulesetTable(rules, editId = null) {
                 conditionsDisplay = '<em>조건 없음</em>';
             }
 
+            // 맵핑 스크립트를 사용자 친화적으로 표시
+            let mappingDisplay = '';
+            if (rule.mapping_script && typeof rule.mapping_script === 'object') {
+                const entries = Object.entries(rule.mapping_script);
+                if (entries.length > 0) {
+                    mappingDisplay = entries.map(([key, value]) =>
+                        `<strong>${key}</strong>: ${value}`
+                    ).join('<br>');
+                } else {
+                    mappingDisplay = '<em>맵핑 없음</em>';
+                }
+            } else {
+                mappingDisplay = '<em>맵핑 없음</em>';
+            }
+
             row.innerHTML = `
                 <td>${rule.name}</td>
                 <td>${rule.description}</td>
                 <td>${rule.target_tag_name}</td>
                 <td>${conditionsDisplay}</td>
-                <td><pre>${JSON.stringify(
-                    rule.mapping_script,
-                    null,
-                    2
-                )}</pre></td>
+                <td style="font-size: 12px; line-height: 1.6;">${mappingDisplay}</td>
                 <td>${rule.priority}</td>
                 <td>
                     <button class="edit-rule-btn">✏️ 수정</button>

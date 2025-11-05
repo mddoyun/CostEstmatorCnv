@@ -1563,208 +1563,155 @@ function handleQmLeftPanelTabClick(e) {
 }
 
 /**
- * 수량산출부재의 연관된 BIM 원본 속성 수집
+ * 수량산출부재의 모든 속성 수집 (BIM + QM + MM + SC)
+ * generateQMPropertyOptions()를 사용하여 완전한 속성 상속 체계를 구현합니다.
  */
 function collectBimFieldsFromQuantityMembers() {
-    const bimFields = [];
-    const attributeFields = new Set();
-    const parameterFields = new Set();
-    const typeParameterFields = new Set();
-    const systemFields = new Set();
+    // ▼▼▼ [수정] generateQMPropertyOptions()를 사용하여 모든 속성 수집 (2025-11-05) ▼▼▼
+    const propertyOptionGroups = generateQMPropertyOptions();
+    const allFields = [];
 
-    // BIM원본데이터 탭과 동일하게 allRevitData를 스캔하여 모든 필드 수집
-    // 이렇게 하면 수량산출부재에 연결되지 않은 속성도 모두 표시됩니다
-    if (!allRevitData || allRevitData.length === 0) return [];
-
-    allRevitData.forEach(item => {
-        const rawData = item.raw_data;
-        if (!rawData) return;
-
-        // BIM.Parameters.* - 파라미터
-        if (rawData.Parameters && typeof rawData.Parameters === 'object') {
-            Object.keys(rawData.Parameters).forEach(key => {
-                if (key !== 'Geometry') { // Geometry는 너무 큼
-                    parameterFields.add(key);
-                }
+    propertyOptionGroups.forEach(group => {
+        group.options.forEach(opt => {
+            allFields.push({
+                // ▼▼▼ [수정] 점(.)을 언더스코어(_)로 변환하지 않음 - 원본 유지 (2025-11-05) ▼▼▼
+                key: opt.value,  // .replace(/\./g, '_') 제거
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
+                label: opt.label,
+                section: extractSection(opt.label),
+                fieldName: extractFieldName(opt.label),
+                fieldType: extractFieldType(opt.label)
             });
-        }
-
-        // BIM.TypeParameters.* - 타입 파라미터
-        if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
-            Object.keys(rawData.TypeParameters).forEach(key => {
-                typeParameterFields.add(key);
-            });
-        }
-
-        // BIM 원본 데이터의 다른 모든 속성 (BIM원본데이터 탭과 동일)
-        Object.keys(rawData).forEach(k => {
-            if (k !== 'Parameters' && k !== 'TypeParameters' && typeof rawData[k] !== 'object') {
-                attributeFields.add(k);
-            }
         });
     });
 
-    // BIM.System.* - 시스템 속성 (항상 추가)
-    const sysProps = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
-    sysProps.forEach(prop => {
-        systemFields.add(prop);
-    });
-
-    // BIM.Attributes.* 필드 추가
-    attributeFields.forEach(attr => {
-        bimFields.push({
-            key: `bim_attr_${attr}`,
-            label: `BIM.Attributes.${attr}`,
-            section: 'BIM.Attributes',
-            bimField: attr,
-            bimType: 'attribute'
-        });
-    });
-
-    // BIM.Parameters.* 필드 추가
-    parameterFields.forEach(param => {
-        bimFields.push({
-            key: `bim_param_${param}`,
-            label: `BIM.Parameters.${param}`,
-            section: 'BIM.Parameters',
-            bimField: param,
-            bimType: 'parameter'
-        });
-    });
-
-    // BIM.TypeParameters.* 필드 추가
-    typeParameterFields.forEach(tparam => {
-        bimFields.push({
-            key: `bim_tparam_${tparam}`,
-            label: `BIM.TypeParameters.${tparam}`,
-            section: 'BIM.TypeParameters',
-            bimField: tparam,
-            bimType: 'typeparameter'
-        });
-    });
-
-    // BIM.System.* 필드 추가
-    systemFields.forEach(sys => {
-        bimFields.push({
-            key: `bim_system_${sys}`,
-            label: `BIM.System.${sys}`,
-            section: 'BIM.System',
-            bimField: sys,
-            bimType: 'system'
-        });
-    });
-
-    return bimFields;
+    return allFields;
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 }
 
 /**
- * 수량산출부재의 일람부호 속성 필드 수집
+ * 필드명에서 섹션 추출 (예: BIM.Parameters.길이 -> BIM.Parameters)
+ * 모든 접두어 (BIM, QM, MM, SC, CI, CC, AO, AC)를 처리합니다.
+ */
+function extractSection(label) {
+    if (!label || !label.includes('.')) return '';
+    const parts = label.split('.');
+    if (parts.length >= 2) {
+        return `${parts[0]}.${parts[1]}`;
+    }
+    return label;
+}
+
+/**
+ * 필드명에서 실제 필드명 추출 (예: BIM.Parameters.길이 -> 길이, QM.System.id -> id)
+ * 모든 접두어를 처리하여 내부 필드명을 반환합니다.
+ */
+function extractFieldName(label) {
+    if (!label) return label;
+
+    // QM.* 처리
+    if (label.startsWith('QM.System.')) return label.substring(10);
+    if (label.startsWith('QM.Properties.')) return label.substring(14);
+
+    // MM.* 처리
+    if (label.startsWith('MM.System.')) return label.substring(10);
+    if (label.startsWith('MM.Properties.')) return label.substring(14);
+
+    // SC.* 처리
+    if (label.startsWith('SC.System.')) return label.substring(10);
+
+    // CI.* 처리
+    if (label.startsWith('CI.System.')) return label.substring(10);
+
+    // CC.* 처리
+    if (label.startsWith('CC.System.')) return label.substring(10);
+
+    // AO.* 처리
+    if (label.startsWith('AO.System.')) return label.substring(10);
+
+    // AC.* 처리
+    if (label.startsWith('AC.System.')) return label.substring(10);
+
+    // BIM.* 처리
+    if (!label.startsWith('BIM.')) return label;
+
+    // BIM.System.id -> id
+    if (label.startsWith('BIM.System.')) {
+        return label.substring(11);
+    }
+    // BIM.Parameters.길이 -> 길이
+    if (label.startsWith('BIM.Parameters.')) {
+        return label.substring(15);
+    }
+    // BIM.TypeParameters.체적 -> 체적
+    if (label.startsWith('BIM.TypeParameters.')) {
+        return label.substring(19);
+    }
+    // BIM.Attributes.Name -> Name
+    if (label.startsWith('BIM.Attributes.')) {
+        return label.substring(15);
+    }
+    // BIM.QuantitySet.XXX -> QuantitySet.XXX
+    return label.substring(4);
+}
+
+/**
+ * 필드명에서 타입 추출 (모든 객체 타입 지원)
+ */
+function extractFieldType(label) {
+    if (label.startsWith('BIM.System.')) return 'bim_system';
+    if (label.startsWith('BIM.Parameters.')) return 'bim_parameter';
+    if (label.startsWith('BIM.TypeParameters.')) return 'bim_typeparameter';
+    if (label.startsWith('BIM.Attributes.')) return 'bim_attribute';
+    if (label.startsWith('BIM.')) return 'bim_attribute'; // 기본 BIM
+
+    if (label.startsWith('QM.System.')) return 'qm_system';
+    if (label.startsWith('QM.Properties.')) return 'qm_properties';
+
+    if (label.startsWith('MM.System.')) return 'mm_system';
+    if (label.startsWith('MM.Properties.')) return 'mm_properties';
+
+    if (label.startsWith('SC.System.')) return 'sc_system';
+
+    if (label.startsWith('CI.System.')) return 'ci_system';
+
+    if (label.startsWith('CC.System.')) return 'cc_system';
+
+    if (label.startsWith('AO.System.')) return 'ao_system';
+
+    if (label.startsWith('AC.System.')) return 'ac_system';
+
+    return 'unknown';
+}
+
+/**
+ * [Deprecated] 수량산출부재의 일람부호 속성 필드 수집
+ * @deprecated Use collectBimFieldsFromQuantityMembers() and filter by MM.* instead
  * @returns {Array} MM 필드 배열
  */
 function collectMemberMarkFieldsFromQuantityMembers() {
-    const mmFields = [];
-    const mmPropertyFields = new Set();
-
-    // MM.mark 기본 필드
-    let hasMemberMark = false;
-
-    // 모든 수량산출부재의 member_mark_properties 데이터 분석
-    loadedQuantityMembers.forEach(member => {
-        if (!member.member_mark_properties) return;
-
-        // 일람부호가 있는 부재가 하나라도 있으면
-        if (member.member_mark_mark) {
-            hasMemberMark = true;
-        }
-
-        // MM.properties.* - 일람부호 속성
-        if (typeof member.member_mark_properties === 'object') {
-            Object.keys(member.member_mark_properties).forEach(key => {
-                mmPropertyFields.add(key);
-            });
-        }
-    });
-
-    // MM.mark 필드 추가 (일람부호가 할당된 부재가 있을 경우)
-    if (hasMemberMark) {
-        mmFields.push({
-            key: 'member_mark_mark',
-            label: 'MM.mark',
-            section: 'MM'
-        });
-    }
-
-    // MM.properties.* 필드 추가 (알파벳 순 정렬)
-    const sortedProps = Array.from(mmPropertyFields).sort();
-    sortedProps.forEach(prop => {
-        mmFields.push({
-            key: `mm_prop_${prop}`,
-            label: `MM.properties.${prop}`,
-            section: 'MM',
-            mmProperty: prop
-        });
-    });
-
-    return mmFields;
+    const allFields = collectBimFieldsFromQuantityMembers();
+    return allFields.filter(f => f.label.startsWith('MM.'));
 }
 
 /**
- * 수량산출부재의 공간분류 필드 수집
+ * [Deprecated] 수량산출부재의 공간분류 필드 수집
+ * @deprecated Use collectBimFieldsFromQuantityMembers() and filter by SC.* instead
  * @returns {Array} Space 필드 배열
  */
 function collectSpaceFieldsFromQuantityMembers() {
-    const spaceFields = [];
-    let hasSpace = false;
-
-    // 모든 수량산출부재에서 공간분류가 있는지 확인
-    loadedQuantityMembers.forEach(member => {
-        if (member.space_name) {
-            hasSpace = true;
-        }
-    });
-
-    // Space.name 필드 추가 (공간분류가 할당된 부재가 있을 경우)
-    if (hasSpace) {
-        spaceFields.push({
-            key: 'space_name',
-            label: 'Space.name',
-            section: 'Space'
-        });
-    }
-
-    return spaceFields;
+    const allFields = collectBimFieldsFromQuantityMembers();
+    return allFields.filter(f => f.label.startsWith('SC.'));
 }
 
 /**
- * 수량산출부재의 QM.properties.* 필드 수집
+ * [Deprecated] 수량산출부재의 QM.properties.* 필드 수집
+ * @deprecated Use collectBimFieldsFromQuantityMembers() and filter by QM.Properties.* instead
  * @returns {Array} QM.properties 필드 배열
  */
 function collectQmPropertiesFields() {
-    const qmPropertiesFields = [];
-    const propertyKeys = new Set();
-
-    // 모든 수량산출부재의 properties 데이터 분석
-    loadedQuantityMembers.forEach(member => {
-        if (!member.properties || typeof member.properties !== 'object') return;
-
-        // QM.properties.* - 수량산출부재 속성
-        Object.keys(member.properties).forEach(key => {
-            propertyKeys.add(key);
-        });
-    });
-
-    // QM.properties.* 필드 추가 (알파벳 순 정렬)
-    const sortedProps = Array.from(propertyKeys).sort();
-    sortedProps.forEach(prop => {
-        qmPropertiesFields.push({
-            key: `qm_prop_${prop}`,
-            label: `QM.properties.${prop}`,
-            section: 'QM.properties',
-            qmProperty: prop
-        });
-    });
-
-    return qmPropertiesFields;
+    const allFields = collectBimFieldsFromQuantityMembers();
+    return allFields.filter(f => f.label.startsWith('QM.Properties.'));
 }
 
 /**
@@ -1772,55 +1719,31 @@ function collectQmPropertiesFields() {
  * @returns {Object} 섹션별로 그룹화된 필드 객체
  */
 window.getAllQmFieldsForConditionBuilder = function() {
-    // 기본 QM 필드
-    const qmFields = [
-        { value: 'QM.name', label: 'QM.name (부재명)' },
-        { value: 'QM.classification_tag', label: 'QM.classification_tag (분류 태그)' }
-    ];
+    // ▼▼▼ [수정] 필드 선택 UI와 동일한 필드 목록 사용 (2025-11-05) ▼▼▼
+    // collectBimFieldsFromQuantityMembers()를 사용하여 모든 필드를 동적으로 수집
+    const allFields = collectBimFieldsFromQuantityMembers();
 
-    // QM.properties.* 필드
-    const qmPropertiesFields = collectQmPropertiesFields().map(field => ({
-        value: field.label,  // "QM.properties.체적" 형식으로 저장 (조건 매칭을 위해)
-        label: field.label
-    }));
+    // 섹션별로 그룹화
+    const sectionMap = groupFieldsByPrefix(allFields);
+    const sectionDefs = getSectionDefinitions();
 
-    // MM (일람부호) 필드
-    const mmFields = collectMemberMarkFieldsFromQuantityMembers().map(field => {
-        if (field.key === 'member_mark_mark') {
-            return { value: 'MM.mark', label: 'MM.mark (일람부호)' };
-        } else {
-            return { value: `MM.properties.${field.mmProperty}`, label: field.label };
+    // 각 섹션의 필드를 {value, label} 형식으로 변환하여 그룹화
+    const groups = [];
+    sectionDefs.forEach(section => {
+        const fields = sectionMap[section.key];
+        if (fields && fields.length > 0) {
+            groups.push({
+                group: section.title,
+                options: fields.map(f => ({
+                    value: f.label,  // label을 value로 사용 (예: "QM.System.id")
+                    label: f.label
+                }))
+            });
         }
     });
 
-    // Space (공간분류) 필드
-    const spaceFields = collectSpaceFieldsFromQuantityMembers().map(field => ({
-        value: 'Space.name',
-        label: 'Space.name (공간분류)'
-    }));
-
-    // BIM 필드
-    const bimFields = collectBimFieldsFromQuantityMembers();
-    const bimAttributeFields = bimFields
-        .filter(f => f.section === 'BIM.Attributes')
-        .map(f => ({ value: `BIM.Attributes.${f.bimField}`, label: `BIM.Attributes.${f.bimField}` }));
-    const bimParameterFields = bimFields
-        .filter(f => f.section === 'BIM.Parameters')
-        .map(f => ({ value: `BIM.Parameters.${f.bimField}`, label: `BIM.Parameters.${f.bimField}` }));
-    const bimTypeParameterFields = bimFields
-        .filter(f => f.section === 'BIM.TypeParameters')
-        .map(f => ({ value: `BIM.TypeParameters.${f.bimField}`, label: `BIM.TypeParameters.${f.bimField}` }));
-
-    // 섹션별로 그룹화하여 반환
-    return [
-        { group: 'QuantityMember 속성', options: qmFields },
-        { group: 'QuantityMember Properties (QM.properties.*)', options: qmPropertiesFields },
-        { group: 'MemberMark 속성 (MM.*)', options: mmFields },
-        { group: 'Space 속성', options: spaceFields },
-        { group: 'BIM 기본 속성 (BIM.Attributes.*)', options: bimAttributeFields },
-        { group: 'BIM 파라미터 (BIM.Parameters.*)', options: bimParameterFields },
-        { group: 'BIM 타입 파라미터 (BIM.TypeParameters.*)', options: bimTypeParameterFields }
-    ].filter(group => group.options.length > 0); // 빈 그룹은 제외
+    return groups;
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 };
 
 /**
@@ -1830,219 +1753,66 @@ function populateQmFieldSelection() {
     const container = document.getElementById('qm-field-checkboxes-container');
     if (!container) return;
 
-    // 수량산출부재의 기본 필드들 (룰셋에서 사용하는 속성명 기준)
-    const qmFields = [
-        { key: 'id', label: 'QM.id', section: 'QM' },
-        { key: 'name', label: 'QM.name', section: 'QM' },
-        { key: 'classification_tag_name', label: 'QM.classification_tag', section: 'QM' },
-        { key: 'raw_element_id', label: 'QM.raw_element_id', section: 'QM' },
-        { key: 'is_active', label: 'QM.is_active', section: 'QM' },
-        { key: 'member_mark_name', label: 'QM.member_mark', section: 'QM' },
-        { key: 'properties', label: 'QM.properties', section: 'QM' }
-    ];
+    // ▼▼▼ [수정] 첫 번째 접두어 기준으로 그룹화 (2025-11-05) ▼▼▼
+    const allFields = collectBimFieldsFromQuantityMembers();
+    const sectionMap = groupFieldsByPrefix(allFields);  // ui.js의 공통 함수 사용
+    const sectionDefs = getSectionDefinitions();  // ui.js의 공통 정의 사용
 
-    // 공사코드 필드 추가
-    if (loadedCostCodes && loadedCostCodes.length > 0) {
-        qmFields.push({ key: 'cost_codes', label: 'QM.cost_codes', section: 'QM' });
-    }
-
-    // BIM 원본 속성 수집 - 모든 수량산출부재의 raw_element에서 속성 추출
-    const bimFields = collectBimFieldsFromQuantityMembers();
-
-    // 일람부호 속성 수집 - 모든 수량산출부재의 member_mark_properties에서 속성 추출
-    const mmFields = collectMemberMarkFieldsFromQuantityMembers();
-
-    // 공간분류 속성 수집 - 모든 수량산출부재의 space_name에서 속성 추출
-    const spaceFields = collectSpaceFieldsFromQuantityMembers();
-
-    // QM.properties 속성 수집 - 모든 수량산출부재의 properties에서 속성 추출
-    const qmPropertiesFields = collectQmPropertiesFields();
-
-    // 섹션별로 그룹화
     let html = '';
 
-    // QM 섹션
-    html += '<div class="field-section"><h4 style="color: #1976d2; margin: 10px 0 5px 0; font-size: 14px;">📌 수량산출부재 속성 (QM)</h4>';
-    qmFields.forEach(field => {
-        const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-        html += `
-            <label class="field-checkbox-label">
-                <input
-                    type="checkbox"
-                    class="qm-field-checkbox"
-                    value="${field.key}"
-                    data-bim-type="${field.bimType || ''}"
-                    data-bim-field="${field.bimField || ''}"
-                    ${isChecked}
-                >
-                ${field.label}
-            </label>
-        `;
-    });
-    html += '</div>';
-
-    // BIM 섹션별로 분류
-    const bimSections = {
-        'BIM.Attributes': [],
-        'BIM.Parameters': [],
-        'BIM.TypeParameters': [],
-        'BIM.System': []
-    };
-
-    bimFields.forEach(field => {
-        if (bimSections[field.section]) {
-            bimSections[field.section].push(field);
+    // 정의된 순서대로 섹션 렌더링
+    sectionDefs.forEach(section => {
+        const fields = sectionMap[section.key];
+        if (fields && fields.length > 0) {
+            html += `<div class="field-section"><h4 style="color: ${section.color}; margin: 10px 0 5px 0; font-size: 14px;">${section.title}</h4>`;
+            fields.forEach(field => {
+                const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
+                html += `
+                    <label class="field-checkbox-label">
+                        <input
+                            type="checkbox"
+                            class="qm-field-checkbox"
+                            value="${field.key}"
+                            data-field-type="${field.fieldType || ''}"
+                            data-field-name="${field.fieldName || ''}"
+                            ${isChecked}
+                        >
+                        ${field.label}
+                    </label>
+                `;
+            });
+            html += '</div>';
         }
     });
 
-    // BIM.Attributes 섹션
-    if (bimSections['BIM.Attributes'].length > 0) {
-        html += '<div class="field-section"><h4 style="color: #d32f2f; margin: 10px 0 5px 0; font-size: 14px;">🏗️ BIM 기본 속성</h4>';
-        bimSections['BIM.Attributes'].forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        data-bim-type="${field.bimType}"
-                        data-bim-field="${field.bimField}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // BIM.Parameters 섹션
-    if (bimSections['BIM.Parameters'].length > 0) {
-        html += '<div class="field-section"><h4 style="color: #f57c00; margin: 10px 0 5px 0; font-size: 14px;">🔧 BIM 파라미터</h4>';
-        bimSections['BIM.Parameters'].forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        data-bim-type="${field.bimType}"
-                        data-bim-field="${field.bimField}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // BIM.TypeParameters 섹션
-    if (bimSections['BIM.TypeParameters'].length > 0) {
-        html += '<div class="field-section"><h4 style="color: #7b1fa2; margin: 10px 0 5px 0; font-size: 14px;">📝 BIM 타입 파라미터</h4>';
-        bimSections['BIM.TypeParameters'].forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        data-bim-type="${field.bimType}"
-                        data-bim-field="${field.bimField}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // BIM.System 섹션
-    if (bimSections['BIM.System'].length > 0) {
-        html += '<div class="field-section"><h4 style="color: #388e3c; margin: 10px 0 5px 0; font-size: 14px;">⚙️ BIM 시스템 속성</h4>';
-        bimSections['BIM.System'].forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        data-bim-type="${field.bimType}"
-                        data-bim-field="${field.bimField}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // MM (일람부호) 섹션
-    if (mmFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #7b1fa2; margin: 10px 0 5px 0; font-size: 14px;">📋 일람부호 속성 (MM)</h4>';
-        mmFields.forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // Space (공간분류) 섹션
-    if (spaceFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #388e3c; margin: 10px 0 5px 0; font-size: 14px;">📍 공간분류 (Space)</h4>';
-        spaceFields.forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // QM.properties 섹션
-    if (qmPropertiesFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #ff6f00; margin: 10px 0 5px 0; font-size: 14px;">🔢 QM 속성 (QM.properties)</h4>';
-        qmPropertiesFields.forEach(field => {
-            const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input
-                        type="checkbox"
-                        class="qm-field-checkbox"
-                        value="${field.key}"
-                        data-qm-property="${field.qmProperty || ''}"
-                        ${isChecked}
-                    >
-                    ${field.label}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+    // 정의되지 않은 섹션도 렌더링 (동적으로 추가된 섹션)
+    Object.keys(sectionMap).forEach(prefix => {
+        const isDefined = sectionDefs.some(s => s.key === prefix);
+        if (!isDefined) {
+            const fields = sectionMap[prefix];
+            if (fields && fields.length > 0) {
+                html += `<div class="field-section"><h4 style="color: #666; margin: 10px 0 5px 0; font-size: 14px;">📦 ${prefix} 속성</h4>`;
+                fields.forEach(field => {
+                    const isChecked = currentQmColumns.includes(field.key) ? 'checked' : '';
+                    html += `
+                        <label class="field-checkbox-label">
+                            <input
+                                type="checkbox"
+                                class="qm-field-checkbox"
+                                value="${field.key}"
+                                data-field-type="${field.fieldType || ''}"
+                                data-field-name="${field.fieldName || ''}"
+                                ${isChecked}
+                            >
+                            ${field.label}
+                        </label>
+                    `;
+                });
+                html += '</div>';
+            }
+        }
+    });
+    // ▲▲▲ [수정] 첫 번째 접두어 기준으로 간단하게 그룹화 ▲▲▲
 
     container.innerHTML = html;
 
@@ -2251,183 +2021,147 @@ function renderQmSelectedProperties() {
 
     html += '</div>'; // 부재 속성 섹션 닫기
 
-    // 기본 속성 (QM. 접두어 사용)
-    html += '<div class="property-section">';
-    html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성</h4>';
-    html += '<table class="properties-table"><tbody>';
-    html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${member.id || 'N/A'}</td></tr>`;
+    // ▼▼▼ [수정] 통일된 그룹핑 시스템 적용 - 첫 번째 접두어만 사용 (2025-11-05) ▼▼▼
+    // 모든 속성을 수집하여 첫 번째 접두어로 그룹핑
+    const allProperties = [];
+
+    // QM 속성 수집
+    allProperties.push({ label: 'QM.System.id', value: member.id || 'N/A', editable: false });
     if (member.name) {
-        html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${member.name}</td></tr>`;
+        allProperties.push({ label: 'QM.System.name', value: member.name, editable: false });
     }
     if (member.classification_tag_name) {
-        html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${member.classification_tag_name}</td></tr>`;
+        allProperties.push({ label: 'QM.System.classification_tag', value: member.classification_tag_name, editable: false });
     }
-    html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${member.is_active ? 'true' : 'false'}</td></tr>`;
-
-    // RawElement ID 추가
+    allProperties.push({ label: 'QM.System.is_active', value: member.is_active ? 'true' : 'false', editable: false });
     if (member.raw_element_id) {
-        html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${member.raw_element_id}</td></tr>`;
+        allProperties.push({ label: 'QM.System.raw_element_id', value: member.raw_element_id, editable: false });
     }
-    html += '</tbody></table>';
-    html += '</div>';
-    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // 일람부호 (MM.XXX)
-    if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호</h4>';
-        html += '<table class="properties-table"><tbody>';
-        if (member.member_mark_mark) {
-            html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${member.member_mark_mark}</td></tr>`;
-        }
-        if (member.member_mark_properties) {
-            for (const [key, value] of Object.entries(member.member_mark_properties)) {
-                if (value !== null && value !== undefined) {
-                    html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
-                }
+    // MM 속성 수집
+    if (member.member_mark_mark) {
+        allProperties.push({ label: 'MM.System.mark', value: member.member_mark_mark, editable: false });
+    }
+    if (member.member_mark_properties) {
+        for (const [key, value] of Object.entries(member.member_mark_properties)) {
+            if (value !== null && value !== undefined) {
+                allProperties.push({ label: `MM.Properties.${key}`, value: String(value), editable: false });
             }
         }
-        html += '</tbody></table>';
-        html += '</div>';
     }
 
-    // 공간분류 (Space.XXX)
+    // SC 속성 수집
     if (member.space_name) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #388e3c; border-bottom: 2px solid #388e3c; padding-bottom: 5px;">📍 공간분류</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">Space.name</td><td class="prop-value">${member.space_name}</td></tr>`;
-        html += '</tbody></table>';
-        html += '</div>';
+        allProperties.push({ label: 'SC.System.name', value: member.space_name, editable: false });
     }
 
-    // ▼▼▼ [수정] fullBimObject는 이미 위에서 정의했으므로 중복 제거 (2025-11-05) ▼▼▼
-    // (이전에 여기 있던 const elementId, const fullBimObject 정의는 위로 이동)
-    // ▲▲▲ [수정] 여기까지 ▲▲▲
-
+    // BIM 속성 수집
     if (fullBimObject && fullBimObject.raw_data) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 시스템 속성 (BIM.System.*)</h4>';
-        html += '<table class="properties-table"><tbody>';
+        const rawData = fullBimObject.raw_data;
 
-        // System Properties (BIM.System.*) - 먼저 표시!
-        const idDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('id') : 'BIM.System.id';
-        const uniqueIdDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('element_unique_id') : 'BIM.System.element_unique_id';
-        const volumeDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('geometry_volume') : 'BIM.System.geometry_volume';
-        const tagsDisplayName = window.getDisplayFieldName ? window.getDisplayFieldName('classification_tags') : 'BIM.System.classification_tags';
-
-        html += `<tr><td class="prop-name">${idDisplayName}</td><td class="prop-value">${fullBimObject.id || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${uniqueIdDisplayName}</td><td class="prop-value">${fullBimObject.element_unique_id || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">${volumeDisplayName}</td><td class="prop-value">${fullBimObject.geometry_volume || 'N/A'}</td></tr>`;
+        // BIM 시스템 속성
+        allProperties.push({ label: 'BIM.System.id', value: fullBimObject.id || 'N/A', editable: false });
+        allProperties.push({ label: 'BIM.System.element_unique_id', value: fullBimObject.element_unique_id || 'N/A', editable: false });
+        allProperties.push({ label: 'BIM.System.geometry_volume', value: fullBimObject.geometry_volume || 'N/A', editable: false });
 
         const tagsDisplay = Array.isArray(fullBimObject.classification_tags) && fullBimObject.classification_tags.length > 0
             ? fullBimObject.classification_tags.join(', ')
             : 'N/A';
-        html += `<tr><td class="prop-name">${tagsDisplayName}</td><td class="prop-value">${tagsDisplay}</td></tr>`;
+        allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay, editable: false });
 
-        html += '</tbody></table>';
-        html += '</div>';
-
-        // BIM 기본 속성 (시스템 속성)
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (상속 from BIM)</h4>';
-        html += '<table class="properties-table"><tbody>';
-
-        const rawData = fullBimObject.raw_data;
-
-        // Show ALL top-level properties from raw_data (not just predefined list)
-        // Exclude nested objects like Parameters, TypeParameters, Geometry
+        // BIM 기본 속성 (rawData의 top-level 속성들)
         const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
-
         for (const [attr, value] of Object.entries(rawData)) {
-            // Skip excluded keys, null/undefined values, and nested objects/arrays
             if (excludedKeys.includes(attr)) continue;
             if (value === undefined || value === null || value === '') continue;
-            if (typeof value === 'object') continue; // Skip nested objects/arrays
+            if (typeof value === 'object') continue;
 
-            // Use BIM.Attributes.XXX format to match field selector naming
-            html += `<tr><td class="prop-name">BIM.Attributes.${attr}</td><td class="prop-value">${value}</td></tr>`;
+            allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value), editable: false });
         }
 
-        html += '</tbody></table>';
-        html += '</div>';
+        // BIM Parameters
+        if (rawData.Parameters && typeof rawData.Parameters === 'object') {
+            for (const [key, value] of Object.entries(rawData.Parameters)) {
+                if (key === 'Geometry') continue;
+                if (value === null || value === undefined || value === '') continue;
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
 
-        // Parameters - Use BIM.Parameters.XXX format to match field selector
-        if (rawData.Parameters && typeof rawData.Parameters === 'object' && Object.keys(rawData.Parameters).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM Parameters (상속 from BIM)</h4>';
-            html += '<table class="properties-table"><tbody>';
-
-            // Sort parameters for better readability
-            const sortedParams = Object.entries(rawData.Parameters).sort((a, b) => a[0].localeCompare(b[0]));
-
-            for (const [key, value] of sortedParams) {
-                if (key === 'Geometry') continue; // Skip Geometry (too large)
-                if (value === null || value === undefined || value === '') continue; // Skip empty values
-
-                // Skip complex nested objects (but allow simple values and simple objects)
-                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
-                    continue; // Skip deeply nested objects
-                }
-
-                // Use BIM.Parameters.XXX format to match field selector naming
-                const displayName = `BIM.Parameters.${key}`;
-                // nested object/array 지원
                 const displayValue = (typeof value === 'object')
                     ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
                     : String(value).substring(0, 200);
-                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
+                allProperties.push({ label: `BIM.Parameters.${key}`, value: displayValue, editable: false });
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
 
-        // TypeParameters - Use BIM.TypeParameters.XXX format to match field selector
-        if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object' && Object.keys(rawData.TypeParameters).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM TypeParameters (상속 from BIM)</h4>';
-            html += '<table class="properties-table"><tbody>';
+        // BIM TypeParameters
+        if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
+            for (const [key, value] of Object.entries(rawData.TypeParameters)) {
+                if (value === null || value === undefined || value === '') continue;
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
 
-            // Sort type parameters for better readability
-            const sortedTypeParams = Object.entries(rawData.TypeParameters).sort((a, b) => a[0].localeCompare(b[0]));
-
-            for (const [key, value] of sortedTypeParams) {
-                if (value === null || value === undefined || value === '') continue; // Skip empty values
-
-                // Skip complex nested objects (but allow simple values and simple objects)
-                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
-                    continue; // Skip deeply nested objects
-                }
-
-                // Use BIM.TypeParameters.XXX format to match field selector naming
-                const displayName = `BIM.TypeParameters.${key}`;
-                // nested object/array 지원
                 const displayValue = (typeof value === 'object')
                     ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
                     : String(value).substring(0, 200);
-                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
+                allProperties.push({ label: `BIM.TypeParameters.${key}`, value: displayValue, editable: false });
             }
-            html += '</tbody></table>';
-            html += '</div>';
+        }
+
+        // BIM의 다른 동적 속성들 (QuantitySet 등)
+        for (const [topLevelKey, topLevelValue] of Object.entries(rawData)) {
+            if (excludedKeys.includes(topLevelKey)) continue;
+            if (['Category', 'Family', 'Type', 'Level', 'Id'].includes(topLevelKey)) continue; // 이미 처리됨
+            // ▼▼▼ [수정] null 체크 추가 (2025-11-05) ▼▼▼
+            if (typeof topLevelValue === 'object' && topLevelValue !== null && !Array.isArray(topLevelValue)) {
+                // Parameters, TypeParameters는 이미 처리됨
+                if (topLevelKey === 'Parameters' || topLevelKey === 'TypeParameters') continue;
+
+                for (const [key, value] of Object.entries(topLevelValue)) {
+                    if (value === null || value === undefined) continue;
+                    const displayValue = typeof value === 'object'
+                        ? JSON.stringify(value).substring(0, 100)
+                        : String(value).substring(0, 200);
+                    allProperties.push({ label: `BIM.${topLevelKey}.${key}`, value: displayValue, editable: false });
+                }
+            }
         }
     }
 
-    // 공사코드
+    // CC 속성 수집 (공사코드)
     if (member.cost_codes && member.cost_codes.length > 0) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px;">💰 할당된 공사코드</h4>';
-        html += '<table class="properties-table"><tbody>';
-        member.cost_codes.forEach(code => {
-            html += `<tr><td class="prop-name">cost_code</td><td class="prop-value">${code}</td></tr>`;
+        member.cost_codes.forEach((code, idx) => {
+            allProperties.push({ label: `CC.System.code_${idx + 1}`, value: code, editable: false });
         });
-        html += '</tbody></table>';
-        html += '</div>';
     }
+
+    // 첫 번째 접두어로 그룹핑
+    const groupedProperties = groupFieldsByPrefix(allProperties);
+    const sectionDefs = getSectionDefinitions();
+
+    // 각 섹션별로 렌더링
+    sectionDefs.forEach(section => {
+        const properties = groupedProperties[section.key];
+        if (properties && properties.length > 0) {
+            html += '<div class="property-section">';
+            html += `<h4 style="color: ${section.color}; border-bottom: 2px solid ${section.color}; padding-bottom: 5px;">${section.title}</h4>`;
+            html += '<table class="properties-table"><tbody>';
+
+            // 정렬하여 표시
+            const sortedProps = properties.sort((a, b) => a.label.localeCompare(b.label));
+            sortedProps.forEach(prop => {
+                html += `<tr><td class="prop-name">${prop.label}</td><td class="prop-value">${prop.value}</td></tr>`;
+            });
+
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+    });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     container.innerHTML = html;
 
-    // 이벤트 리스너 설정 (이벤트 위임)
-    container.addEventListener('click', async (e) => {
+    // ▼▼▼ [수정] 이벤트 리스너 중복 방지 (2025-11-05) ▼▼▼
+    // 기존 리스너 제거 후 새로 추가
+    const clickHandler = async (e) => {
         // 잠금 버튼 클릭
         if (e.target.classList.contains('lock-property-btn')) {
             const key = e.target.dataset.key;
@@ -2438,13 +2172,26 @@ function renderQmSelectedProperties() {
 
         // 삭제 버튼 클릭
         if (e.target.classList.contains('delete-property-btn')) {
+            e.stopPropagation(); // 이벤트 전파 중단
+            e.preventDefault();
             const key = e.target.dataset.key;
             if (confirm(`속성 "${key}"을(를) 삭제하시겠습니까?`)) {
                 await deletePropertyFromQm(member.id, key);
             }
             return;
         }
-    });
+    };
+
+    // 기존 리스너 제거
+    const oldHandler = container._qmPropertiesClickHandler;
+    if (oldHandler) {
+        container.removeEventListener('click', oldHandler);
+    }
+
+    // 새 리스너 추가 및 저장
+    container.addEventListener('click', clickHandler);
+    container._qmPropertiesClickHandler = clickHandler;
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // ▼▼▼ [추가] 속성 삽입 버튼 (2025-11-05) ▼▼▼
     const insertBtn = container.querySelector('#insert-property-btn');
@@ -2534,7 +2281,7 @@ function deselectAllQmFields() {
  */
 function handleQmFieldCheckboxChange(e) {
     if (e.target.type === 'checkbox') {
-        updateQmColumnsFromCheckboxes(false); // 테이블 렌더링하지 않음
+        updateQmColumnsFromCheckboxes(true); // 실시간으로 테이블 렌더링
     }
 }
 

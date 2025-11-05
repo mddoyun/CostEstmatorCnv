@@ -1,0 +1,2 @@
+﻿﻿﻿name,description,priority,target_cost_code_code,conditions,quantity_mapping_script
+﻿aa,,0,c-001-01,"[{""property"": ""BIM.Attributes.IfcClass"", ""operator"": ""equals"", ""value"": ""IfcWall""}]","{""formula"": ""{QM.properties.면적}*{MM.properties.면적당수량}""}"

@@ -95,6 +95,12 @@ function setupAoListeners() {
         .getElementById('ao-reset-manual-btn')
         ?.addEventListener('click', resetManualAoInput);
 
+    // ▼▼▼ [추가] 수동 수량 산출식 업데이트 버튼 (2025-11-05) ▼▼▼
+    document
+        .getElementById('ao-update-formulas-btn')
+        ?.addEventListener('click', updateAllAoFormulas);
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     // 좌측 패널 탭 전환
     const aoLeftPanelTabs = document.querySelector('#activity-objects .left-panel-tabs');
     if (aoLeftPanelTabs) {
@@ -337,88 +343,28 @@ async function createManualActivityObject() {
 // =====================================================================
 
 function populateAoFieldSelection(activityObjects) {
-    if (!activityObjects || activityObjects.length === 0) {
-        allAoFields = [];
-        // 빈 배열일 때도 체크박스 렌더링 (빈 테이블 표시를 위해)
-        renderAoFieldCheckboxes();
-        return;
-    }
+    // ▼▼▼ [수정] generateAOPropertyOptions()를 사용하여 모든 속성 수집 (2025-11-05) ▼▼▼
+    // 속성은 CI → QM → BIM 순으로 상속되므로, generateAOPropertyOptions()를 사용하면
+    // 모든 속성이 BIM 원본 데이터와 동일한 형식으로 유지됩니다.
+    const propertyOptionGroups = generateAOPropertyOptions();
+    const allFields = [];
 
-    const fieldsSet = new Set();
-
-    activityObjects.forEach(ao => {
-        // ActivityObject 자체 속성
-        fieldsSet.add('AO.id');
-        fieldsSet.add('AO.start_date');
-        fieldsSet.add('AO.end_date');
-        fieldsSet.add('AO.actual_duration');
-        fieldsSet.add('AO.quantity');
-        fieldsSet.add('AO.is_manual');
-        fieldsSet.add('AO.manual_formula');
-        fieldsSet.add('AO.progress');
-
-        // Activity 속성
-        if (ao.activity) {
-            fieldsSet.add('Activity.code');
-            fieldsSet.add('Activity.name');
-            fieldsSet.add('Activity.duration_per_unit');
-            fieldsSet.add('Activity.responsible_person');
-        }
-
-        // CostItem 속성
-        if (ao.cost_item) {
-            fieldsSet.add('CI.quantity');
-            if (ao.cost_item.description) fieldsSet.add('CI.description');
-        }
-
-        // CostCode 속성
-        if (ao.cost_code) {
-            fieldsSet.add('CostCode.code');
-            fieldsSet.add('CostCode.name');
-            if (ao.cost_code.detail_code) fieldsSet.add('CostCode.detail_code');
-            if (ao.cost_code.note) fieldsSet.add('CostCode.note');
-        }
-
-        // QuantityMember 속성
-        if (ao.quantity_member) {
-            fieldsSet.add('QM.name');
-            if (ao.quantity_member.properties) {
-                Object.keys(ao.quantity_member.properties).forEach(key => {
-                    fieldsSet.add(`QM.properties.${key}`);
-                });
-            }
-        }
-
-        // MemberMark 속성
-        if (ao.member_mark) {
-            fieldsSet.add('MM.mark');
-            if (ao.member_mark.description) fieldsSet.add('MM.description');
-            if (ao.member_mark.properties) {
-                Object.keys(ao.member_mark.properties).forEach(key => {
-                    fieldsSet.add(`MM.properties.${key}`);
-                });
-            }
-        }
-
-        // BIM 속성
-        if (ao.raw_data) {
-            Object.keys(ao.raw_data).forEach(key => {
-                if (key === 'Parameters') {
-                    Object.keys(ao.raw_data.Parameters || {}).forEach(paramKey => {
-                        fieldsSet.add(`BIM.Parameters.${paramKey}`);
-                    });
-                } else if (key === 'TypeParameters') {
-                    Object.keys(ao.raw_data.TypeParameters || {}).forEach(paramKey => {
-                        fieldsSet.add(`BIM.TypeParameters.${paramKey}`);
-                    });
-                } else if (typeof ao.raw_data[key] !== 'object') {
-                    fieldsSet.add(`BIM.Attributes.${key}`);
-                }
+    propertyOptionGroups.forEach(group => {
+        group.options.forEach(opt => {
+            allFields.push({
+                key: opt.value,  // 점(.) 형식 유지
+                label: opt.label,
+                section: extractSection(opt.label),
+                fieldName: extractFieldName(opt.label),
+                fieldType: extractFieldType(opt.label)
             });
-        }
+        });
     });
 
-    allAoFields = Array.from(fieldsSet).sort();
+    // 전역 변수에 저장
+    allAoFields = allFields;
+    console.log('[DEBUG][populateAoFieldSelection] allAoFields initialized with', allAoFields.length, 'fields');
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     renderAoFieldCheckboxes();
 }
@@ -427,195 +373,90 @@ function renderAoFieldCheckboxes() {
     const container = document.getElementById('ao-field-checkboxes-container');
     if (!container) return;
 
+    // ▼▼▼ [수정] 통일된 그룹핑 시스템 사용 - 첫 번째 접두어만 (2025-11-05) ▼▼▼
     // 현재 선택된 컬럼 (없으면 기본값)
     if (!window.currentAoColumns) {
-        // 기본으로 AO, Activity, CI 주요 필드만 선택
-        window.currentAoColumns = [
-            'AO.id', 'AO.start_date', 'AO.end_date', 'AO.quantity',
-            'Activity.code', 'Activity.name',
-            'CI.description'
-        ];
+        window.currentAoColumns = allAoFields.filter(f => f.label && f.label.startsWith('AO.')).map(f => f.key);
     }
 
-    // 필드를 카테고리별로 분류
-    const aoFields = allAoFields.filter(f => f.startsWith('AO.'));
-    const activityFields = allAoFields.filter(f => f.startsWith('Activity.'));
-    const ciFields = allAoFields.filter(f => f.startsWith('CI.'));
-    const costCodeFields = allAoFields.filter(f => f.startsWith('CostCode.'));
-    const qmFields = allAoFields.filter(f => f.startsWith('QM.') && !f.startsWith('QM.properties.'));
-    const qmPropertiesFields = allAoFields.filter(f => f.startsWith('QM.properties.'));
-    const mmFields = allAoFields.filter(f => f.startsWith('MM.') && !f.startsWith('MM.properties.'));
-    const mmPropertiesFields = allAoFields.filter(f => f.startsWith('MM.properties.'));
-    const bimAttributesFields = allAoFields.filter(f => f.startsWith('BIM.Attributes.'));
-    const bimParametersFields = allAoFields.filter(f => f.startsWith('BIM.Parameters.'));
-    const bimTypeParametersFields = allAoFields.filter(f => f.startsWith('BIM.TypeParameters.'));
+    // 첫 번째 접두어로 그룹핑
+    const groupedFields = groupFieldsByPrefix(allAoFields);
+    const sectionDefs = getSectionDefinitions();
 
     let html = '';
 
-    // AO 섹션
-    if (aoFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #6a1b9a; margin: 10px 0 5px 0; font-size: 14px;">📅 액티비티 객체 속성 (AO)</h4>';
-        aoFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+    // 정의된 섹션 순서대로 렌더링
+    sectionDefs.forEach(section => {
+        const fields = groupedFields[section.key];
+        if (fields && fields.length > 0) {
+            html += '<div class="field-section">';
+            html += `<h4 style="color: ${section.color}; margin: 10px 0 5px 0; font-size: 14px;">${section.title}</h4>`;
 
-    // Activity 섹션
-    if (activityFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #d84315; margin: 10px 0 5px 0; font-size: 14px;">⚙️ 액티비티 코드 속성 (Activity)</h4>';
-        activityFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+            // ▼▼▼ [수정] 필드를 label 기준으로 오름차순 정렬 (2025-11-05) ▼▼▼
+            const sortedFields = [...fields].sort((a, b) => {
+                const labelA = a.label || '';
+                const labelB = b.label || '';
+                return labelA.localeCompare(labelB, 'ko');
+            });
 
-    // CI 섹션 (상속)
-    if (ciFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #1976d2; margin: 10px 0 5px 0; font-size: 14px;">📊 산출항목 속성 (CI, 상속)</h4>';
-        ciFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+            sortedFields.forEach(field => {
+                const isChecked = window.currentAoColumns.includes(field.key) ? 'checked' : '';
+                html += `
+                    <label class="field-checkbox-label">
+                        <input
+                            type="checkbox"
+                            class="ao-field-checkbox"
+                            value="${field.key}"
+                            data-field-type="${field.fieldType || ''}"
+                            ${isChecked}
+                        >
+                        ${field.label}
+                    </label>
+                `;
+            });
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // CostCode 섹션 (상속)
-    if (costCodeFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #c62828; margin: 10px 0 5px 0; font-size: 14px;">💰 공사코드 속성 (CostCode, 상속)</h4>';
-        costCodeFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+            html += '</div>';
+        }
+    });
 
-    // QM 기본 필드 섹션 (상속)
-    if (qmFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #0288d1; margin: 10px 0 5px 0; font-size: 14px;">📌 수량산출부재 속성 (QM, 상속)</h4>';
-        qmFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+    // 정의되지 않은 동적 섹션도 렌더링
+    Object.keys(groupedFields).forEach(prefix => {
+        const isDefined = sectionDefs.some(s => s.key === prefix);
+        if (!isDefined) {
+            const fields = groupedFields[prefix];
+            if (fields && fields.length > 0) {
+                html += '<div class="field-section">';
+                html += `<h4 style="color: #607d8b; margin: 10px 0 5px 0; font-size: 14px;">📦 ${prefix} 속성</h4>`;
 
-    // QM.properties 섹션 (상속)
-    if (qmPropertiesFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #0097a7; margin: 10px 0 5px 0; font-size: 14px;">🔹 수량산출부재 properties (QM, 상속)</h4>';
-        qmPropertiesFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+                // ▼▼▼ [수정] 필드를 label 기준으로 오름차순 정렬 (2025-11-05) ▼▼▼
+                const sortedFields = [...fields].sort((a, b) => {
+                    const labelA = a.label || '';
+                    const labelB = b.label || '';
+                    return labelA.localeCompare(labelB, 'ko');
+                });
 
-    // MM 기본 필드 섹션 (상속)
-    if (mmFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #7b1fa2; margin: 10px 0 5px 0; font-size: 14px;">🏷️ 일람부호 속성 (MM, 상속)</h4>';
-        mmFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+                sortedFields.forEach(field => {
+                    const isChecked = window.currentAoColumns.includes(field.key) ? 'checked' : '';
+                    html += `
+                        <label class="field-checkbox-label">
+                            <input
+                                type="checkbox"
+                                class="ao-field-checkbox"
+                                value="${field.key}"
+                                ${isChecked}
+                            >
+                            ${field.label}
+                        </label>
+                    `;
+                });
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // MM.properties 섹션 (상속)
-    if (mmPropertiesFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #8e24aa; margin: 10px 0 5px 0; font-size: 14px;">🔸 일람부호 properties (MM, 상속)</h4>';
-        mmPropertiesFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // BIM Attributes 섹션 (상속)
-    if (bimAttributesFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #00796b; margin: 10px 0 5px 0; font-size: 14px;">🏗️ BIM 기본 속성 (Attributes, 상속)</h4>';
-        bimAttributesFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // BIM Parameters 섹션 (상속)
-    if (bimParametersFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #00897b; margin: 10px 0 5px 0; font-size: 14px;">🔧 BIM Parameters (상속)</h4>';
-        bimParametersFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
-
-    // BIM TypeParameters 섹션 (상속)
-    if (bimTypeParametersFields.length > 0) {
-        html += '<div class="field-section"><h4 style="color: #00695c; margin: 10px 0 5px 0; font-size: 14px;">🔩 BIM TypeParameters (상속)</h4>';
-        bimTypeParametersFields.forEach(field => {
-            const isChecked = window.currentAoColumns.includes(field) ? 'checked' : '';
-            html += `
-                <label class="field-checkbox-label">
-                    <input type="checkbox" class="ao-field-checkbox" value="${field}" ${isChecked}>
-                    ${field}
-                </label>
-            `;
-        });
-        html += '</div>';
-    }
+                html += '</div>';
+            }
+        }
+    });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     container.innerHTML = html;
 
@@ -988,35 +829,162 @@ function createAoRow(ao, selectedFields) {
 }
 
 function getAoFieldValue(ao, field) {
-    const parts = field.split('.');
+    if (!field) return '';
 
-    if (parts[0] === 'AO') {
-        return ao[parts[1]] || '';
-    } else if (parts[0] === 'Activity') {
-        return ao.activity?.[parts[1]] || '';
-    } else if (parts[0] === 'CI') {
-        return ao.cost_item?.[parts[1]] || '';
-    } else if (parts[0] === 'CostCode') {
-        return ao.cost_code?.[parts[1]] || '';
-    } else if (parts[0] === 'QM') {
-        if (parts[1] === 'properties' && parts[2]) {
-            return ao.quantity_member?.properties?.[parts[2]] || '';
-        }
-        return ao.quantity_member?.[parts[1]] || '';
-    } else if (parts[0] === 'MM') {
-        if (parts[1] === 'properties' && parts[2]) {
-            return ao.member_mark?.properties?.[parts[2]] || '';
-        }
-        return ao.member_mark?.[parts[1]] || '';
-    } else if (parts[0] === 'BIM') {
-        if (parts[1] === 'Parameters') {
-            return ao.raw_data?.Parameters?.[parts.slice(2).join('.')] || '';
-        } else if (parts[1] === 'TypeParameters') {
-            return ao.raw_data?.TypeParameters?.[parts.slice(2).join('.')] || '';
-        } else if (parts[1] === 'Attributes') {
-            return ao.raw_data?.[parts[2]] || '';
-        }
+    // ▼▼▼ [수정] 점 형식과 언더스코어 형식 모두 지원 (2025-11-05) ▼▼▼
+
+    // AO.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('AO.System.') || field.startsWith('AO_System_')) {
+        const fieldName = field.startsWith('AO.System.')
+            ? field.substring(10)  // 'AO.System.' 제거
+            : field.substring(10); // 'AO_System_' 제거
+        return ao[fieldName] ?? '';
     }
+
+    // AC.System.* 필드 (Activity) (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('AC.System.') || field.startsWith('AC_System_')) {
+        const fieldName = field.startsWith('AC.System.')
+            ? field.substring(10)  // 'AC.System.' 제거
+            : field.substring(10); // 'AC_System_' 제거
+        return ao.activity?.[fieldName] ?? '';
+    }
+
+    // CI.System.* 필드 (CostItem) (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('CI.System.') || field.startsWith('CI_System_')) {
+        const fieldName = field.startsWith('CI.System.')
+            ? field.substring(10)  // 'CI.System.' 제거
+            : field.substring(10); // 'CI_System_' 제거
+        return ao.cost_item?.[fieldName] ?? '';
+    }
+
+    // CI.Properties.* 필드 (CostItem properties) (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('CI.Properties.') || field.startsWith('CI_Properties_')) {
+        const propName = field.startsWith('CI.Properties.')
+            ? field.substring(14)  // 'CI.Properties.' 제거
+            : field.substring(14); // 'CI_Properties_' 제거
+        return ao.cost_item?.properties?.[propName] ?? '';
+    }
+
+    // CC.System.* 필드 (CostCode) (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('CC.System.') || field.startsWith('CC_System_')) {
+        const fieldName = field.startsWith('CC.System.')
+            ? field.substring(10)  // 'CC.System.' 제거
+            : field.substring(10); // 'CC_System_' 제거
+        return ao.cost_code?.[fieldName] ?? '';
+    }
+
+    // QM.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('QM.System.') || field.startsWith('QM_System_')) {
+        const fieldName = field.startsWith('QM.System.')
+            ? field.substring(10)  // 'QM.System.' 제거
+            : field.substring(10); // 'QM_System_' 제거
+        return ao.quantity_member?.[fieldName] ?? '';
+    }
+
+    // QM.Properties.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('QM.Properties.') || field.startsWith('QM_Properties_')) {
+        const propName = field.startsWith('QM.Properties.')
+            ? field.substring(14)  // 'QM.Properties.' 제거
+            : field.substring(14); // 'QM_Properties_' 제거
+        return ao.quantity_member?.properties?.[propName] ?? '';
+    }
+
+    // MM.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('MM.System.') || field.startsWith('MM_System_')) {
+        const fieldName = field.startsWith('MM.System.')
+            ? field.substring(10)  // 'MM.System.' 제거
+            : field.substring(10); // 'MM_System_' 제거
+        return ao.member_mark?.[fieldName] ?? '';
+    }
+
+    // MM.Properties.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('MM.Properties.') || field.startsWith('MM_Properties_')) {
+        const propName = field.startsWith('MM.Properties.')
+            ? field.substring(14)  // 'MM.Properties.' 제거
+            : field.substring(14); // 'MM_Properties_' 제거
+        return ao.member_mark?.properties?.[propName] ?? '';
+    }
+
+    // SC.System.* 필드 (Space) (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('SC.System.') || field.startsWith('SC_System_')) {
+        const fieldName = field.startsWith('SC.System.')
+            ? field.substring(10)  // 'SC.System.' 제거
+            : field.substring(10); // 'SC_System_' 제거
+        return ao.space?.[fieldName] ?? '';
+    }
+
+    // SC.Properties.* 필드 (Space properties) (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('SC.Properties.') || field.startsWith('SC_Properties_')) {
+        const propName = field.startsWith('SC.Properties.')
+            ? field.substring(14)  // 'SC.Properties.' 제거
+            : field.substring(14); // 'SC_Properties_' 제거
+        return ao.space?.properties?.[propName] ?? '';
+    }
+
+    // BIM.System.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.System.') || field.startsWith('BIM_System_')) {
+        const sysName = field.startsWith('BIM.System.')
+            ? field.substring(11)  // 'BIM.System.' 제거
+            : field.substring(11); // 'BIM_System_' 제거
+        return ao.raw_data?.[sysName] ?? '';
+    }
+
+    // BIM.Attributes.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.Attributes.') || field.startsWith('BIM_Attributes_')) {
+        const attrName = field.startsWith('BIM.Attributes.')
+            ? field.substring(15)  // 'BIM.Attributes.' 제거
+            : field.substring(15); // 'BIM_Attributes_' 제거
+        return ao.raw_data?.[attrName] ?? '';
+    }
+
+    // BIM.Parameters.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.Parameters.') || field.startsWith('BIM_Parameters_')) {
+        const paramName = field.startsWith('BIM.Parameters.')
+            ? field.substring(15)  // 'BIM.Parameters.' 제거
+            : field.substring(15); // 'BIM_Parameters_' 제거
+        return ao.raw_data?.Parameters?.[paramName] ?? '';
+    }
+
+    // BIM.TypeParameters.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.TypeParameters.') || field.startsWith('BIM_TypeParameters_')) {
+        const tparamName = field.startsWith('BIM.TypeParameters.')
+            ? field.substring(19)  // 'BIM.TypeParameters.' 제거
+            : field.substring(19); // 'BIM_TypeParameters_' 제거
+        return ao.raw_data?.TypeParameters?.[tparamName] ?? '';
+    }
+
+    // BIM.QuantitySet.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.QuantitySet.') || field.startsWith('BIM_QuantitySet_')) {
+        const qsName = field.startsWith('BIM.QuantitySet.')
+            ? field.substring(16)  // 'BIM.QuantitySet.' 제거
+            : field.substring(16); // 'BIM_QuantitySet_' 제거
+        return ao.raw_data?.[`QuantitySet.${qsName}`] ?? '';
+    }
+
+    // BIM.PropertySet.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.PropertySet.') || field.startsWith('BIM_PropertySet_')) {
+        const psName = field.startsWith('BIM.PropertySet.')
+            ? field.substring(16)  // 'BIM.PropertySet.' 제거
+            : field.substring(16); // 'BIM_PropertySet_' 제거
+        return ao.raw_data?.[`PropertySet.${psName}`] ?? '';
+    }
+
+    // BIM.Spatial_Container.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.Spatial_Container.') || field.startsWith('BIM_Spatial_Container_')) {
+        const scName = field.startsWith('BIM.Spatial_Container.')
+            ? field.substring(22)  // 'BIM.Spatial_Container.' 제거
+            : field.substring(22); // 'BIM_Spatial_Container_' 제거
+        return ao.raw_data?.[`Spatial_Container.${scName}`] ?? '';
+    }
+
+    // BIM.Type.* 필드 (점 형식과 언더스코어 형식 모두 지원)
+    if (field.startsWith('BIM.Type.') || field.startsWith('BIM_Type_')) {
+        const typeName = field.startsWith('BIM.Type.')
+            ? field.substring(9)  // 'BIM.Type.' 제거
+            : field.substring(9); // 'BIM_Type_' 제거
+        return ao.raw_data?.[`Type.${typeName}`] ?? '';
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     return '';
 }
@@ -1221,175 +1189,118 @@ function renderAoPropertiesPanel() {
         return;
     }
 
+    // ▼▼▼ [디버깅] 데이터 구조 확인 (2025-11-05) ▼▼▼
+    console.log('[DEBUG][renderAoPropertiesPanel] Selected AO:', ao);
+    console.log('[DEBUG][renderAoPropertiesPanel] allAoFields length:', allAoFields?.length);
+    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
+    // ▼▼▼ [수정] allAoFields가 비어있으면 초기화 (2025-11-05) ▼▼▼
+    if (!allAoFields || allAoFields.length === 0) {
+        console.log('[DEBUG][renderAoPropertiesPanel] allAoFields is empty, populating...');
+        populateAoFieldSelection([ao]);
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    // ▼▼▼ [수정] 필드 선택과 동일한 그룹 구조로 변경 (2025-11-05) ▼▼▼
+    // 모든 필드를 그룹핑
+    const groupedFields = groupFieldsByPrefix(allAoFields);
+    const sectionDefs = getSectionDefinitions();
+
     let html = '';
 
-    // ============ 1. AO 기본 속성 ============
-    html += '<div class="property-section">';
-    html += '<h4 style="color: #6a1b9a; border-bottom: 2px solid #6a1b9a; padding-bottom: 5px;">📅 액티비티 객체 기본 속성</h4>';
-    html += '<table class="properties-table"><tbody>';
-    html += `<tr><td class="prop-name">AO.id</td><td class="prop-value">${ao.id || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">AO.start_date</td><td class="prop-value">${ao.start_date || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">AO.end_date</td><td class="prop-value">${ao.end_date || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">AO.actual_duration</td><td class="prop-value">${ao.actual_duration || 'N/A'}</td></tr>`;
-    html += `<tr><td class="prop-name">AO.quantity</td><td class="prop-value">${ao.quantity}</td></tr>`;
-    html += `<tr><td class="prop-name">AO.is_manual</td><td class="prop-value">${ao.is_manual ? 'true' : 'false'}</td></tr>`;
-    if (ao.manual_formula) {
-        html += `<tr><td class="prop-name">AO.manual_formula</td><td class="prop-value">${ao.manual_formula}</td></tr>`;
-    }
-    html += `<tr><td class="prop-name">AO.progress</td><td class="prop-value">${ao.progress}%</td></tr>`;
-    html += '</tbody></table>';
-    html += '</div>';
+    // 정의된 섹션 순서대로 렌더링
+    sectionDefs.forEach(section => {
+        const fields = groupedFields[section.key];
+        if (fields && fields.length > 0) {
+            // 필드를 label 기준으로 오름차순 정렬
+            const sortedFields = [...fields].sort((a, b) => {
+                const labelA = a.label || '';
+                const labelB = b.label || '';
+                return labelA.localeCompare(labelB, 'ko');
+            });
 
-    // ============ 2. Activity 속성 ============
-    if (ao.activity) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #d84315; border-bottom: 2px solid #d84315; padding-bottom: 5px;">⚙️ 액티비티 코드 속성</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">Activity.code</td><td class="prop-value">${ao.activity.code || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">Activity.name</td><td class="prop-value">${ao.activity.name || 'N/A'}</td></tr>`;
-        if (ao.activity.duration_per_unit !== null && ao.activity.duration_per_unit !== undefined) {
-            html += `<tr><td class="prop-name">Activity.duration_per_unit</td><td class="prop-value">${ao.activity.duration_per_unit}</td></tr>`;
-        }
-        if (ao.activity.responsible_person) {
-            html += `<tr><td class="prop-name">Activity.responsible_person</td><td class="prop-value">${ao.activity.responsible_person}</td></tr>`;
-        }
-        html += '</tbody></table>';
-        html += '</div>';
-    }
+            // 값이 있는 필드만 필터링
+            const fieldsWithValues = sortedFields.filter(field => {
+                const value = getAoFieldValue(ao, field.key);
+                return value !== null && value !== undefined && value !== '';
+            });
 
-    // ============ 3. CI 속성 (상속) ============
-    if (ao.cost_item) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📊 산출항목 속성 (상속 from CI)</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">CI.id</td><td class="prop-value">${ao.cost_item.id || 'N/A'}</td></tr>`;
-        if (ao.cost_item.quantity !== undefined) {
-            html += `<tr><td class="prop-name">CI.quantity</td><td class="prop-value">${ao.cost_item.quantity}</td></tr>`;
-        }
-        if (ao.cost_item.description) {
-            html += `<tr><td class="prop-name">CI.description</td><td class="prop-value">${ao.cost_item.description}</td></tr>`;
-        }
-        html += '</tbody></table>';
-        html += '</div>';
-    }
+            // 값이 있는 필드가 있을 때만 섹션 표시
+            if (fieldsWithValues.length > 0) {
+                html += '<div class="property-section">';
+                html += `<h4 style="color: ${section.color}; border-bottom: 2px solid ${section.color}; padding-bottom: 5px;">${section.title}</h4>`;
+                html += '<table class="properties-table"><tbody>';
 
-    // ============ 4. CostCode 속성 (상속) ============
-    if (ao.cost_code) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #c62828; border-bottom: 2px solid #c62828; padding-bottom: 5px;">💰 공사코드 속성 (상속 from CostCode)</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">CostCode.code</td><td class="prop-value">${ao.cost_code.code || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">CostCode.name</td><td class="prop-value">${ao.cost_code.name || 'N/A'}</td></tr>`;
-        if (ao.cost_code.detail_code) {
-            html += `<tr><td class="prop-name">CostCode.detail_code</td><td class="prop-value">${ao.cost_code.detail_code}</td></tr>`;
-        }
-        if (ao.cost_code.note) {
-            html += `<tr><td class="prop-name">CostCode.note</td><td class="prop-value">${ao.cost_code.note}</td></tr>`;
-        }
-        html += '</tbody></table>';
-        html += '</div>';
-    }
+                fieldsWithValues.forEach(field => {
+                    const value = getAoFieldValue(ao, field.key);
+                    let displayValue = value;
 
-    // ============ 5. QM 속성 (상속) ============
-    if (ao.quantity_member) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px;">📌 수량산출부재 기본 속성 (상속 from QM)</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${ao.quantity_member.id || 'N/A'}</td></tr>`;
-        if (ao.quantity_member.name) {
-            html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${ao.quantity_member.name}</td></tr>`;
-        }
-        html += '</tbody></table>';
-        html += '</div>';
+                    // 숫자 값 포맷팅
+                    if (typeof value === 'number') {
+                        displayValue = value.toFixed(3);
+                    } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value).substring(0, 100);
+                    } else if (typeof value === 'string') {
+                        displayValue = value.substring(0, 200);
+                    }
 
-        // QM properties
-        if (ao.quantity_member.properties && Object.keys(ao.quantity_member.properties).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            for (const [key, value] of Object.entries(ao.quantity_member.properties)) {
-                if (value !== null && value !== undefined) {
-                    const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
-                    html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
-                }
+                    html += `<tr><td class="prop-name">${field.label}</td><td class="prop-value">${displayValue}</td></tr>`;
+                });
+
+                html += '</tbody></table>';
+                html += '</div>';
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
-    }
+    });
 
-    // ============ 6. MM 속성 (상속) ============
-    if (ao.member_mark) {
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호 (상속 from MM)</h4>';
-        html += '<table class="properties-table"><tbody>';
-        if (ao.member_mark.mark) {
-            html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${ao.member_mark.mark}</td></tr>`;
-        }
-        if (ao.member_mark.properties && Object.keys(ao.member_mark.properties).length > 0) {
-            for (const [key, value] of Object.entries(ao.member_mark.properties)) {
-                if (value !== null && value !== undefined) {
-                    html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
+    // 정의되지 않은 동적 섹션도 렌더링
+    Object.keys(groupedFields).forEach(prefix => {
+        const isDefined = sectionDefs.some(s => s.key === prefix);
+        if (!isDefined) {
+            const fields = groupedFields[prefix];
+            if (fields && fields.length > 0) {
+                // 필드를 label 기준으로 오름차순 정렬
+                const sortedFields = [...fields].sort((a, b) => {
+                    const labelA = a.label || '';
+                    const labelB = b.label || '';
+                    return labelA.localeCompare(labelB, 'ko');
+                });
+
+                // 값이 있는 필드만 필터링
+                const fieldsWithValues = sortedFields.filter(field => {
+                    const value = getAoFieldValue(ao, field.key);
+                    return value !== null && value !== undefined && value !== '';
+                });
+
+                // 값이 있는 필드가 있을 때만 섹션 표시
+                if (fieldsWithValues.length > 0) {
+                    html += '<div class="property-section">';
+                    html += `<h4 style="color: #607d8b; border-bottom: 2px solid #607d8b; padding-bottom: 5px;">📦 ${prefix} 속성</h4>`;
+                    html += '<table class="properties-table"><tbody>';
+
+                    fieldsWithValues.forEach(field => {
+                        const value = getAoFieldValue(ao, field.key);
+                        let displayValue = value;
+
+                        // 숫자 값 포맷팅
+                        if (typeof value === 'number') {
+                            displayValue = value.toFixed(3);
+                        } else if (typeof value === 'object') {
+                            displayValue = JSON.stringify(value).substring(0, 100);
+                        } else if (typeof value === 'string') {
+                            displayValue = value.substring(0, 200);
+                        }
+
+                        html += `<tr><td class="prop-name">${field.label}</td><td class="prop-value">${displayValue}</td></tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                    html += '</div>';
                 }
             }
         }
-        html += '</tbody></table>';
-        html += '</div>';
-    }
-
-    // ============ 7. BIM 속성 (상속) ============
-    if (ao.raw_data) {
-        // BIM 시스템 속성
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #00796b; border-bottom: 2px solid #00796b; padding-bottom: 5px;">🏗️ BIM 시스템 속성 (상속 from BIM)</h4>';
-        html += '<table class="properties-table"><tbody>';
-
-        const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId'];
-        basicAttrs.forEach(attr => {
-            if (ao.raw_data[attr] !== undefined && ao.raw_data[attr] !== null) {
-                html += `<tr><td class="prop-name">BIM.Attributes.${attr}</td><td class="prop-value">${ao.raw_data[attr]}</td></tr>`;
-            }
-        });
-        html += '</tbody></table>';
-        html += '</div>';
-
-        // BIM Parameters
-        if (ao.raw_data.Parameters && typeof ao.raw_data.Parameters === 'object' && Object.keys(ao.raw_data.Parameters).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #00897b; border-bottom: 2px solid #00897b; padding-bottom: 5px;">🔧 BIM 파라메터 (상속)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            const params = Object.entries(ao.raw_data.Parameters).slice(0, 20); // 최대 20개만 표시
-            for (const [key, value] of params) {
-                if (key === 'Geometry') continue;
-                if (value !== null && value !== undefined) {
-                    const displayValue = (typeof value === 'object')
-                        ? JSON.stringify(value).substring(0, 100)
-                        : String(value).substring(0, 200);
-                    html += `<tr><td class="prop-name">BIM.Parameters.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
-                }
-            }
-            html += '</tbody></table>';
-            html += '</div>';
-        }
-
-        // BIM TypeParameters
-        if (ao.raw_data.TypeParameters && typeof ao.raw_data.TypeParameters === 'object' && Object.keys(ao.raw_data.TypeParameters).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #00695c; border-bottom: 2px solid #00695c; padding-bottom: 5px;">🔩 BIM 타입 파라메터 (상속)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            const typeParams = Object.entries(ao.raw_data.TypeParameters).slice(0, 20); // 최대 20개만 표시
-            for (const [key, value] of typeParams) {
-                if (value !== null && value !== undefined) {
-                    const displayValue = (typeof value === 'object')
-                        ? JSON.stringify(value).substring(0, 100)
-                        : String(value).substring(0, 200);
-                    html += `<tr><td class="prop-name">BIM.TypeParameters.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
-                }
-            }
-            html += '</tbody></table>';
-            html += '</div>';
-        }
-    }
+    });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     container.innerHTML = html;
 }
@@ -2390,7 +2301,81 @@ function buildActivityObjectContext(ao) {
     return context;
 }
 
+// ▼▼▼ [추가] 수동 수량 산출식 업데이트 함수 (2025-11-05) ▼▼▼
+/**
+ * 모든 ActivityObject의 manual_formula 산출식을 재계산하여 quantity를 업데이트합니다.
+ */
+async function updateAllAoFormulas() {
+    if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
+        showToast('업데이트할 액티비티 객체가 없습니다.', 'warning');
+        return;
+    }
+
+    let updatedCount = 0;
+    const errors = [];
+
+    for (const ao of window.loadedActivityObjects) {
+        // is_manual이 true이고 manual_formula가 있는 경우만 처리
+        if (!ao.is_manual || !ao.manual_formula) {
+            continue;
+        }
+
+        try {
+            // ActivityObject 컨텍스트 생성
+            const aoContext = buildAoContext(ao);
+
+            // 산출식 계산
+            const calculatedQuantity = evaluateQuantityFormula(ao.manual_formula, aoContext);
+
+            if (calculatedQuantity !== null && calculatedQuantity !== undefined && !isNaN(calculatedQuantity)) {
+                // 서버에 저장
+                const response = await fetch(
+                    `/connections/api/activity-objects/${currentProjectId}/`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrftoken,
+                        },
+                        body: JSON.stringify({
+                            id: ao.id,
+                            quantity: calculatedQuantity
+                        }),
+                    }
+                );
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    errors.push(`${ao.id}: ${error.message || '저장 실패'}`);
+                } else {
+                    // 로컬 데이터 업데이트
+                    ao.quantity = calculatedQuantity;
+                    updatedCount++;
+                    console.log(`[updateAllAoFormulas] Updated ${ao.id} - quantity: ${calculatedQuantity} (from formula: ${ao.manual_formula})`);
+                }
+            }
+        } catch (error) {
+            console.error(`[updateAllAoFormulas] Error updating activity object ${ao.id}:`, error);
+            errors.push(`${ao.id}: ${error.message}`);
+        }
+    }
+
+    if (errors.length > 0) {
+        showToast(`${updatedCount}개 항목 업데이트 완료, ${errors.length}개 오류 발생`, 'warning');
+        console.error('[updateAllAoFormulas] Errors:', errors);
+    } else if (updatedCount > 0) {
+        showToast(`${updatedCount}개 항목의 산출식이 업데이트되었습니다.`, 'success');
+    } else {
+        showToast('업데이트할 산출식이 없습니다.', 'info');
+    }
+
+    // UI 갱신
+    await loadActivityObjects();
+}
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
 // Window에 함수 노출
 window.setupAoListeners = setupAoListeners;
 window.initAoSplitBar = initAoSplitBar;
 window.recalculateAllAoQuantities = recalculateAllAoQuantities;
+window.updateAllAoFormulas = updateAllAoFormulas;

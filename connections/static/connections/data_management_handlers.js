@@ -448,6 +448,7 @@ function handleDataMgmtLeftPanelTabClick(event) {
 
 /**
  * BIM 원본 데이터 탭에서 선택한 객체의 속성을 룰셋 작성 도우미 패널에 표시합니다.
+ * 통일된 그룹핑 시스템을 사용하여 첫 번째 접두어(BIM)를 기준으로 표시합니다.
  */
 function renderRawDataHelperPanel() {
     const helperContainer = document.getElementById('raw-data-helper-properties-container');
@@ -499,83 +500,137 @@ function renderRawDataHelperPanel() {
         }
     }
 
-    // 시스템 속성 표시
-    const systemProps = {
-        'Category': bimData.Category,
-        'Family': bimData.Family,
-        'Type': bimData.Type,
-        'Level': bimData.Level
+    // ▼▼▼ [수정] 필드 선택과 동일하게 세부 그룹으로 나눠서 표시 (2025-11-05) ▼▼▼
+    // 속성을 세부 그룹별로 수집
+    const propertyGroups = {
+        'System': [],
+        'Attributes': [],
+        'Parameters': [],
+        'TypeParameters': [],
+        'QuantitySet': [],
+        'Other': []
     };
 
-    html += '<div style="margin-bottom: 15px;">';
-    html += '<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid #2196f3; padding-bottom: 4px;">시스템 속성</div>';
-
-    let hasSystemProps = false;
-    html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
-    for (const [key, value] of Object.entries(systemProps)) {
+    // 시스템 속성 수집
+    const systemProps = ['Category', 'Family', 'Type', 'Level', 'Id'];
+    systemProps.forEach(key => {
+        const value = bimData[key];
         if (value !== undefined && value !== null && value !== '') {
-            hasSystemProps = true;
-            html += `
-                <tr style="border-bottom: 1px solid #e0e0e0;">
-                    <td style="padding: 8px 10px; font-weight: 600; color: #1976d2; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">{${key}}</td>
-                    <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${value}</td>
-                </tr>
-            `;
+            propertyGroups['System'].push({
+                displayKey: `{${key}}`,
+                value: String(value)
+            });
         }
-    }
-    html += '</table>';
-    if (!hasSystemProps) {
-        html += '<p style="color: #999; font-size: 12px; margin: 5px 0;">시스템 속성이 없습니다</p>';
-    }
-    html += '</div>';
+    });
 
-    // Parameters 표시
-    if (bimData.Parameters && Object.keys(bimData.Parameters).length > 0) {
-        html += '<div style="margin-bottom: 15px;">';
-        html += '<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid #4caf50; padding-bottom: 4px;">Parameters</div>';
+    // 나머지 속성을 그룹별로 분류
+    Object.keys(bimData).forEach(topLevelKey => {
+        // 시스템 속성이나 특수 필드는 건너뛰기
+        if (systemProps.includes(topLevelKey) ||
+            ['db_id', 'dbId', 'DB_ID', 'id', 'raw_data', 'geometry'].includes(topLevelKey)) {
+            return;
+        }
 
-        html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
-        const sortedParams = Object.entries(bimData.Parameters).sort((a, b) => a[0].localeCompare(b[0]));
-        sortedParams.forEach(([key, value]) => {
-            const displayValue = value !== null && value !== undefined ? String(value) : '-';
-            html += `
-                <tr style="border-bottom: 1px solid #e0e0e0;">
-                    <td style="padding: 8px 10px; font-weight: 600; color: #388e3c; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">{Parameters.${key}}</td>
-                    <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${displayValue}</td>
-                </tr>
-            `;
-        });
-        html += '</table>';
-        html += '</div>';
-    }
+        const topLevelValue = bimData[topLevelKey];
 
-    // TypeParameters 표시
-    if (bimData.TypeParameters && Object.keys(bimData.TypeParameters).length > 0) {
-        html += '<div style="margin-bottom: 15px;">';
-        html += '<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid #ff9800; padding-bottom: 4px;">TypeParameters</div>';
+        // Parameters 그룹
+        if (topLevelKey === 'Parameters' && typeof topLevelValue === 'object' && !Array.isArray(topLevelValue)) {
+            Object.entries(topLevelValue).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    propertyGroups['Parameters'].push({
+                        displayKey: `{Parameters.${key}}`,
+                        value: String(value)
+                    });
+                }
+            });
+        }
+        // TypeParameters 그룹
+        else if (topLevelKey === 'TypeParameters' && typeof topLevelValue === 'object' && !Array.isArray(topLevelValue)) {
+            Object.entries(topLevelValue).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    propertyGroups['TypeParameters'].push({
+                        displayKey: `{TypeParameters.${key}}`,
+                        value: String(value)
+                    });
+                }
+            });
+        }
+        // QuantitySet 그룹
+        else if (topLevelKey.includes('QuantitySet') && typeof topLevelValue === 'object' && !Array.isArray(topLevelValue)) {
+            Object.entries(topLevelValue).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    propertyGroups['QuantitySet'].push({
+                        displayKey: `{${topLevelKey}.${key}}`,
+                        value: String(value)
+                    });
+                }
+            });
+        }
+        // Attributes 그룹 (기타 단순 속성들)
+        else if (typeof topLevelValue !== 'object' || Array.isArray(topLevelValue)) {
+            if (topLevelValue !== undefined && topLevelValue !== null) {
+                propertyGroups['Attributes'].push({
+                    displayKey: `{${topLevelKey}}`,
+                    value: String(topLevelValue)
+                });
+            }
+        }
+        // 기타 객체형 속성
+        else if (typeof topLevelValue === 'object' && !Array.isArray(topLevelValue)) {
+            Object.entries(topLevelValue).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    propertyGroups['Other'].push({
+                        displayKey: `{${topLevelKey}.${key}}`,
+                        value: String(value)
+                    });
+                }
+            });
+        }
+    });
 
-        html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
-        const sortedTypeParams = Object.entries(bimData.TypeParameters).sort((a, b) => a[0].localeCompare(b[0]));
-        sortedTypeParams.forEach(([key, value]) => {
-            const displayValue = value !== null && value !== undefined ? String(value) : '-';
-            html += `
-                <tr style="border-bottom: 1px solid #e0e0e0;">
-                    <td style="padding: 8px 10px; font-weight: 600; color: #f57c00; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">{TypeParameters.${key}}</td>
-                    <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${displayValue}</td>
-                </tr>
-            `;
-        });
-        html += '</table>';
-        html += '</div>';
-    }
+    // 각 그룹별로 렌더링
+    const groupConfigs = [
+        { key: 'System', title: '⚙️ 시스템 속성', color: '#1976d2' },
+        { key: 'Attributes', title: '🏗️ 기본 속성', color: '#388e3c' },
+        { key: 'Parameters', title: '🔧 Parameters', color: '#f57c00' },
+        { key: 'TypeParameters', title: '📝 TypeParameters', color: '#7b1fa2' },
+        { key: 'QuantitySet', title: '📏 QuantitySet', color: '#0288d1' },
+        { key: 'Other', title: '📦 기타 속성', color: '#607d8b' }
+    ];
 
-    // 아무 속성도 없을 경우
-    if (!hasSystemProps &&
-        (!bimData.Parameters || Object.keys(bimData.Parameters).length === 0) &&
-        (!bimData.TypeParameters || Object.keys(bimData.TypeParameters).length === 0)) {
+    let hasAnyProperties = false;
+
+    groupConfigs.forEach(config => {
+        const properties = propertyGroups[config.key];
+        if (properties && properties.length > 0) {
+            hasAnyProperties = true;
+            html += '<div style="margin-bottom: 15px;">';
+            html += `<div style="font-weight: bold; color: #555; margin-bottom: 5px; font-size: 14px; border-bottom: 2px solid ${config.color}; padding-bottom: 4px;">${config.title}</div>`;
+
+            html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+
+            // 속성을 displayKey 기준으로 정렬하여 표시
+            const sortedProperties = properties.sort((a, b) => a.displayKey.localeCompare(b.displayKey));
+
+            sortedProperties.forEach(prop => {
+                html += `
+                    <tr style="border-bottom: 1px solid #e0e0e0;">
+                        <td style="padding: 8px 10px; font-weight: 600; color: ${config.color}; font-family: monospace; width: 40%; background: #f5f5f5; vertical-align: top;">${prop.displayKey}</td>
+                        <td style="padding: 8px 10px; color: #666; width: 60%; word-break: break-word;">${prop.value}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</table>';
+            html += '</div>';
+        }
+    });
+
+    if (!hasAnyProperties) {
         html += '<p style="color: #999; text-align: center; padding: 20px;">이 객체에는 표시할 속성이 없습니다.</p>';
         console.log('[DEBUG] No properties found in element:', bimData);
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     helperContainer.innerHTML = html;
 }

@@ -1,0 +1,2 @@
+﻿﻿﻿name,description,priority,target_tag_name,conditions,mapping_script
+﻿조적벽-IfcWall,,0,조적벽,"[{""parameter"": ""BIM.Attributes.IfcClass"", ""operator"": ""equals"", ""value"": ""IfcWall""}]","{""면적"": ""{BIM.QuantitySet.Qto_WallBaseQuantities__GrossSideArea}""}"

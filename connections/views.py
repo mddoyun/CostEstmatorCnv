@@ -379,14 +379,35 @@ def property_mapping_rules_api(request, project_id, rule_id=None):
 def get_value_from_element(raw_data, parameter_name):
     """
     점(.)이 포함된 키를 해석하여 중첩된 객체의 값을 찾아옵니다.
-    'Parameters', 'TypeParameters' 등 다양한 위치를 모두 확인합니다.
+    'Parameters', 'TypeParameters', 'QuantitySet' 등 다양한 위치를 모두 확인합니다.
+
+    ▼▼▼ [수정] QuantitySet 등의 경로를 더 유연하게 처리 (2025-11-05) ▼▼▼
     """
     if not raw_data or not parameter_name:
         return None
 
+    # 0. ▼▼▼ [추가] 전체 parameter_name을 하나의 키로 먼저 시도 (2025-11-05) ▼▼▼
+    # 예: "Qto_WallBaseQuantities__GrossSideArea" 자체가 키인 경우
+    if parameter_name in raw_data:
+        return raw_data[parameter_name]
+    if 'Parameters' in raw_data and parameter_name in raw_data['Parameters']:
+        return raw_data['Parameters'][parameter_name]
+    if 'TypeParameters' in raw_data and parameter_name in raw_data['TypeParameters']:
+        return raw_data['TypeParameters'][parameter_name]
+
     # 1. 점(.)을 기준으로 키를 분리합니다.
     parts = parameter_name.split('.')
-    
+
+    # ▼▼▼ [추가] 점으로 분리한 후 전체 경로를 하나의 키로 시도 (2025-11-05) ▼▼▼
+    # 예: "QuantitySet.Qto_WallBaseQuantities__GrossSideArea"의 경우
+    # parts[0]="QuantitySet", parts[1]="Qto_WallBaseQuantities__GrossSideArea"
+    if len(parts) == 2:
+        first_key, second_key = parts[0], parts[1]
+        # raw_data[first_key][second_key] 형태로 시도
+        if first_key in raw_data and isinstance(raw_data[first_key], dict):
+            if second_key in raw_data[first_key]:
+                return raw_data[first_key][second_key]
+
     # 2. 검색을 시작할 초기 객체를 설정합니다.
     # 만약 첫 번째 키가 'Parameters'나 'TypeParameters'가 아니라면,
     # raw_data의 최상위, Parameters, TypeParameters 순서로 모두 탐색합니다.
@@ -397,7 +418,7 @@ def get_value_from_element(raw_data, parameter_name):
         potential_starts.append(raw_data['Parameters'])
     if 'TypeParameters' in raw_data:
         potential_starts.append(raw_data['TypeParameters'])
-    
+
     # 만약 탐색 시작점을 찾지 못하면, raw_data 자체를 시작점으로 삼습니다.
     if not potential_starts:
         potential_starts.append(raw_data)
@@ -412,11 +433,11 @@ def get_value_from_element(raw_data, parameter_name):
             else:
                 found = False
                 break
-        
+
         # 값을 성공적으로 찾았다면 즉시 반환합니다.
         if found:
             return current_obj
-            
+
     # 모든 위치에서 값을 찾지 못한 경우
     return None
 
@@ -427,11 +448,69 @@ def is_numeric(value):
 
 def get_internal_field_name(display_field):
     """
-    계층적 표시명 (BIM.System.*, BIM.Attributes.*, etc.)을 내부 필드명으로 변환합니다.
+    계층적 표시명 (BIM.*, QM.*, MM.*, SC.*, CI.*, CC.*, AO.*, AC.*)을 내부 필드명으로 변환합니다.
     JavaScript의 getInternalFieldName()과 동일한 로직입니다.
+
+    접두어 처리:
+    - BIM.* : BIM 원본 데이터 속성
+    - QM.* : 수량산출부재 속성
+    - MM.* : 일람부호 속성
+    - SC.* : 공간분류 속성
+    - CI.* : 코스트아이템 속성
+    - CC.* : 공사코드 속성
+    - AO.* : 액티비티객체 속성
+    - AC.* : 액티비티코드 속성
     """
     if not display_field:
         return ''
+
+    # ▼▼▼ [추가] 언더스코어 형식을 점 형식으로 변환 (CC_System_code -> CC.System.code) (2025-11-05) ▼▼▼
+    # CSV 가져오기 등에서 언더스코어 형식 사용 시 호환성 제공
+    prefixes = ['QM_System_', 'QM_Properties_', 'MM_System_', 'MM_Properties_',
+                'SC_System_', 'CI_System_', 'CC_System_', 'AO_System_', 'AC_System_',
+                'BIM_System_', 'BIM_TypeParameters_', 'BIM_Parameters_', 'BIM_Attributes_']
+    for prefix in prefixes:
+        if display_field.startswith(prefix):
+            # 언더스코어를 점으로 변환 (예: CC_System_code -> CC.System.code)
+            display_field = display_field.replace('_', '.', 2)  # 처음 2개의 언더스코어만 변환
+            break
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+    # ▼▼▼ [추가] QM.*, MM.*, SC.*, CI.*, CC.*, AO.*, AC.* 처리 (2025-11-05) ▼▼▼
+    # QM.System.* -> 수량산출부재 시스템 속성
+    if display_field.startswith('QM.System.'):
+        return display_field[10:]  # 'QM.System.' 제거
+    # QM.Properties.* -> 수량산출부재 사용자 정의 속성
+    if display_field.startswith('QM.Properties.'):
+        return display_field[14:]  # 'QM.Properties.' 제거
+
+    # MM.System.* -> 일람부호 시스템 속성
+    if display_field.startswith('MM.System.'):
+        return display_field[10:]  # 'MM.System.' 제거
+    # MM.Properties.* -> 일람부호 사용자 정의 속성
+    if display_field.startswith('MM.Properties.'):
+        return display_field[14:]  # 'MM.Properties.' 제거
+
+    # SC.System.* -> 공간분류 시스템 속성
+    if display_field.startswith('SC.System.'):
+        return display_field[10:]  # 'SC.System.' 제거
+
+    # CI.System.* -> 코스트아이템 시스템 속성
+    if display_field.startswith('CI.System.'):
+        return display_field[10:]  # 'CI.System.' 제거
+
+    # CC.System.* -> 공사코드 시스템 속성
+    if display_field.startswith('CC.System.'):
+        return display_field[10:]  # 'CC.System.' 제거
+
+    # AO.System.* -> 액티비티객체 시스템 속성
+    if display_field.startswith('AO.System.'):
+        return display_field[10:]  # 'AO.System.' 제거
+
+    # AC.System.* -> 액티비티코드 시스템 속성
+    if display_field.startswith('AC.System.'):
+        return display_field[10:]  # 'AC.System.' 제거
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     # BIM. 접두어가 없으면 그대로 반환 (하위 호환성)
     if not display_field.startswith('BIM.'):
@@ -446,15 +525,20 @@ def get_internal_field_name(display_field):
         sub_key = display_field[19:]  # 'BIM.TypeParameters.' 제거
         return f'TypeParameters.{sub_key}'
 
-    # BIM.Attributes.* - IFC raw_data 직접 속성
-    if display_field.startswith('BIM.Attributes.'):
-        return display_field[15:]  # 'BIM.Attributes.' 제거
-
     # BIM.Parameters.*
     if display_field.startswith('BIM.Parameters.'):
         return display_field[15:]  # 'BIM.Parameters.' 제거
 
-    return display_field
+    # BIM.Attributes.* - IFC raw_data 직접 속성 (하위 호환성)
+    if display_field.startswith('BIM.Attributes.'):
+        return display_field[15:]  # 'BIM.Attributes.' 제거
+
+    # ▼▼▼ [추가] 일반적인 BIM.* 형태 (예: BIM.QuantitySet.XXX) ▼▼▼
+    # BIM. 접두어만 제거하여 raw_data 내부 경로로 변환
+    # BIM.QuantitySet.XXX -> QuantitySet.XXX
+    # BIM.Category -> Category
+    return display_field[4:]  # 'BIM.' 제거
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
 # 기존의 evaluate_conditions 함수를 찾아서 아래 코드로 교체해주세요.
 
@@ -493,6 +577,14 @@ def evaluate_conditions(data_dict, conditions):
         # 3. 원본 키가 없으면 변환된 내부 필드명으로 찾아봅니다
         elif internal_field in data_dict:
             actual_value = data_dict.get(internal_field)
+        # ▼▼▼ [추가] CC.System.* -> CostCode.* 매핑 지원 (2025-11-05) ▼▼▼
+        # CC.System.detail_code -> CostCode.detail_code
+        elif p.startswith('CC.System.'):
+            # CC.System.* 형식을 CostCode.* 형식으로 변환
+            costcode_field = 'CostCode.' + p[10:]  # 'CC.System.' 제거하고 'CostCode.' 추가
+            actual_value = data_dict.get(costcode_field)
+            print(f"[DEBUG][evaluate_conditions] CC.System.* mapping: '{p}' -> '{costcode_field}' = {actual_value}")
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
         # 4. 둘 다 없으면, 중첩된 구조(raw_data)를 탐색하는 기존 함수를 호출합니다.
         else:
             actual_value = get_value_from_element(data_dict, internal_field)
@@ -815,7 +907,9 @@ def evaluate_expression(expression, raw_data):
     for placeholder in set(numeric_placeholders):
         # 계층적 경로를 내부 필드명으로 변환
         internal_field = get_internal_field_name(placeholder)
+        print(f"[DEBUG][evaluate_expression] {{{{placeholder}}}}: '{placeholder}' -> internal_field: '{internal_field}'")
         value = get_value_from_element(raw_data, internal_field)
+        print(f"[DEBUG][evaluate_expression] Value found: {value}")
 
         if value is not None:
             # 값의 시작 부분에서 숫자(소수점, 음수 포함)만 추출합니다.
@@ -828,7 +922,8 @@ def evaluate_expression(expression, raw_data):
                 # 숫자 추출에 실패하면 계산 오류를 방지하기 위해 0으로 처리합니다.
                 temp_expression = temp_expression.replace(f'{{{{{placeholder}}}}}', '0')
         else:
-            return f"Error: Parameter '{placeholder}' not found for numeric extraction."
+            print(f"[ERROR][evaluate_expression] Parameter not found: original='{placeholder}', internal='{internal_field}'")
+            return f"Error: Parameter '{internal_field}' (from '{placeholder}') not found for numeric extraction."
 
     # --- 2단계: 일반 {parameter} 처리 ---
     # {{...}}가 처리된 후의 문자열에서 {...}를 찾습니다.
@@ -836,13 +931,17 @@ def evaluate_expression(expression, raw_data):
     for placeholder in set(placeholders):
         # 계층적 경로를 내부 필드명으로 변환
         internal_field = get_internal_field_name(placeholder)
+        print(f"[DEBUG][evaluate_expression] {{placeholder}}: '{placeholder}' -> internal_field: '{internal_field}'")
         value = get_value_from_element(raw_data, internal_field)
+        print(f"[DEBUG][evaluate_expression] Value found: {value}")
+
         if value is not None:
             # 값이 숫자인지 확인하고, 문자열이면 따옴표로 감싸줍니다.
             replacement = str(value) if is_numeric(value) else f'"{str(value)}"'
             temp_expression = temp_expression.replace(f'{{{placeholder}}}', replacement)
         else:
-            return f"Error: Parameter '{placeholder}' not found."
+            print(f"[ERROR][evaluate_expression] Parameter not found: original='{placeholder}', internal='{internal_field}'")
+            return f"Error: Parameter '{internal_field}' (from '{placeholder}') not found."
 
     # --- 3단계: 최종 문자열 계산 ---
     if not temp_expression.strip():
@@ -1343,6 +1442,7 @@ def cost_code_rules_api(request, project_id, rule_id=None):
                 'name': rule.name,
                 'description': rule.description,
                 'target_cost_code_id': str(rule.target_cost_code.id),
+                'target_cost_code_code': rule.target_cost_code.code,  # ▼▼▼ [추가] 코드 문자열 (2025-11-05) ▼▼▼
                 'target_cost_code_name': f"{rule.target_cost_code.code} - {rule.target_cost_code.name}",
                 'conditions': rule.conditions,
                 'quantity_formula': quantity_formula,  # 신규 필드
@@ -1569,6 +1669,9 @@ def apply_activity_assignment_rules_view(request, project_id):
         print(f"  > 적용할 액티비티 할당 룰셋: {len(activity_rules)}개")
 
         updated_count = 0
+        # ▼▼▼ [추가] 첫 번째 CostItem의 combined_properties 로깅을 위한 플래그 (2025-11-05) ▼▼▼
+        first_item_logged = False
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
         # 각 CostItem에 대해 룰 적용
         for cost_item in cost_items_qs.iterator(chunk_size=500):
@@ -1635,8 +1738,23 @@ def apply_activity_assignment_rules_view(request, project_id):
                 if qm.space:
                     combined_properties['Space.name'] = qm.space.name
 
+            # ▼▼▼ [추가] 첫 번째 CostItem의 combined_properties 로깅 (2025-11-05) ▼▼▼
+            if not first_item_logged:
+                print(f"[DEBUG][ActivityRule] First CostItem combined_properties keys:")
+                # CostCode 관련 속성만 필터링해서 보기
+                costcode_props = {k: v for k, v in combined_properties.items() if k.startswith('CostCode.')}
+                if costcode_props:
+                    print(f"  CostCode properties: {costcode_props}")
+                else:
+                    print(f"  No CostCode properties found")
+                first_item_logged = True
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
+
             # 룰셋 적용 (조건에 맞는 모든 룰을 적용)
             for rule in activity_rules:
+                # ▼▼▼ [추가] 디버그 로깅 (2025-11-05) ▼▼▼
+                print(f"[DEBUG][ActivityRule] Evaluating rule '{rule.name}' (conditions: {rule.conditions})")
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
                 if evaluate_conditions(combined_properties, rule.conditions):
                     # 이미 할당되어 있지 않으면 추가
                     if not cost_item.activities.filter(id=rule.target_activity.id).exists():
@@ -1644,6 +1762,10 @@ def apply_activity_assignment_rules_view(request, project_id):
                         updated_count += 1
                         print(f"[DEBUG] CostItem {cost_item.id}에 Activity '{rule.target_activity.code}' 할당")
                     # break 제거: 모든 매칭되는 룰을 적용
+                # ▼▼▼ [추가] 조건 불일치 시에도 로깅 (2025-11-05) ▼▼▼
+                else:
+                    print(f"[DEBUG][ActivityRule] Rule '{rule.name}' conditions NOT matched for CostItem {cost_item.id}")
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
 
         message = f"액티비티 할당 완료: {updated_count}개의 산출항목에 액티비티가 할당되었습니다."
         print(f"[DEBUG] {message}")
@@ -1834,10 +1956,16 @@ def cost_items_api(request, project_id, item_id=None):
                     flat_raw_props = {}
 
                     # 1. raw_data의 최상위 레벨 속성을 먼저 추가합니다.
+                    # ▼▼▼ [수정] QuantitySet.*, PropertySet.*, Spatial_Container.*, Type.*, Attributes.* 포함 (2025-11-05) ▼▼▼
                     for key, value in raw_data.items():
+                        # Parameters와 TypeParameters는 별도 처리하므로 제외
+                        if key in ['Parameters', 'TypeParameters']:
+                            continue
+                        # 단순 값뿐만 아니라 QuantitySet.*, PropertySet.* 등 모든 속성 포함
                         if not isinstance(value, (dict, list)):
                             flat_raw_props[key] = value
-                    
+                    # ▲▲▲ [수정] 여기까지 ▲▲▲
+
                     # 2. TypeParameters의 속성을 추가합니다. (키가 중복되면 덮어씁니다)
                     for key, value in raw_data.get('TypeParameters', {}).items():
                         flat_raw_props[key] = value
@@ -1845,7 +1973,7 @@ def cost_items_api(request, project_id, item_id=None):
                     # 3. Parameters의 속성을 추가합니다. (가장 구체적인 정보이므로 마지막에 덮어씁니다)
                     for key, value in raw_data.get('Parameters', {}).items():
                         flat_raw_props[key] = value
-                        
+
                     item_data['raw_element_properties'] = flat_raw_props
                 # ▲▲▲ [핵심 수정] 여기까지 입니다. ▲▲▲
 
@@ -3374,13 +3502,39 @@ def import_member_mark_assignment_rules(request, project_id):
         # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
         reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
         # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        # ▼▼▼ [추가] 일람부호 자동 생성 (2025-11-05) ▼▼▼
+        created_marks = []
         for row in reader:
+            mark_expression = row.get('mark_expression', '')
+
+            # mark_expression이 있고, 해당 일람부호가 프로젝트에 없으면 생성
+            if mark_expression:
+                existing_mark = MemberMark.objects.filter(project=project, mark=mark_expression).first()
+                if not existing_mark:
+                    # 새 일람부호 생성
+                    new_mark = MemberMark.objects.create(
+                        project=project,
+                        mark=mark_expression,
+                        properties={}
+                    )
+                    created_marks.append(mark_expression)
+                    print(f"[DEBUG] 일람부호 '{mark_expression}' 자동 생성됨")
+
+            # 룰셋 생성
             MemberMarkAssignmentRule.objects.create(
                 project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
                 conditions=json.loads(row.get('conditions', '[]')),
-                mark_expression=row.get('mark_expression', '')
+                mark_expression=mark_expression
             )
-        return JsonResponse({'status': 'success', 'message': '일람부호 할당 룰셋을 성공적으로 가져왔습니다.'})
+
+        # 메시지 생성
+        message = '일람부호 할당 룰셋을 성공적으로 가져왔습니다.'
+        if created_marks:
+            message += f' (자동 생성된 일람부호: {", ".join(created_marks)})'
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        return JsonResponse({'status': 'success', 'message': message})
     except Exception as e: return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 # --- 5. CostCodeAssignmentRule ---
