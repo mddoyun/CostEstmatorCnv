@@ -645,7 +645,8 @@ function exportBoqReportToExcel() {
 }
 
 /**
- * 6단계의 자동화 프로세스를 순차적으로 실행하는 '일괄 자동 업데이트' 함수입니다.
+ * 13단계의 자동화 프로세스를 순차적으로 실행하는 '일괄 자동 업데이트' 함수입니다.
+ * 데이터 가져오기 이후 단계만 실행합니다 (BIM 데이터는 이미 로드되어 있어야 함).
  */
 async function runBatchAutoUpdate() {
     if (!currentProjectId) {
@@ -655,189 +656,175 @@ async function runBatchAutoUpdate() {
 
     if (
         !confirm(
-            "정말로 모든 자동화 프로세스를 순차적으로 실행하시겠습니까?\n이 작업은 시간이 다소 소요될 수 있습니다."
+            "정말로 모든 자동화 프로세스를 순차적으로 실행하시겠습니까?\n" +
+            "(데이터 가져오기는 제외되며, 이미 로드된 BIM 데이터를 기반으로 진행됩니다)\n\n" +
+            "이 작업은 시간이 다소 소요될 수 있습니다."
         )
     ) {
         return;
     }
 
-    console.log("[DEBUG] --- 일괄 자동 업데이트 시작 ---");
+    console.log("[DEBUG] --- 일괄 자동 업데이트 시작 (13단계) ---");
 
-    // [추가] 프로그레스바 초기화
+    // 프로그레스바 초기화
     const progressBar = document.getElementById('data-fetch-progress');
     const progressStatus = document.getElementById('progress-status-text');
-    const TOTAL_STEPS = 6;
+    const TOTAL_STEPS = 13;
 
     if (progressBar && progressStatus) {
         progressBar.max = TOTAL_STEPS;
         progressBar.value = 0;
         progressStatus.textContent = `0/${TOTAL_STEPS}`;
-        console.log("[DEBUG] Progress bar initialized: 0/6");
+        console.log("[DEBUG] Progress bar initialized: 0/13");
     }
 
-    // Promise를 사용하여 데이터 가져오기 완료를 기다리는 로직
-    const waitForDataFetch = () =>
-        new Promise((resolve, reject) => {
-            // 완료 또는 실패 시 호출될 리스너 함수
-            const listener = (event) => {
-                const data = JSON.parse(event.data);
-                // ▼▼▼ [CRITICAL FIX] fetchDataFromClient는 fetch_progress_complete 전송 ▼▼▼
-                if (data.type === "fetch_progress_complete") {
-                    frontendSocket.removeEventListener("message", listener); // 리스너 정리
-                    console.log(
-                        "[DEBUG] (1/6) 데이터 가져오기 완료 신호 수신."
-                    );
-                    resolve();
-                }
-                // ▲▲▲ [CRITICAL FIX] 여기까지 ▲▲▲
-            };
-
-            // websocket 메시지 리스너 추가
-            frontendSocket.addEventListener("message", listener);
-
-            // 데이터 가져오기 시작
-            console.log("[DEBUG] (1/6) BIM 원본데이터 가져오기 시작...");
-            showToast("1/6: BIM 원본데이터를 가져옵니다...", "info");
-            fetchDataFromClient();
-
-            // 타임아웃 설정 (예: 5분)
-            setTimeout(() => {
-                frontendSocket.removeEventListener("message", listener);
-                reject(new Error("데이터 가져오기 시간 초과."));
-            }, 300000);
-        });
     try {
-        // 1. 데이터 가져오기 (완료될 때까지 대기)
-        await waitForDataFetch();
+        // ========== 1단계: BIM원본데이터 - 룰셋 일괄적용 ==========
+        console.log("[DEBUG] (1/13) BIM원본데이터 - 룰셋 일괄적용 시작...");
+        showToast("1/13: BIM원본데이터에 룰셋을 일괄 적용합니다...", "info");
+        await applyClassificationRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 1;
             progressStatus.textContent = `1/${TOTAL_STEPS} 완료`;
         }
-        showToast("✅ (1/6) 데이터 가져오기 완료.", "success");
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // 다음 단계 전 잠시 대기
+        showToast("✅ (1/13) BIM원본데이터 룰셋 일괄적용 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // 2. 룰셋 일괄적용 (확인창 없이 실행)
-        console.log("[DEBUG] (2/6) 분류 할당 룰셋 적용 시작...");
-        showToast("2/6: 분류 할당 룰셋을 적용합니다...", "info");
-        await applyClassificationRules(true); // skipConfirmation = true
+        // ========== 2단계: 수량산출부재 - 자동 생성 (분류 기준) ==========
+        console.log("[DEBUG] (2/13) 수량산출부재 - 자동 생성 (분류 기준) 시작...");
+        showToast("2/13: 수량산출부재를 자동 생성합니다...", "info");
+        await createAutoQuantityMembers(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 2;
             progressStatus.textContent = `2/${TOTAL_STEPS} 완료`;
         }
-        showToast("✅ (2/6) 분류 할당 룰셋 적용 완료.", "success");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        showToast("✅ (2/13) 수량산출부재 자동 생성 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // 3. 수량산출부재 자동 생성 (확인창 없이 실행)
-        console.log("[DEBUG] (3/6) 수량산출부재 자동 생성 시작...");
-        showToast("3/6: 수량산출부재를 자동 생성합니다...", "info");
-        await createAutoQuantityMembers(true); // skipConfirmation = true
+        // ========== 3단계: 수량산출부재 - 속성 룰셋 일괄 적용 ==========
+        console.log("[DEBUG] (3/13) 수량산출부재 - 속성 룰셋 일괄 적용 시작...");
+        showToast("3/13: 수량산출부재에 속성 룰셋을 적용합니다...", "info");
+        await applyPropertyRulesToAllQm();
         if (progressBar && progressStatus) {
             progressBar.value = 3;
             progressStatus.textContent = `3/${TOTAL_STEPS} 완료`;
         }
-        showToast("✅ (3/6) 수량산출부재 자동 생성 완료.", "success");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        showToast("✅ (3/13) 수량산출부재 속성 룰셋 적용 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // 4. 할당 룰셋 일괄 적용 (확인창 없이 실행)
-        console.log("[DEBUG] (4/6) 할당 룰셋 일괄 적용 시작...");
-        showToast(
-            "4/6: 할당 룰셋(일람부호, 공사코드)을 일괄 적용합니다...",
-            "info"
-        );
+        // ========== 4단계: 수량산출부재 - 할당 룰셋 일괄적용 (1차) ==========
+        console.log("[DEBUG] (4/13) 수량산출부재 - 할당 룰셋 일괄적용 (1차) 시작...");
+        showToast("4/13: 수량산출부재에 할당 룰셋을 적용합니다 (1차)...", "info");
         await applyAssignmentRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 4;
             progressStatus.textContent = `4/${TOTAL_STEPS} 완료`;
         }
-        showToast("✅ (4/6) 할당 룰셋 일괄 적용 완료.", "success");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        showToast("✅ (4/13) 수량산출부재 할당 룰셋 적용 완료 (1차).", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // 5. 산출항목 자동 생성 (확인창 없이 실행)
-        console.log("[DEBUG] (5/6) 산출항목 자동 생성 시작...");
-        showToast("5/6: 산출항목을 자동 생성합니다...", "info");
-        await createAutoCostItems(true); // skipConfirmation = true
+        // ========== 5단계: 수량산출부재 - 수동 수량 산출식 업데이트 ==========
+        console.log("[DEBUG] (5/13) 수량산출부재 - 수동 수량 산출식 업데이트 시작...");
+        showToast("5/13: 수량산출부재의 수동 수량 산출식을 업데이트합니다...", "info");
+        await updateAllQmFormulas();
         if (progressBar && progressStatus) {
             progressBar.value = 5;
             progressStatus.textContent = `5/${TOTAL_STEPS} 완료`;
         }
-        showToast("✅ (5/6) 산출항목 자동 생성 완료.", "success");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        showToast("✅ (5/13) 수량산출부재 수동 수량 산출식 업데이트 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // ▼▼▼ [수정] 6번째 단계 - 집계표 생성 전 그룹핑 확인/설정 ▼▼▼
-        console.log("[DEBUG] (6/6) 집계표 생성 준비...");
-        showToast("6/6: 최종 집계표를 생성합니다...", "info");
-
-        // [수정] 탭 전환 로직 제거 - 현재 탭 유지
-        // 상세견적(DD) 탭으로 자동 전환하지 않고 현재 탭에 머무름
-        console.log(
-            "[DEBUG] Skipping tab switch - staying on current tab for report generation..."
-        );
-
-        // [추가] BOQ 필드 정보 로드 (DD 탭으로 이동하지 않으므로 수동으로 로드 필요)
-        console.log("[DEBUG] Loading BOQ grouping fields before generating report...");
-        if (typeof loadBoqGroupingFields === 'function') {
-            await loadBoqGroupingFields();
-            console.log("[DEBUG] BOQ grouping fields loaded successfully.");
-        } else {
-            console.error("[ERROR] loadBoqGroupingFields function not found!");
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500)); // 짧은 지연만 적용
-
-        const boqGroupingControls = document.getElementById(
-            "boq-grouping-controls"
-        );
-        const groupBySelects = boqGroupingControls?.querySelectorAll(
-            ".boq-group-by-select"
-        );
-
-        // 그룹핑 기준이 하나도 없는 경우, 첫 번째 사용 가능한 필드로 기본 그룹핑 추가
-        if (
-            boqGroupingControls &&
-            (!groupBySelects || groupBySelects.length === 0)
-        ) {
-            console.log(
-                "[DEBUG] No grouping criteria found. Adding default grouping..."
-            );
-            if (availableBoqFields.length > 0) {
-                addBoqGroupingLevel(); // 첫 번째 레벨 추가
-                const firstSelect = boqGroupingControls.querySelector(
-                    ".boq-group-by-select"
-                );
-                if (firstSelect && availableBoqFields[0]) {
-                    firstSelect.value = availableBoqFields[0].value; // 첫 번째 필드를 기본값으로 설정
-                    console.log(
-                        `[DEBUG] Default grouping set to: ${availableBoqFields[0].label}`
-                    );
-                } else {
-                    console.warn(
-                        "[WARN] Could not set default grouping value automatically."
-                    );
-                }
-            } else {
-                console.error(
-                    "[ERROR] Cannot add default grouping because availableBoqFields is empty."
-                );
-                throw new Error(
-                    "집계표를 생성하기 위한 그룹핑 필드 정보를 불러올 수 없습니다."
-                );
-            }
-        } else {
-            console.log(
-                "[DEBUG] Existing grouping criteria found or container not available."
-            );
-        }
-
-        // 집계표 생성 함수 호출 (함수 이름은 그대로 사용)
-        generateBoqReport();
+        // ========== 6단계: 수량산출부재 - 할당 룰셋 일괄적용 (2차) ==========
+        console.log("[DEBUG] (6/13) 수량산출부재 - 할당 룰셋 일괄적용 (2차) 시작...");
+        showToast("6/13: 수량산출부재에 할당 룰셋을 적용합니다 (2차)...", "info");
+        await applyAssignmentRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 6;
             progressStatus.textContent = `6/${TOTAL_STEPS} 완료`;
         }
-        showToast("✅ (6/6) 상세견적(DD) 집계표 생성 완료.", "success");
-        // ▲▲▲ [수정] 여기까지 입니다 ▲▲▲
+        showToast("✅ (6/13) 수량산출부재 할당 룰셋 적용 완료 (2차).", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        showToast("🎉 모든 자동화 프로세스가 완료되었습니다.", "success", 5000);
-        console.log("[DEBUG] --- 일괄 자동 업데이트 성공적으로 완료 ---");
+        // ========== 7단계: 코스트아이템 - 자동 생성(공사코드 기준) ==========
+        console.log("[DEBUG] (7/13) 코스트아이템 - 자동 생성(공사코드 기준) 시작...");
+        showToast("7/13: 코스트아이템을 자동 생성합니다...", "info");
+        await createAutoCostItems(true); // skipConfirmation = true
+        if (progressBar && progressStatus) {
+            progressBar.value = 7;
+            progressStatus.textContent = `7/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (7/13) 코스트아이템 자동 생성 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 8단계: 코스트아이템 - 룰셋수량계산 (전체) ==========
+        console.log("[DEBUG] (8/13) 코스트아이템 - 룰셋수량계산 (전체) 시작...");
+        showToast("8/13: 코스트아이템의 룰셋수량계산을 실행합니다...", "info");
+        await applyCostItemQuantityRules(true); // skipConfirmation = true
+        if (progressBar && progressStatus) {
+            progressBar.value = 8;
+            progressStatus.textContent = `8/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (8/13) 코스트아이템 룰셋수량계산 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 9단계: 코스트아이템 - 산출식 업데이트 ==========
+        console.log("[DEBUG] (9/13) 코스트아이템 - 산출식 업데이트 시작...");
+        showToast("9/13: 코스트아이템의 산출식을 업데이트합니다...", "info");
+        await updateAllCiFormulas();
+        if (progressBar && progressStatus) {
+            progressBar.value = 9;
+            progressStatus.textContent = `9/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (9/13) 코스트아이템 산출식 업데이트 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 10단계: 코스트아이템 - 액티비티 룰셋 적용 ==========
+        console.log("[DEBUG] (10/13) 코스트아이템 - 액티비티 룰셋 적용 시작...");
+        showToast("10/13: 코스트아이템에 액티비티 룰셋을 적용합니다...", "info");
+        await applyCiActivityRules();
+        if (progressBar && progressStatus) {
+            progressBar.value = 10;
+            progressStatus.textContent = `10/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (10/13) 코스트아이템 액티비티 룰셋 적용 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 11단계: 액티비티 객체 - 자동 생성(액티비티코드 기준) ==========
+        console.log("[DEBUG] (11/13) 액티비티 객체 - 자동 생성(액티비티코드 기준) 시작...");
+        showToast("11/13: 액티비티 객체를 자동 생성합니다...", "info");
+        await createActivityObjectsAuto();
+        if (progressBar && progressStatus) {
+            progressBar.value = 11;
+            progressStatus.textContent = `11/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (11/13) 액티비티 객체 자동 생성 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 12단계: 액티비티 객체 - 자동 수량계산 ==========
+        console.log("[DEBUG] (12/13) 액티비티 객체 - 자동 수량계산 시작...");
+        showToast("12/13: 액티비티 객체의 자동 수량계산을 실행합니다...", "info");
+        await recalculateAllAoQuantities();
+        if (progressBar && progressStatus) {
+            progressBar.value = 12;
+            progressStatus.textContent = `12/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (12/13) 액티비티 객체 자동 수량계산 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 13단계: 액티비티 객체 - 산출식 업데이트 ==========
+        console.log("[DEBUG] (13/13) 액티비티 객체 - 산출식 업데이트 시작...");
+        showToast("13/13: 액티비티 객체의 산출식을 업데이트합니다...", "info");
+        await updateAllAoFormulas();
+        if (progressBar && progressStatus) {
+            progressBar.value = 13;
+            progressStatus.textContent = `13/${TOTAL_STEPS} 완료`;
+        }
+        showToast("✅ (13/13) 액티비티 객체 산출식 업데이트 완료.", "success");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // ========== 완료 메시지 ==========
+        showToast("🎉 모든 자동화 프로세스가 완료되었습니다! (13단계)", "success", 5000);
+        console.log("[DEBUG] --- 일괄 자동 업데이트 성공적으로 완료 (13단계) ---");
     } catch (error) {
         console.error("[ERROR] 일괄 자동 업데이트 중 오류 발생:", error);
         showToast(`오류 발생: ${error.message}`, "error", 5000);
