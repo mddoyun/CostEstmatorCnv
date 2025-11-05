@@ -294,11 +294,12 @@ async function createManualActivityObject() {
         try {
             const payload = {
                 activity_id: activityId,
-                is_manual: true
+                is_manual: true,
+                quantity: quantity ? parseFloat(quantity) : 0,  // 기본값 0
+                quantity_expression: {}  // 빈 객체로 초기화
             };
 
             if (costItemId) payload.cost_item_id = costItemId;
-            if (quantity) payload.quantity = parseFloat(quantity);
             if (startDate) payload.start_date = startDate;
             if (endDate) payload.end_date = endDate;
 
@@ -1354,47 +1355,23 @@ function showManualAoQuantityInputModal() {
         z-index: 10000;
     `;
 
-    // 속성 옵션 생성 - 첫 번째 선택된 항목의 컨텍스트에서 동적으로 생성
+    // 속성 옵션 생성 - populateAoFieldSelection()과 동일하게 generateAOPropertyOptions() 사용
     let propertyOptions = '<option value="">-- 속성 선택 --</option>';
 
     if (selectedItems.length > 0) {
-        const sampleContext = buildActivityObjectContext(selectedItems[0]);
-        const grouped = {};
+        // ▼▼▼ [수정] generateAOPropertyOptions()를 사용하여 필드선택 탭과 동일한 속성 리스트 생성 (2025-11-05) ▼▼▼
+        const propertyOptionGroups = generateAOPropertyOptions();
 
-        // Context 키를 그룹별로 분류
-        Object.keys(sampleContext).forEach(key => {
-            const parts = key.split('.');
-            const group = parts[0]; // AO, Activity, CI, QM, MM, BIM 등
-
-            if (!grouped[group]) grouped[group] = [];
-            grouped[group].push(key);
-        });
-
-        // 그룹명 한글 매핑
-        const groupNames = {
-            'AO': 'ActivityObject 속성',
-            'Activity': 'Activity 속성',
-            'CI': 'CostItem 속성',
-            'CostCode': 'CostCode 속성',
-            'QM': 'QuantityMember 속성',
-            'MM': 'MemberMark 속성',
-            'BIM': 'BIM 속성'
-        };
-
-        // 각 그룹별로 옵션 생성
-        Object.keys(grouped).sort().forEach(group => {
-            propertyOptions += `<optgroup label="${groupNames[group] || group}">`;
-            grouped[group].sort().forEach(key => {
-                propertyOptions += `<option value="{${key}}">{${key}}</option>`;
+        // propertyOptionGroups에서 직접 optgroup 생성
+        propertyOptionGroups.forEach(group => {
+            propertyOptions += `<optgroup label="${group.group}">`;
+            group.options.forEach(opt => {
+                // opt.value는 이미 "AO.quantity" 형식이므로 중괄호로 감싸기만 하면 됨
+                propertyOptions += `<option value="{${opt.value}}">${opt.label}</option>`;
             });
             propertyOptions += '</optgroup>';
         });
-    } else {
-        // 기본 옵션 (선택 항목 없을 때)
-        propertyOptions += '<optgroup label="ActivityObject 속성">';
-        propertyOptions += '<option value="{AO.quantity}">{AO.quantity}</option>';
-        propertyOptions += '<option value="{AO.actual_duration}">{AO.actual_duration}</option>';
-        propertyOptions += '</optgroup>';
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
 
     modal.innerHTML = `
@@ -1575,7 +1552,9 @@ function showManualAoQuantityInputModal() {
                 console.log(`[DEBUG][Manual AO Quantity] Formula mode: ${formula}`);
 
                 for (const item of selectedItems) {
-                    const aoContext = buildActivityObjectContext(item);
+                    const aoContext = buildAoContext(item);
+                    console.log('[DEBUG][Manual AO Quantity] Context keys:', Object.keys(aoContext));
+                    console.log('[DEBUG][Manual AO Quantity] Context BIM keys:', Object.keys(aoContext).filter(k => k.startsWith('BIM.')));
                     const calculatedQuantity = evaluateQuantityFormula(formula, aoContext);
 
                     if (calculatedQuantity !== null && !isNaN(calculatedQuantity)) {
@@ -1660,7 +1639,7 @@ async function clearManualInput(aoId) {
             actual_duration: autoQuantity,
             is_manual: false,
             manual_formula: '',
-            quantity_expression: null
+            quantity_expression: {}
         };
 
         console.log('[DEBUG][clearManualInput] Update data:', updateData);
@@ -2167,7 +2146,7 @@ async function resetManualAoInput() {
                 actual_duration: autoQuantity,
                 is_manual: false,
                 manual_formula: '',
-                quantity_expression: null
+                quantity_expression: {}
             };
 
             const response = await fetch(`/connections/api/activity-objects/${currentProjectId}/${aoId}/`, {
@@ -2301,6 +2280,293 @@ function buildActivityObjectContext(ao) {
     return context;
 }
 
+// ▼▼▼ [추가] 수량 산식 평가 함수 (2025-11-05) ▼▼▼
+/**
+ * 수량 산식 평가 (템플릿 표현식 처리)
+ * CostItem의 evaluateQuantityFormula와 동일한 로직
+ */
+function evaluateQuantityFormula(formula, context) {
+    if (!formula || formula.trim() === '') return null;
+
+    try {
+        // 템플릿 표현식 {property_name}을 실제 값으로 치환
+        let evaluatedFormula = formula;
+
+        // {property_name} 패턴 찾기
+        const templatePattern = /\{([^}]+)\}/g;
+        const matches = [...formula.matchAll(templatePattern)];
+
+        console.log('[DEBUG][evaluateQuantityFormula] Original formula:', formula);
+
+        for (const match of matches) {
+            const fullMatch = match[0]; // {property_name}
+            let propertyPath = match[1]; // property_name
+
+            // 괄호와 설명 부분 제거 (예: "QM.volume (부재 체적)" -> "QM.volume")
+            if (propertyPath.includes('(')) {
+                propertyPath = propertyPath.split('(')[0].trim();
+            }
+
+            // 속성 경로에서 실제 컨텍스트 키 찾기
+            // 먼저 원본 키로 시도 (ActivityObject용)
+            let value = context[propertyPath];
+            let contextKey = propertyPath;
+
+            // 원본 키로 찾지 못하면 변환된 키로 시도 (CostItem용 레거시)
+            if (value === undefined || value === null) {
+                // CI.name -> name, QM.volume -> qm_volume, BIM.Parameters.면적 -> bim_param_면적
+                if (propertyPath.startsWith('CI.')) {
+                    contextKey = propertyPath.substring(3); // "CI." 제거
+                } else if (propertyPath.startsWith('AO.')) {
+                    contextKey = propertyPath.substring(3); // "AO." 제거
+                } else if (propertyPath.startsWith('AC.')) {
+                    contextKey = 'activity_' + propertyPath.substring(3).toLowerCase();
+                } else if (propertyPath.startsWith('QM.properties.')) {
+                    // QM.properties.XXX -> qm_prop_XXX
+                    contextKey = 'qm_prop_' + propertyPath.substring(14);
+                } else if (propertyPath.startsWith('QM.')) {
+                    // QM.volume -> qm_volume
+                    contextKey = 'qm_' + propertyPath.substring(3).toLowerCase();
+                } else if (propertyPath.startsWith('BIM.System.')) {
+                    contextKey = 'bim_system_' + propertyPath.substring(11);
+                } else if (propertyPath.startsWith('BIM.Attributes.')) {
+                    contextKey = 'bim_attr_' + propertyPath.substring(15);
+                } else if (propertyPath.startsWith('BIM.Parameters.')) {
+                    contextKey = 'bim_param_' + propertyPath.substring(15);
+                } else if (propertyPath.startsWith('BIM.TypeParameters.')) {
+                    contextKey = 'bim_tparam_' + propertyPath.substring(19);
+                } else if (propertyPath.startsWith('MM.properties.')) {
+                    contextKey = 'mm_prop_' + propertyPath.substring(14);
+                } else if (propertyPath.startsWith('MM.mark')) {
+                    contextKey = 'member_mark_mark';
+                } else if (propertyPath.startsWith('Space.name')) {
+                    contextKey = 'space_name';
+                }
+
+                value = context[contextKey];
+            }
+
+            console.log(`[DEBUG][evaluateQuantityFormula] Property: ${propertyPath} -> Context Key: ${contextKey}`);
+
+            if (value !== undefined && value !== null) {
+                // 숫자로 변환 시도
+                const numValue = parseFloat(value);
+                if (!isNaN(numValue)) {
+                    evaluatedFormula = evaluatedFormula.replace(fullMatch, numValue);
+                } else {
+                    console.warn(`[WARN][evaluateQuantityFormula] Non-numeric value for ${propertyPath}: ${value}`);
+                    evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
+                }
+            } else {
+                console.warn(`[WARN][evaluateQuantityFormula] Missing value for ${propertyPath}`);
+                evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
+            }
+        }
+
+        console.log('[DEBUG][evaluateQuantityFormula] Evaluated formula:', evaluatedFormula);
+
+        // 수식 계산
+        const result = eval(evaluatedFormula);
+        console.log('[DEBUG][evaluateQuantityFormula] Result:', result);
+
+        return result;
+    } catch (error) {
+        console.error('[ERROR][evaluateQuantityFormula]', error);
+        return null;
+    }
+}
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
+// ▼▼▼ [추가] ActivityObject 컨텍스트 생성 함수 (2025-11-05) ▼▼▼
+/**
+ * ActivityObject의 전체 컨텍스트 객체 생성 (AO.*, AC.*, CI.*, CC.*, QM.*, MM.*, BIM.*)
+ * CostItem의 buildCostItemContext와 유사하게 모든 상속 속성 포함
+ */
+function buildAoContext(ao) {
+    const context = {};
+
+    console.log('[DEBUG][buildAoContext] Input AO:', ao);
+    console.log('[DEBUG][buildAoContext] ao.cost_item:', ao.cost_item);
+    console.log('[DEBUG][buildAoContext] window.loadedCostItems length:', window.loadedCostItems?.length);
+
+    // 1. AO 자체 속성
+    context['id'] = ao.id;
+    context['quantity'] = ao.quantity || 0;
+    context['start_date'] = ao.start_date || '';
+    context['end_date'] = ao.end_date || '';
+    context['actual_duration'] = ao.actual_duration || 0;
+    context['progress'] = ao.progress || 0;
+    context['is_manual'] = ao.is_manual || false;
+
+    // 2. Activity 속성 (상속)
+    if (ao.activity) {
+        const activity = window.loadedActivities?.find(a => a.id === ao.activity);
+        if (activity) {
+            context['activity_id'] = activity.id;
+            context['activity_name'] = activity.name;
+            context['activity_code'] = activity.code;
+            context['activity_duration'] = activity.duration || 0;
+        }
+    }
+
+    // 3. CostItem 속성 (상속)
+    if (ao.cost_item) {
+        console.log('[DEBUG][buildAoContext] Looking for cost_item:', ao.cost_item);
+        // ao.cost_item이 객체인 경우 id를 추출, 문자열인 경우 그대로 사용
+        const costItemId = typeof ao.cost_item === 'object' ? ao.cost_item.id : ao.cost_item;
+        console.log('[DEBUG][buildAoContext] Cost item ID:', costItemId);
+        const ci = window.loadedCostItems?.find(c => c.id === costItemId);
+        console.log('[DEBUG][buildAoContext] Found CI:', ci);
+        if (ci) {
+            context['cost_item_id'] = ci.id;
+            context['cost_item_quantity'] = ci.quantity || 0;
+            context['cost_item_unit'] = ci.unit || '';
+            context['cost_item_grouping_info'] = ci.grouping_info || '';
+
+            // 4. CostCode 속성 (CI를 통한 상속)
+            if (ci.cost_code) {
+                let costCode = window.loadedCostCodes?.find(cc => cc.id === ci.cost_code);
+                if (!costCode) {
+                    costCode = window.loadedCostCodes?.find(cc => cc.code === ci.cost_code);
+                }
+                if (costCode) {
+                    context['cost_code'] = costCode.code;
+                    context['cost_code_name'] = costCode.name;
+                    context['cost_code_description'] = costCode.description;
+                    context['cost_code_detail_code'] = costCode.detail_code;
+                    context['cost_code_unit'] = costCode.unit;
+                }
+            }
+
+            // 5. QuantityMember 속성 (CI를 통한 상속)
+            if (ci.quantity_member) {
+                const qm = window.loadedQuantityMembers?.find(m => m.id === ci.quantity_member);
+                if (qm) {
+                    context['qm_id'] = qm.id;
+                    context['qm_name'] = qm.name;
+                    context['qm_volume'] = qm.volume || 0;
+                    context['qm_area'] = qm.area || 0;
+                    context['qm_length'] = qm.length || 0;
+                    context['classification_tag'] = qm.classification_tag_name || '';
+
+                    // QM properties
+                    if (qm.properties) {
+                        Object.keys(qm.properties).forEach(key => {
+                            context[`qm_prop_${key}`] = qm.properties[key];
+                        });
+                    }
+
+                    // 6. BIM 원본 속성 (QM을 통한 상속)
+                    if (qm.raw_element_id) {
+                        const rawElement = window.allRevitData?.find(re => re.id === qm.raw_element_id);
+                        if (rawElement && rawElement.raw_data) {
+                            const rd = rawElement.raw_data;
+
+                            // raw_data의 모든 키를 순회하며 적절한 prefix로 context에 저장
+                            Object.keys(rd).forEach(key => {
+                                const value = rd[key];
+
+                                // ▼▼▼ [수정] BIM. prefix로 통일 (2025-11-05) ▼▼▼
+                                // 평탄화된 키 처리 - UI에서 표시되는 형식과 동일하게 저장
+                                if (key.startsWith('QuantitySet.') || key.startsWith('PropertySet.') ||
+                                    key.startsWith('Type.') || key.startsWith('Spatial_Container.')) {
+                                    // 이미 prefix가 있는 경우 그대로 BIM. prefix만 추가
+                                    context[`BIM.${key}`] = value;
+                                } else if (key.startsWith('Attributes.')) {
+                                    // Attributes.xxx -> BIM.Attributes.xxx
+                                    context[`BIM.${key}`] = value;
+                                } else if (key.startsWith('Parameters.')) {
+                                    // Parameters.xxx -> BIM.Parameters.xxx
+                                    context[`BIM.${key}`] = value;
+                                } else if (key.startsWith('TypeParameters.')) {
+                                    // TypeParameters.xxx -> BIM.TypeParameters.xxx
+                                    context[`BIM.${key}`] = value;
+                                } else if (['Name', 'IfcClass', 'ElementId', 'UniqueId', 'RelatingType',
+                                           'SpatialContainer', 'Aggregates', 'Nests', 'Category', 'Family',
+                                           'Type', 'Level', 'Id', 'System'].includes(key)) {
+                                    // 시스템 속성 -> BIM.Attributes.xxx
+                                    context[`BIM.Attributes.${key}`] = value;
+                                }
+                                // ▲▲▲ [수정] 여기까지 ▲▲▲
+                            });
+
+                            // ▼▼▼ [수정] BIM. prefix로 통일 (2025-11-05) ▼▼▼
+                            // 하위 호환성: 중첩 객체 처리 (Revit 구조)
+                            if (rd.Attributes && typeof rd.Attributes === 'object') {
+                                function flattenObject(obj, prefix = '') {
+                                    Object.keys(obj).forEach(key => {
+                                        const fullKey = prefix ? `${prefix}.${key}` : key;
+                                        const value = obj[key];
+                                        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                                            flattenObject(value, fullKey);
+                                        } else {
+                                            context[`BIM.Attributes.${fullKey}`] = value;
+                                        }
+                                    });
+                                }
+                                flattenObject(rd.Attributes);
+                            }
+
+                            if (rd.Parameters && typeof rd.Parameters === 'object') {
+                                function flattenParams(obj, prefix = '') {
+                                    Object.keys(obj).forEach(key => {
+                                        const fullKey = prefix ? `${prefix}.${key}` : key;
+                                        const value = obj[key];
+                                        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                                            flattenParams(value, fullKey);
+                                        } else {
+                                            context[`BIM.Parameters.${fullKey}`] = value;
+                                        }
+                                    });
+                                }
+                                flattenParams(rd.Parameters);
+                            }
+
+                            if (rd.TypeParameters && typeof rd.TypeParameters === 'object') {
+                                function flattenTypeParams(obj, prefix = '') {
+                                    Object.keys(obj).forEach(key => {
+                                        const fullKey = prefix ? `${prefix}.${key}` : key;
+                                        const value = obj[key];
+                                        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                                            flattenTypeParams(value, fullKey);
+                                        } else {
+                                            context[`BIM.TypeParameters.${fullKey}`] = value;
+                                        }
+                                    });
+                                }
+                                flattenTypeParams(rd.TypeParameters);
+                            }
+                            // ▲▲▲ [수정] 여기까지 ▲▲▲
+                        }
+                    }
+
+                    // 7. MemberMark 속성 (QM을 통한 상속)
+                    if (qm.member_mark_id) {
+                        const mm = window.loadedMemberMarks?.find(m => m.id === qm.member_mark_id);
+                        if (mm) {
+                            context['member_mark_mark'] = mm.mark;
+                            if (mm.properties) {
+                                Object.keys(mm.properties).forEach(key => {
+                                    context[`mm_prop_${key}`] = mm.properties[key];
+                                });
+                            }
+                        }
+                    }
+
+                    // 8. Space 속성 (QM을 통한 상속)
+                    if (qm.space_name) {
+                        context['space_name'] = qm.space_name;
+                    }
+                }
+            }
+        }
+    }
+
+    console.log('[DEBUG][buildAoContext] Built context for AO:', ao.id);
+    return context;
+}
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
 // ▼▼▼ [추가] 수동 수량 산출식 업데이트 함수 (2025-11-05) ▼▼▼
 /**
  * 모든 ActivityObject의 manual_formula 산출식을 재계산하여 quantity를 업데이트합니다.
@@ -2315,8 +2581,8 @@ async function updateAllAoFormulas() {
     const errors = [];
 
     for (const ao of window.loadedActivityObjects) {
-        // is_manual이 true이고 manual_formula가 있는 경우만 처리
-        if (!ao.is_manual || !ao.manual_formula) {
+        // quantity_expression이 있고 formula 모드인 경우만 처리
+        if (!ao.quantity_expression || ao.quantity_expression.mode !== 'formula' || !ao.quantity_expression.formula) {
             continue;
         }
 
@@ -2325,22 +2591,35 @@ async function updateAllAoFormulas() {
             const aoContext = buildAoContext(ao);
 
             // 산출식 계산
-            const calculatedQuantity = evaluateQuantityFormula(ao.manual_formula, aoContext);
+            const calculatedQuantity = evaluateQuantityFormula(ao.quantity_expression.formula, aoContext);
+            console.log(`[updateAllAoFormulas] AO ${ao.id} - formula: ${ao.quantity_expression.formula}, result: ${calculatedQuantity}`);
 
             if (calculatedQuantity !== null && calculatedQuantity !== undefined && !isNaN(calculatedQuantity)) {
-                // 서버에 저장
+                // 서버에 저장 - 필수 필드 포함
+                // activity와 cost_item이 객체인 경우 id 추출
+                const activityId = typeof ao.activity === 'object' ? ao.activity.id : ao.activity;
+                const costItemId = typeof ao.cost_item === 'object' ? ao.cost_item.id : ao.cost_item;
+
+                const payload = {
+                    id: ao.id,
+                    activity_id: activityId,
+                    cost_item_id: costItemId,
+                    quantity: calculatedQuantity,
+                    actual_duration: calculatedQuantity,  // actual_duration도 함께 업데이트
+                    quantity_expression: ao.quantity_expression
+                };
+
+                console.log('[DEBUG][updateAllAoFormulas] Payload:', payload);
+
                 const response = await fetch(
-                    `/connections/api/activity-objects/${currentProjectId}/`,
+                    `/connections/api/activity-objects/${currentProjectId}/${ao.id}/`,
                     {
-                        method: 'POST',
+                        method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': csrftoken,
                         },
-                        body: JSON.stringify({
-                            id: ao.id,
-                            quantity: calculatedQuantity
-                        }),
+                        body: JSON.stringify(payload),
                     }
                 );
 
@@ -2351,7 +2630,7 @@ async function updateAllAoFormulas() {
                     // 로컬 데이터 업데이트
                     ao.quantity = calculatedQuantity;
                     updatedCount++;
-                    console.log(`[updateAllAoFormulas] Updated ${ao.id} - quantity: ${calculatedQuantity} (from formula: ${ao.manual_formula})`);
+                    console.log(`[updateAllAoFormulas] Updated ${ao.id} - quantity: ${calculatedQuantity} (from formula: ${ao.quantity_expression.formula})`);
                 }
             }
         } catch (error) {

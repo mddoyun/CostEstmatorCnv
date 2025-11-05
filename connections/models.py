@@ -522,6 +522,7 @@ class ActivityObject(models.Model):
     # 수동 입력 여부
     is_manual = models.BooleanField(default=False, help_text="수동으로 일자/수량을 입력했는지 여부")
     manual_formula = models.TextField(blank=True, help_text="수동 입력 시 사용한 산식")
+    quantity_expression = models.JSONField(default=dict, blank=True, null=True, help_text="수동 입력 시 사용한 수량 표현식 (JSON)")
 
     # 진행 상태
     progress = models.DecimalField(

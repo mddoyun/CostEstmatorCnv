@@ -3692,25 +3692,29 @@ function generateQMPropertyOptions() {
 
     // 3. QM.Properties.* - 사용자 정의 속성 (동적으로 수집 필요)
     // 현재 로드된 QuantityMember 데이터에서 properties 수집
-    if (window.currentQuantityMembers && window.currentQuantityMembers.length > 0) {
-        const qmPropertiesSet = new Set();
-        window.currentQuantityMembers.forEach(qm => {
-            if (qm.properties && typeof qm.properties === 'object') {
-                Object.keys(qm.properties).forEach(key => {
-                    qmPropertiesSet.add(key);
-                });
-            }
-        });
+    const qmPropertiesSet = new Set();
+    const qmSources = [window.currentQuantityMembers, window.loadedQuantityMembers];
 
-        if (qmPropertiesSet.size > 0) {
-            const qmPropOptions = Array.from(qmPropertiesSet).sort().map(prop => {
-                return { value: `QM.Properties.${prop}`, label: `QM.Properties.${prop}` };
-            });
-            propertyOptions.push({
-                group: 'QM Properties (사용자 정의 속성)',
-                options: qmPropOptions
+    qmSources.forEach(qmList => {
+        if (qmList && qmList.length > 0) {
+            qmList.forEach(qm => {
+                if (qm.properties && typeof qm.properties === 'object') {
+                    Object.keys(qm.properties).forEach(key => {
+                        qmPropertiesSet.add(key);
+                    });
+                }
             });
         }
+    });
+
+    if (qmPropertiesSet.size > 0) {
+        const qmPropOptions = Array.from(qmPropertiesSet).sort().map(prop => {
+            return { value: `QM.Properties.${prop}`, label: `QM.Properties.${prop}` };
+        });
+        propertyOptions.push({
+            group: 'QM Properties (사용자 정의 속성)',
+            options: qmPropOptions
+        });
     }
 
     // 4. MM.* - 일람부호 속성 (MemberMark)
