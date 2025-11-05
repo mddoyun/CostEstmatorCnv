@@ -4529,10 +4529,20 @@
         }
 
         // QuantityMember에서 상속받을 속성들
-        const member = ao.quantity_member || (ao.cost_item && ao.cost_item.quantity_member_id ?
-            window.loadedQuantityMembers?.find(m => m.id === ao.cost_item.quantity_member_id) : null);
+        // ▼▼▼ [수정] ao.quantity_member가 축약 버전일 수 있으므로 항상 loadedQuantityMembers에서 전체 객체 검색 (2025-11-05) ▼▼▼
+        let memberId = null;
+        if (ao.quantity_member && ao.quantity_member.id) {
+            memberId = ao.quantity_member.id;
+        } else if (ao.cost_item && ao.cost_item.quantity_member_id) {
+            memberId = ao.cost_item.quantity_member_id;
+        }
 
+        const member = memberId ? window.loadedQuantityMembers?.find(m => m.id === memberId) : null;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        console.log('[DEBUG][displayActivityDetails] memberId:', memberId);
         console.log('[DEBUG][displayActivityDetails] member:', member);
+        console.log('[DEBUG][displayActivityDetails] ao.quantity_member (original):', ao.quantity_member);
         console.log('[DEBUG][displayActivityDetails] ao.cost_item:', ao.cost_item);
         console.log('[DEBUG][displayActivityDetails] window.loadedQuantityMembers count:', window.loadedQuantityMembers?.length);
 
