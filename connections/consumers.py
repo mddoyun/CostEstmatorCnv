@@ -27,7 +27,9 @@ def flatten_bim_data(element_data):
     flattened = {}
 
     # 평탄화하지 않을 고정 필드들
-    FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'System'}
+    # ▼▼▼ [수정] Tag, PredefinedType 추가 (2025-11-05) ▼▼▼
+    FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'Tag', 'PredefinedType', 'System'}
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
 
     def flatten_dict(data, prefix=""):
         """재귀적으로 딕셔너리를 평탄화"""
@@ -410,12 +412,18 @@ class RevitConsumer(AsyncWebsocketConsumer):
                 flattened_data = flatten_bim_data(item)
 
                 # 고정 필드만 유지하고 나머지 중첩 객체는 제거 (이미 평탄화됨)
-                # FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'System'}
-                FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'System'}
+                # ▼▼▼ [수정] Tag, PredefinedType 추가 (2025-11-05) ▼▼▼
+                FIXED_FIELDS = {'Name', 'IfcClass', 'ElementId', 'UniqueId', 'Tag', 'PredefinedType', 'System'}
+                # ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 # 고정 필드와 평탄화된 데이터만 유지
                 processed_item = {k: v for k, v in item.items() if k in FIXED_FIELDS}
                 processed_item.update(flattened_data)
+
+                # ▼▼▼ [디버깅] Tag 필드 확인 (2025-11-05) ▼▼▼
+                if 'Tag' in item and item['Tag']:
+                    print(f"    [DEBUG] Tag field found: {item['Tag']} -> processed_item.Tag: {processed_item.get('Tag', 'NOT FOUND')}")
+                # ▲▲▲ [디버깅] 여기까지 ▲▲▲
                 # ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 # ▼▼▼ [추가] 3D 뷰어 호환성: System.Geometry를 Parameters.Geometry로도 복사 ▼▼▼

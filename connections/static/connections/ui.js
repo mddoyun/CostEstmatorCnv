@@ -29,7 +29,7 @@ function getDisplayFieldName(internalField) {
 
     // BIM.Attributes.* - IFC raw_data 직접 속성 (하위 호환성)
     const ifcAttributeProps = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description',
-                                'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
+                                'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests', 'Tag', 'PredefinedType'];
     if (ifcAttributeProps.includes(internalField)) {
         return `BIM.Attributes.${internalField}`;
     }
@@ -47,6 +47,13 @@ function getInternalFieldName(displayField) {
     if (!displayField.startsWith('BIM.')) {
         return displayField;
     }
+
+    // ▼▼▼ [수정] BIM.Attributes.* 처리 추가 (2025-11-05) ▼▼▼
+    // BIM.Attributes.IfcClass -> IfcClass
+    if (displayField.startsWith('BIM.Attributes.')) {
+        return displayField.substring(15); // 'BIM.Attributes.' 제거
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // ▼▼▼ [수정] 동적 평탄화된 필드 역변환 ▼▼▼
     // BIM.Category.Property 형식을 Category.Property로 변환
@@ -76,6 +83,12 @@ function getValueForItem(item, field) {
     // 표시용 계층 이름을 내부 필드명으로 변환
     const internalField = getInternalFieldName(field);
 
+    // ▼▼▼ [디버깅] 필드 변환 확인 (2025-11-05) ▼▼▼
+    if (field.includes('IfcClass') || field.includes('Attributes')) {
+        console.log('[getValueForItem] field:', field, '-> internalField:', internalField);
+    }
+    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
     if (internalField === 'classification_tags') {
         // classification_tags_details가 있으면 할당 타입 표시 포함
         if (Array.isArray(item.classification_tags_details) && item.classification_tags_details.length > 0) {
@@ -90,6 +103,19 @@ function getValueForItem(item, field) {
             : '';
     }
     const raw_data = item.raw_data || {};
+
+    // ▼▼▼ [디버깅] raw_data 전체 구조 확인 (2025-11-05) ▼▼▼
+    if (field.includes('Tag') && field.includes('Attributes')) {
+        console.log('[getValueForItem] Searching for Tag in item:', {
+            'item.Tag': item.Tag,
+            'raw_data.Tag': raw_data.Tag,
+            'raw_data.Parameters?.Tag': raw_data.Parameters?.Tag,
+            'raw_data keys': Object.keys(raw_data),
+            'item keys': Object.keys(item).filter(k => k !== 'raw_data')
+        });
+    }
+    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
     if (internalField in item && internalField !== 'raw_data') return item[internalField] ?? '';
     if (internalField.startsWith('TypeParameters.')) {
         const subKey = internalField.substring(15);
@@ -99,7 +125,14 @@ function getValueForItem(item, field) {
     }
     if (raw_data.Parameters && internalField in raw_data.Parameters)
         return raw_data.Parameters[internalField] ?? '';
-    if (internalField in raw_data) return raw_data[internalField] ?? '';
+    if (internalField in raw_data) {
+        // ▼▼▼ [디버깅] raw_data에서 값 찾기 확인 (2025-11-05) ▼▼▼
+        if (field.includes('IfcClass') || field.includes('Attributes')) {
+            console.log('[getValueForItem] Found in raw_data:', internalField, '=', raw_data[internalField]);
+        }
+        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+        return raw_data[internalField] ?? '';
+    }
     return '';
 }
 

@@ -113,6 +113,8 @@ def serialize_ifc_elements_to_string_list(ifc_file):
             "IfcClass": element.is_a(),
             "ElementId": element.id(),
             "UniqueId": element.GlobalId,
+            "Tag": getattr(element, 'Tag', None) or "",  # ▼▼▼ [추가] Tag 속성 추출 (2025-11-05) ▼▼▼
+            "PredefinedType": getattr(element, 'PredefinedType', None) or "",  # ▼▼▼ [추가] PredefinedType 속성 추출 (2025-11-05) ▼▼▼
             "Attributes": {},           # IFC 기본 속성들
             "PropertySet": {},          # Property Sets (Pset_*)
             "QuantitySet": {},          # Quantity Sets (Qto_*)
