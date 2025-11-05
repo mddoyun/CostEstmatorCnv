@@ -50,6 +50,153 @@ The project uses a virtual environment located in `.mddoyun/` directory.
 
 ## Architecture
 
+### ⚠️ CRITICAL: Property Inheritance System
+
+**This is the core foundation of the entire application. ALL property-related work MUST follow this inheritance chain to maintain data integrity.**
+
+#### Property Inheritance Chain Overview
+
+The system uses a strict hierarchical property inheritance model where each entity inherits ALL properties from its parent entities. Properties are identified by prefixes to distinguish their origin:
+
+```
+BIM (RawElement)
+  ↓ inherits ALL properties
+QuantityMember (QM)
+  ├─ BIM.* (inherited from RawElement)
+  ├─ MM.* (from MemberMark - 1:1 relationship)
+  ├─ SC.* (from Space - 1:1 relationship)
+  └─ QM.* (own properties)
+    ↓ inherits ALL properties
+CostItem (CI)
+  ├─ BIM.* (inherited from QM)
+  ├─ MM.* (inherited from QM)
+  ├─ SC.* (inherited from QM)
+  ├─ QM.* (inherited from QM)
+  ├─ CC.* (from CostCode - note: multiple codes possible, but properties still accessible)
+  └─ CI.* (own properties)
+    ↓ inherits ALL properties
+ActivityObject (AO)
+  ├─ BIM.* (inherited from CI)
+  ├─ MM.* (inherited from CI)
+  ├─ SC.* (inherited from CI)
+  ├─ QM.* (inherited from CI)
+  ├─ CC.* (inherited from CI)
+  ├─ CI.* (inherited from CI)
+  ├─ AC.* (from Activity)
+  └─ AO.* (own properties)
+```
+
+#### Detailed Property Sources by Entity
+
+##### 1. **BIM (RawElement)** - Source Data
+Properties come from two sources:
+- **External**: IFC/Revit file data (geometry, parameters, quantity sets)
+- **Internal**: System-managed metadata (id, name, classification, etc.)
+
+All properties use `BIM.` prefix in Field Selection:
+- `BIM.QuantitySet.Qto_WallBaseQuantities__GrossVolume`
+- `BIM.Attributes.Name`
+- `BIM.Parameters.Mark`
+- `BIM.TypeParameters.LoadBearing`
+
+##### 2. **QuantityMember (QM)**
+Inherits ALL BIM properties + adds:
+- **Own properties**: `QM.System.*` (id, name, quantity, classification_tag, etc.)
+- **User properties**: `QM.Properties.*` (custom properties defined by property mapping rulesets)
+- **MemberMark properties**: `MM.System.*`, `MM.Properties.*` (1:1 relationship)
+- **Space properties**: `SC.System.*` (1:1 relationship)
+
+**Field Selection must show**:
+- ALL `BIM.*` properties (inherited - same names as RawElement)
+- `QM.System.*` and `QM.Properties.*`
+- `MM.System.*` and `MM.Properties.*`
+- `SC.System.*`
+
+##### 3. **CostItem (CI)**
+Inherits ALL QM properties (which includes BIM, MM, SC) + adds:
+- **Own properties**: `CI.System.*` (id, quantity, unit, description, etc.)
+- **CostCode properties**: `CC.System.*` (code, name, unit, etc.)
+  - Note: Multiple CostCodes can be assigned, but all their properties are accessible
+
+**Field Selection must show**:
+- ALL `BIM.*` properties (inherited from QM - same names)
+- ALL `QM.*` properties (inherited)
+- ALL `MM.*` properties (inherited)
+- ALL `SC.*` properties (inherited)
+- `CI.System.*`
+- `CC.System.*`
+
+##### 4. **ActivityObject (AO)**
+Inherits ALL CI properties (which includes BIM, QM, MM, SC, CC) + adds:
+- **Own properties**: `AO.System.*` (id, quantity, start_date, end_date, etc.)
+- **Activity properties**: `AC.System.*` (code, name, duration, predecessors, etc.)
+
+**Field Selection must show**:
+- ALL `BIM.*` properties (inherited from CI → QM - same names)
+- ALL `QM.*` properties (inherited from CI)
+- ALL `MM.*` properties (inherited from CI)
+- ALL `SC.*` properties (inherited from CI)
+- ALL `CI.*` properties (inherited)
+- ALL `CC.*` properties (inherited)
+- `AO.System.*`
+- `AC.System.*`
+
+#### Critical Implementation Rules
+
+1. **Complete Inheritance**: When inheriting properties, ALL properties must be passed down. Missing even ONE property breaks data integrity.
+
+2. **Consistent Naming**: Property names MUST remain identical across inheritance levels:
+   - `BIM.QuantitySet.Qto_WallBaseQuantities__GrossVolume` in RawElement
+   - Same `BIM.QuantitySet.Qto_WallBaseQuantities__GrossVolume` in QuantityMember
+   - Same `BIM.QuantitySet.Qto_WallBaseQuantities__GrossVolume` in CostItem
+   - Same `BIM.QuantitySet.Qto_WallBaseQuantities__GrossVolume` in ActivityObject
+
+3. **Prefix Preservation**: Prefixes identify property origin and MUST be preserved:
+   - `BIM.*` → from RawElement (IFC/Revit data)
+   - `QM.*` → from QuantityMember
+   - `MM.*` → from MemberMark
+   - `SC.*` → from Space
+   - `CI.*` → from CostItem
+   - `CC.*` → from CostCode
+   - `AO.*` → from ActivityObject
+   - `AC.*` → from Activity
+
+4. **Field Selection Completeness**: Every tab's "Field Selection" (필드선택) must show ALL accessible properties from its inheritance chain.
+
+5. **Context Building**: When building contexts for formula evaluation (e.g., `buildAoContext()`), ALL inherited properties must be included with their correct prefixes matching the UI display format.
+
+6. **Ruleset Compatibility**: Rulesets depend on consistent property naming across entities. Breaking inheritance breaks all dependent rulesets.
+
+#### Property Generation Functions
+
+Each entity level has a dedicated function in `ui.js` that generates property options for Field Selection:
+
+- `generateBIMPropertyOptions()` → Returns BIM.* properties
+- `generateQMPropertyOptions()` → Returns BIM.* + QM.* + MM.* + SC.* (calls generateBIMPropertyOptions)
+- `generateCIPropertyOptions()` → Returns all QM properties + CI.* + CC.* (calls generateQMPropertyOptions)
+- `generateAOPropertyOptions()` → Returns all CI properties + AO.* + AC.* (calls generateCIPropertyOptions)
+
+These functions MUST:
+- Call parent generation functions to inherit properties
+- Check ALL relevant data sources (`window.currentXXX` AND `window.loadedXXX`)
+- Return complete property sets with no omissions
+
+#### Verification Checklist
+
+When working with properties, verify:
+- [ ] All BIM.* properties visible in all downstream entities (QM, CI, AO)
+- [ ] Property names identical across all levels
+- [ ] No properties missing in Field Selection tabs
+- [ ] Context building includes all inherited properties with correct prefixes
+- [ ] Formula evaluation can access all properties
+
+**Failure to follow this system will result in:**
+- Incomplete data for rulesets
+- Formula calculation errors (returning 0 or null)
+- Missing fields in Field Selection
+- Broken property mapping
+- Data integrity violations
+
 ### Django Apps Structure
 
 1. **aibim_quantity_takeoff_web/** - Main Django project configuration
