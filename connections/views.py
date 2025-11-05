@@ -3182,10 +3182,13 @@ def apply_space_classification_rules_view(request, project_id):
 def export_classification_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = ClassificationRule.objects.filter(project=project).select_related('target_tag')
-    
-    response = HttpResponse(content_type='text/csv')
+
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_classification_rules.csv"'
-    
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
+
     writer = csv.writer(response)
     # ▼▼▼ [수정] priority 필드 제거 (2025-11-05) ▼▼▼
     writer.writerow(['id', 'description', 'target_tag_name', 'conditions'])
@@ -3194,7 +3197,7 @@ def export_classification_rules(request, project_id):
             str(rule.id),
             rule.description,
             rule.target_tag.name if rule.target_tag else '',
-            json.dumps(rule.conditions)
+            json.dumps(rule.conditions, ensure_ascii=False)  # 한글 그대로 출력
         ])
     # ▲▲▲ [수정] 여기까지 ▲▲▲
     return response
@@ -3235,15 +3238,19 @@ def import_classification_rules(request, project_id):
 def export_property_mapping_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = PropertyMappingRule.objects.filter(project=project).select_related('target_tag')
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_property_mapping_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['name', 'description', 'priority', 'target_tag_name', 'conditions', 'mapping_script'])
     for rule in rules:
         writer.writerow([
             rule.name, rule.description, rule.priority,
             rule.target_tag.name if rule.target_tag else '',
-            json.dumps(rule.conditions), json.dumps(rule.mapping_script)
+            json.dumps(rule.conditions, ensure_ascii=False),  # 한글 그대로 출력
+            json.dumps(rule.mapping_script, ensure_ascii=False)  # 한글 그대로 출력
         ])
     return response
 
@@ -3273,15 +3280,19 @@ def import_property_mapping_rules(request, project_id):
 def export_cost_code_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = CostCodeRule.objects.filter(project=project).select_related('target_cost_code')
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_cost_code_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['name', 'description', 'priority', 'target_cost_code_code', 'conditions', 'quantity_mapping_script'])
     for rule in rules:
         writer.writerow([
             rule.name, rule.description, rule.priority,
             rule.target_cost_code.code if rule.target_cost_code else '',
-            json.dumps(rule.conditions), json.dumps(rule.quantity_mapping_script)
+            json.dumps(rule.conditions, ensure_ascii=False),  # 한글 그대로 출력
+            json.dumps(rule.quantity_mapping_script, ensure_ascii=False)  # 한글 그대로 출력
         ])
     return response
 
@@ -3311,12 +3322,15 @@ def import_cost_code_rules(request, project_id):
 def export_member_mark_assignment_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = MemberMarkAssignmentRule.objects.filter(project=project)
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_member_mark_assignment_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['name', 'priority', 'conditions', 'mark_expression'])
     for rule in rules:
-        writer.writerow([rule.name, rule.priority, json.dumps(rule.conditions), rule.mark_expression])
+        writer.writerow([rule.name, rule.priority, json.dumps(rule.conditions, ensure_ascii=False), rule.mark_expression])  # 한글 그대로 출력
     return response
 
 @require_http_methods(["POST"])
@@ -3341,12 +3355,15 @@ def import_member_mark_assignment_rules(request, project_id):
 def export_cost_code_assignment_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = CostCodeAssignmentRule.objects.filter(project=project)
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_cost_code_assignment_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['name', 'priority', 'conditions', 'cost_code_expressions'])
     for rule in rules:
-        writer.writerow([rule.name, rule.priority, json.dumps(rule.conditions), json.dumps(rule.cost_code_expressions)])
+        writer.writerow([rule.name, rule.priority, json.dumps(rule.conditions, ensure_ascii=False), json.dumps(rule.cost_code_expressions, ensure_ascii=False)])  # 한글 그대로 출력
     return response
 
 @require_http_methods(["POST"])
@@ -3371,13 +3388,16 @@ def import_cost_code_assignment_rules(request, project_id):
 def export_space_classification_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = SpaceClassificationRule.objects.filter(project=project)
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_space_classification_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['level_depth', 'level_name', 'bim_object_filter', 'name_source_param', 'parent_join_param', 'child_join_param'])
     for rule in rules:
         writer.writerow([
-            rule.level_depth, rule.level_name, json.dumps(rule.bim_object_filter),
+            rule.level_depth, rule.level_name, json.dumps(rule.bim_object_filter, ensure_ascii=False),  # 한글 그대로 출력
             rule.name_source_param, rule.parent_join_param, rule.child_join_param
         ])
     return response
@@ -3406,13 +3426,16 @@ def import_space_classification_rules(request, project_id):
 def export_space_assignment_rules(request, project_id):
     project = Project.objects.get(id=project_id)
     rules = SpaceAssignmentRule.objects.filter(project=project)
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_space_assignment_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['name', 'priority', 'member_filter_conditions', 'member_join_property', 'space_join_property'])
     for rule in rules:
         writer.writerow([
-            rule.name, rule.priority, json.dumps(rule.member_filter_conditions),
+            rule.name, rule.priority, json.dumps(rule.member_filter_conditions, ensure_ascii=False),  # 한글 그대로 출력
             rule.member_join_property, rule.space_join_property
         ])
     return response
@@ -3440,8 +3463,11 @@ def export_activity_assignment_rules(request, project_id):
     """액티비티 할당 룰셋 내보내기"""
     project = Project.objects.get(id=project_id)
     rules = ActivityAssignmentRule.objects.filter(project=project)
-    response = HttpResponse(content_type='text/csv')
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_activity_assignment_rules.csv"'
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
     writer = csv.writer(response)
     writer.writerow(['name', 'description', 'priority', 'conditions', 'target_activity_code'])
     for rule in rules:
@@ -3449,7 +3475,7 @@ def export_activity_assignment_rules(request, project_id):
             rule.name,
             rule.description,
             rule.priority,
-            json.dumps(rule.conditions, ensure_ascii=False),
+            json.dumps(rule.conditions, ensure_ascii=False),  # 한글 그대로 출력
             rule.target_activity.code
         ])
     return response
@@ -3592,18 +3618,21 @@ def export_space_classifications(request, project_id):
     """프로젝트의 모든 공간분류 데이터를 CSV로 내보냅니다."""
     project = Project.objects.get(id=project_id)
     spaces = SpaceClassification.objects.filter(project=project).select_related('source_element').prefetch_related('mapped_elements')
-    
-    response = HttpResponse(content_type='text/csv')
+
+    # ▼▼▼ [수정] UTF-8 BOM 추가로 Excel 한글 호환성 개선 (2025-11-05) ▼▼▼
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_space_classifications.csv"'
-    
+    response.write('\ufeff')  # UTF-8 BOM
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
+
     writer = csv.writer(response)
     # CSV 헤더: mapped_elements는 '|'로 구분된 UniqueID 목록으로 저장
     writer.writerow(['id', 'name', 'description', 'parent_id', 'source_element_unique_id', 'mapped_elements_unique_ids'])
-    
+
     for space in spaces:
         source_element_uid = space.source_element.element_unique_id if space.source_element else ''
         mapped_elements_uids = "|".join([elem.element_unique_id for elem in space.mapped_elements.all()])
-        
+
         writer.writerow([
             space.id,
             space.name,
