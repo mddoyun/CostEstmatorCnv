@@ -7255,7 +7255,13 @@ def home_dashboard_api(request, project_id):
             project=project,
             is_active=True,
             cost_code__dd_enabled=True  # 상세견적(DD) 활성화 항목만
-        )
+        ).select_related('unit_price_type', 'cost_code')
+
+        # UnitPrice 맵 생성 (cost_code_id, unit_price_type_id) -> UnitPrice
+        unit_prices_map = {
+            (str(up.cost_code_id), str(up.unit_price_type_id)): up
+            for up in UnitPrice.objects.filter(project=project)
+        }
 
         material_cost = Decimal('0')
         labor_cost = Decimal('0')
@@ -7263,14 +7269,22 @@ def home_dashboard_api(request, project_id):
         total_cost = Decimal('0')
 
         for ci in cost_items:
-            if ci.material_cost_total:
-                material_cost += Decimal(str(ci.material_cost_total))
-            if ci.labor_cost_total:
-                labor_cost += Decimal(str(ci.labor_cost_total))
-            if ci.expense_cost_total:
-                expense_cost += Decimal(str(ci.expense_cost_total))
-            if ci.total_cost_total:
-                total_cost += Decimal(str(ci.total_cost_total))
+            qty = Decimal(str(ci.quantity or 0.0))
+
+            # UnitPrice 조회
+            unit_price_key = (str(ci.cost_code_id), str(ci.unit_price_type_id) if ci.unit_price_type_id else None)
+            unit_price_obj = unit_prices_map.get(unit_price_key)
+
+            if unit_price_obj:
+                mat_unit = Decimal(str(unit_price_obj.material_cost or 0))
+                lab_unit = Decimal(str(unit_price_obj.labor_cost or 0))
+                exp_unit = Decimal(str(unit_price_obj.expense_cost or 0))
+                tot_unit = Decimal(str(unit_price_obj.total_cost or 0))
+
+                material_cost += mat_unit * qty
+                labor_cost += lab_unit * qty
+                expense_cost += exp_unit * qty
+                total_cost += tot_unit * qty
 
         print(f"[Dashboard API] Cost breakdown (DD enabled only) - Material: {material_cost}, Labor: {labor_cost}, Expense: {expense_cost}, Total: {total_cost}")
 
