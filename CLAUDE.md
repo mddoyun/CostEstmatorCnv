@@ -551,6 +551,159 @@ When you find duplicated logic:
 
 **Remember**: Every hardcoded instance is a future maintenance burden. Invest time in finding or creating reusable functions.
 
+---
+
+### ⚠️ AI Prompt Integration and Function Reusability
+
+**Context**: This system integrates with AI services (Ollama, etc.) for automated tasks. When implementing AI-driven features, follow these critical principles:
+
+#### 1. Reuse Existing Functions
+
+When AI prompts need to perform actions (e.g., "create quantity members", "apply rulesets"), **reuse existing JavaScript functions** instead of reimplementing logic:
+
+```javascript
+// ✅ CORRECT: Reuse existing functions
+async function aiExecuteTask(command) {
+    if (command.action === 'create_quantity_members') {
+        // Call existing function that UI buttons use
+        await createAutoQuantityMembers(true);
+    } else if (command.action === 'apply_classification') {
+        await applyClassificationRules(true);
+    }
+}
+
+// ❌ WRONG: Reimplement logic
+async function aiExecuteTask(command) {
+    if (command.action === 'create_quantity_members') {
+        // Duplicating logic from createAutoQuantityMembers()
+        const elements = await fetch(...);
+        const tags = ...;
+        // ... reimplemented logic
+    }
+}
+```
+
+#### 2. Reference Existing Implementation
+
+When you need to understand how a feature works to implement AI commands:
+
+1. **Find the button/UI element** that triggers the action
+2. **Trace the event listener** to find the function name
+3. **Read the function implementation** to understand parameters
+4. **Call the function directly** with appropriate parameters
+
+**Example**: Implementing "AI, apply all rulesets"
+
+```javascript
+// Step 1: Find button in revit_control.html
+// <button id="apply-rules-btn">룰셋 일괄적용</button>
+
+// Step 2: Find event listener in app.js or related handler
+// document.getElementById('apply-rules-btn').addEventListener('click', ...)
+
+// Step 3: Find function: applyClassificationRules(skipConfirmation)
+
+// Step 4: Call it in AI command handler
+async function handleAiCommand(command) {
+    if (command.includes('apply ruleset')) {
+        await applyClassificationRules(true); // skipConfirmation = true
+    }
+}
+```
+
+#### 3. Why This Matters
+
+**Benefits**:
+- ✅ **Consistency**: AI uses same logic as UI
+- ✅ **Maintainability**: Fix once, works everywhere
+- ✅ **Reliability**: Tested functions reduce AI command errors
+- ✅ **Less Code**: No duplication
+
+**Anti-Pattern**:
+- ❌ AI has separate implementation that diverges over time
+- ❌ Bugs fixed in UI but not in AI logic
+- ❌ Different behavior confuses users
+
+#### 4. Implementation Guidelines
+
+**When implementing new AI commands**:
+
+1. **Map command to existing function**:
+   ```javascript
+   const commandMap = {
+       'create_qm': createAutoQuantityMembers,
+       'apply_rules': applyClassificationRules,
+       'calculate_cost': applyCostItemQuantityRules,
+       // ... map AI commands to existing functions
+   };
+   ```
+
+2. **Understand parameters**:
+   - Most batch functions have `skipConfirmation` parameter
+   - Some have `selectedOnly` parameter
+   - Check function signature before calling
+
+3. **Handle async properly**:
+   ```javascript
+   // ✅ CORRECT: Await completion
+   await applyClassificationRules(true);
+   await createAutoQuantityMembers(true);
+
+   // ❌ WRONG: Fire and forget
+   applyClassificationRules(true);
+   createAutoQuantityMembers(true); // Might start before first finishes
+   ```
+
+4. **Error handling**:
+   ```javascript
+   try {
+       await existingFunction(params);
+   } catch (error) {
+       console.error('[AI] Failed to execute:', error);
+       // Report back to AI service
+   }
+   ```
+
+#### 5. Creating Helper Functions
+
+If existing functions don't fit AI needs, create **thin wrapper functions**:
+
+```javascript
+// ✅ GOOD: Thin wrapper that calls existing functions
+async function aiExecuteBatchUpdate() {
+    // Sequentially call existing functions (like runBatchAutoUpdate does)
+    await applyClassificationRules(true);
+    await createAutoQuantityMembers(true);
+    await applyAssignmentRules(true);
+    // ...
+}
+
+// ❌ BAD: Reimplementing core logic
+async function aiExecuteBatchUpdate() {
+    // Duplicated logic from multiple functions
+    const rules = await fetch('/api/rules/...');
+    for (const element of allElements) {
+        // ... reimplemented classification logic
+    }
+}
+```
+
+#### 6. Documentation
+
+When adding AI commands, document the mapping in code comments:
+
+```javascript
+/**
+ * AI Command: "apply all rulesets"
+ * Maps to: applyClassificationRules(true)
+ *
+ * AI Command: "create quantity members automatically"
+ * Maps to: createAutoQuantityMembers(true)
+ */
+```
+
+---
+
 ### Python Code
 - Follow Django conventions and patterns
 - Use `@database_sync_to_async` for database operations in async consumers
