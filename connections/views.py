@@ -6878,7 +6878,8 @@ def chat_conversation_api(request):
             'show': ['보여', '보이', 'show', '표시'],
             'focus': ['줌', 'zoom', '포커스', 'focus', '확대'],
             'deselect': ['해제', 'clear', 'deselect'],
-            'reset': ['초기화', 'reset', '리셋']
+            'reset': ['초기화', 'reset', '리셋'],
+            'section_box': ['단면상자', '단면 상자', '섹션박스', '섹션 박스', 'section box', 'section', '잘라서']
         }
 
         message_lower = message.lower()
@@ -6891,8 +6892,43 @@ def chat_conversation_api(request):
         # Ollama API 호출
         try:
             if command_detected:
-                # 명령이 감지된 경우: 대상 추출 + 짧은 응답
-                system_prompt = f"""당신은 BIM 명령 어시스턴트입니다.
+                # Section Box 명령인 경우 특별 처리
+                if command_detected == 'section_box':
+                    system_prompt = f"""당신은 BIM 명령 어시스턴트입니다.
+
+사용자가 "section_box" 명령(단면 상자 설정)을 요청했습니다.
+
+**중요: 메시지에서 높이 정보를 찾아 [HEIGHT]...[/HEIGHT]로 표시하세요!**
+
+**높이 정보 추출 규칙:**
+- "1500mm", "1500밀리", "1.5m", "1.5미터" 등 숫자와 단위를 찾아서 표시
+- 단위가 없으면 mm로 가정
+- "원점에서", "0에서", "바닥에서" → 최소 높이 0
+- "~까지", "높이까지", "까지만" → 최대 높이
+
+**예시:**
+사용자: "단면상자 만들어서 1500mm 높이에서 잘라줘"
+어시스턴트: "단면 상자를 생성하고 높이를 1500mm로 설정하겠습니다. [HEIGHT]1500mm[/HEIGHT]"
+
+사용자: "뷰포트에서 단면상자만들고 원점높이에서 높이 1500mm높이까지 잘라서 보여줘"
+어시스턴트: "단면 상자를 생성하고 원점(0)부터 1500mm까지 설정하겠습니다. [HEIGHT]0~1500mm[/HEIGHT]"
+
+사용자: "섹션 박스 3000mm까지만"
+어시스턴트: "단면 상자의 높이를 3000mm로 제한하겠습니다. [HEIGHT]3000mm[/HEIGHT]"
+
+사용자: "높이 2m까지 잘라서"
+어시스턴트: "단면 상자의 높이를 2m(2000mm)로 설정하겠습니다. [HEIGHT]2000mm[/HEIGHT]"
+
+**주의:**
+- 반드시 높이 값을 [HEIGHT]...[/HEIGHT]로 표시
+- 범위인 경우: [HEIGHT]0~1500mm[/HEIGHT]
+- 최대값만 있는 경우: [HEIGHT]1500mm[/HEIGHT]
+- m 단위는 mm로 변환: 2m → 2000mm
+
+지금 처리할 메시지:"""
+                else:
+                    # 기존 명령 (객체 선택 등): 대상 추출 + 짧은 응답
+                    system_prompt = f"""당신은 BIM 명령 어시스턴트입니다.
 
 사용자가 "{command_detected}" 명령을 요청했습니다.
 
@@ -7018,76 +7054,149 @@ def chat_conversation_api(request):
 
                 # 명령이 감지된 경우
                 if command_detected:
-                    # [TARGET]...[/TARGET] 태그에서 대상 추출
-                    target_pattern = r'\[TARGET\](.+?)\[/TARGET\]'
-                    target_match = re.search(target_pattern, ai_response)
+                    # Section Box 명령 처리
+                    if command_detected == 'section_box':
+                        # [HEIGHT]...[/HEIGHT] 태그에서 높이 정보 추출
+                        height_pattern = r'\[HEIGHT\](.+?)\[/HEIGHT\]'
+                        height_match = re.search(height_pattern, ai_response)
 
-                    if target_match:
-                        target = target_match.group(1).strip()
-                        # 응답에서 TARGET 태그 제거
-                        clean_response = re.sub(target_pattern, '', ai_response).strip()
+                        if height_match:
+                            height_str = height_match.group(1).strip()
+                            # 응답에서 HEIGHT 태그 제거
+                            clean_response = re.sub(height_pattern, '', ai_response).strip()
 
-                        # unknown이 아니면 명령 구성
-                        if target.lower() != 'unknown':
+                            # 높이 파싱 (예: "1500mm", "0~1500mm", "2000mm")
+                            min_height = 0
+                            max_height = None
+                            unit = 'mm'
+
+                            # 범위 형식: "0~1500mm"
+                            if '~' in height_str:
+                                parts = height_str.split('~')
+                                if len(parts) == 2:
+                                    min_str = re.findall(r'[\d.]+', parts[0])
+                                    max_str = re.findall(r'[\d.]+', parts[1])
+                                    if min_str:
+                                        min_height = float(min_str[0])
+                                    if max_str:
+                                        max_height = float(max_str[0])
+                            else:
+                                # 단일 값: "1500mm"
+                                numbers = re.findall(r'[\d.]+', height_str)
+                                if numbers:
+                                    max_height = float(numbers[0])
+
+                            # 단위 확인 (m → mm 변환)
+                            if 'm' in height_str.lower() and 'mm' not in height_str.lower():
+                                unit = 'm'
+                                # m를 mm로 변환
+                                min_height = min_height * 1000 if min_height else 0
+                                max_height = max_height * 1000 if max_height else None
+
                             command = {
-                                'action': command_detected,
-                                'target': target,
-                                'parameters': {}
+                                'action': 'section_box',
+                                'target': '',  # Section Box는 target 불필요
+                                'parameters': {
+                                    'min_height': min_height,
+                                    'max_height': max_height,
+                                    'unit': 'mm'  # 항상 mm로 통일
+                                }
                             }
-                            print(f"[Chat Conversation] Command built: {command}")
+                            print(f"[Chat Conversation] Section Box command built: {command}")
                         else:
-                            print(f"[Chat Conversation] Target unknown, no command")
+                            # HEIGHT 태그 없으면 메시지에서 직접 파싱
+                            print(f"[Chat Conversation] No HEIGHT tag, parsing from message directly")
+                            numbers = re.findall(r'(\d+(?:\.\d+)?)\s*(mm|m|미터|밀리)?', message.lower())
+
+                            if numbers:
+                                max_val = float(numbers[0][0])
+                                unit_str = numbers[0][1] if len(numbers[0]) > 1 else 'mm'
+
+                                # m 단위면 mm로 변환
+                                if unit_str in ['m', '미터']:
+                                    max_val = max_val * 1000
+
+                                command = {
+                                    'action': 'section_box',
+                                    'target': '',
+                                    'parameters': {
+                                        'min_height': 0,
+                                        'max_height': max_val,
+                                        'unit': 'mm'
+                                    }
+                                }
+                                print(f"[Chat Conversation] Section Box command from fallback: {command}")
                     else:
-                        # 태그가 없으면 메시지에서 직접 추출 시도
-                        print(f"[Chat Conversation] No TARGET tag, using fallback extraction")
+                        # 기존 명령 (객체 선택 등): [TARGET]...[/TARGET] 태그에서 대상 추출
+                        target_pattern = r'\[TARGET\](.+?)\[/TARGET\]'
+                        target_match = re.search(target_pattern, ai_response)
 
-                        # BIM 객체 키워드 우선 검색
-                        bim_keywords = {
-                            '벽': '벽', 'wall': 'wall', 'brick': 'brick',
-                            '문': '문', 'door': 'door',
-                            '창': '창', '창문': '창문', 'window': 'window',
-                            '슬래브': '슬래브', '바닥': '바닥', 'slab': 'slab', 'floor': 'floor',
-                            '기둥': '기둥', 'column': 'column',
-                            '보': '보', 'beam': 'beam',
-                            '지붕': '지붕', 'roof': 'roof',
-                            '계단': '계단', 'stair': 'stair',
-                            # 특수 키워드
-                            '모든': '모든', '전체': '전체', 'all': 'all', 'total': 'total', '모두': '모두'
-                        }
+                        if target_match:
+                            target = target_match.group(1).strip()
+                            # 응답에서 TARGET 태그 제거
+                            clean_response = re.sub(target_pattern, '', ai_response).strip()
 
-                        message_lower = message.lower()
-                        target = None
-
-                        # BIM 키워드 먼저 찾기
-                        for keyword, obj_name in bim_keywords.items():
-                            if keyword in message_lower:
-                                target = obj_name
-                                print(f"[Chat Conversation] Found BIM keyword: {keyword} → {obj_name}")
-                                break
-
-                        # BIM 키워드가 없으면 일반 명사 추출
-                        if not target:
-                            words = re.findall(r'[가-힣a-zA-Z]+', message)
-                            excluded = ['선택', 'select', '찾아', '골라', '개수', '몇', '몇개', 'count', '카운트',
-                                        '숨겨', '숨기', 'hide', '보여', '보이', 'show', '줌', 'zoom',
-                                        '포커스', 'focus', '해제', 'clear', '초기화', 'reset', '얼마나',
-                                        '을', '를', '이', '가', '는', '은', '의', '에서', '에', '에게',
-                                        '해줘', '줘', '주세요', '뷰포트', '객체', '프로젝트', '이', '그']
-                            targets = [w for w in words if w.lower() not in excluded and len(w) >= 2]
-
-                            if targets:
-                                target = targets[0]
-                                print(f"[Chat Conversation] Found general noun: {target}")
-
-                        if target:
-                            command = {
-                                'action': command_detected,
-                                'target': target,
-                                'parameters': {}
-                            }
-                            print(f"[Chat Conversation] Command built from fallback: {command}")
+                            # unknown이 아니면 명령 구성
+                            if target.lower() != 'unknown':
+                                command = {
+                                    'action': command_detected,
+                                    'target': target,
+                                    'parameters': {}
+                                }
+                                print(f"[Chat Conversation] Command built: {command}")
+                            else:
+                                print(f"[Chat Conversation] Target unknown, no command")
                         else:
-                            print(f"[Chat Conversation] No target found, command will be None")
+                            # 태그가 없으면 메시지에서 직접 추출 시도
+                            print(f"[Chat Conversation] No TARGET tag, using fallback extraction")
+
+                            # BIM 객체 키워드 우선 검색
+                            bim_keywords = {
+                                '벽': '벽', 'wall': 'wall', 'brick': 'brick',
+                                '문': '문', 'door': 'door',
+                                '창': '창', '창문': '창문', 'window': 'window',
+                                '슬래브': '슬래브', '바닥': '바닥', 'slab': 'slab', 'floor': 'floor',
+                                '기둥': '기둥', 'column': 'column',
+                                '보': '보', 'beam': 'beam',
+                                '지붕': '지붕', 'roof': 'roof',
+                                '계단': '계단', 'stair': 'stair',
+                                # 특수 키워드
+                                '모든': '모든', '전체': '전체', 'all': 'all', 'total': 'total', '모두': '모두'
+                            }
+
+                            message_lower = message.lower()
+                            target = None
+
+                            # BIM 키워드 먼저 찾기
+                            for keyword, obj_name in bim_keywords.items():
+                                if keyword in message_lower:
+                                    target = obj_name
+                                    print(f"[Chat Conversation] Found BIM keyword: {keyword} → {obj_name}")
+                                    break
+
+                            # BIM 키워드가 없으면 일반 명사 추출
+                            if not target:
+                                words = re.findall(r'[가-힣a-zA-Z]+', message)
+                                excluded = ['선택', 'select', '찾아', '골라', '개수', '몇', '몇개', 'count', '카운트',
+                                            '숨겨', '숨기', 'hide', '보여', '보이', 'show', '줌', 'zoom',
+                                            '포커스', 'focus', '해제', 'clear', '초기화', 'reset', '얼마나',
+                                            '을', '를', '이', '가', '는', '은', '의', '에서', '에', '에게',
+                                            '해줘', '줘', '주세요', '뷰포트', '객체', '프로젝트', '이', '그']
+                                targets = [w for w in words if w.lower() not in excluded and len(w) >= 2]
+
+                                if targets:
+                                    target = targets[0]
+                                    print(f"[Chat Conversation] Found general noun: {target}")
+
+                            if target:
+                                command = {
+                                    'action': command_detected,
+                                    'target': target,
+                                    'parameters': {}
+                                }
+                                print(f"[Chat Conversation] Command built from fallback: {command}")
+                            else:
+                                print(f"[Chat Conversation] No target found, command will be None")
 
                 return JsonResponse({
                     'success': True,
