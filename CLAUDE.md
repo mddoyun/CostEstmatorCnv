@@ -432,6 +432,125 @@ Output location: `dist/CostEstimatorServer` (or `.exe` on Windows)
 
 ## Development Conventions
 
+### ⚠️ Code Reusability and Anti-Hardcoding Policy
+
+**Principle**: Avoid hardcoding. Reuse existing functions whenever possible.
+
+#### Function Reuse Priority
+
+1. **ALWAYS check for existing functions first**
+   - Before writing new code, search for similar existing functions
+   - Property generation: Use `generateBIMPropertyOptions()`, `generateQMPropertyOptions()`, `generateCIPropertyOptions()`, `generateAOPropertyOptions()`
+   - Context building: Use `buildCiContext()`, `buildAoContext()`, etc.
+   - Data loading: Use `window.loadedXXX` and `window.currentXXX` global variables
+
+2. **Reuse by calling, not copying**
+   - ✅ GOOD: Call existing functions
+   ```javascript
+   const propertyOptions = generateAOPropertyOptions();
+   ```
+   - ❌ BAD: Copy-paste function logic
+   ```javascript
+   // Don't duplicate the logic of generateAOPropertyOptions()
+   const options = [];
+   window.loadedActivityObjects.forEach(ao => { ... });
+   ```
+
+3. **Maintain single source of truth**
+   - Property inheritance: One function chain (BIM → QM → CI → AO)
+   - API endpoints: Consistent patterns across all entities
+   - Field Selection: Same generation logic for all tabs
+
+#### When Hardcoding is Acceptable
+
+Hardcoding should be used ONLY as a last resort when:
+
+1. **Existing functions don't work for the specific use case**
+   - Document WHY the existing function doesn't work
+   - Add comments explaining the special case
+   ```javascript
+   // Special case: Manual quantity input needs direct value access
+   // Cannot use generateAOPropertyOptions() because modal requires different format
+   const directValue = ao.quantity;  // Hardcoded access
+   ```
+
+2. **Performance-critical sections**
+   - Direct property access for rendering loops
+   - Cached values for frequently accessed data
+
+3. **Temporary debugging or prototyping**
+   - Mark clearly with `// TODO: Replace with function call`
+   - Remove before final commit
+
+#### Common Violations to Avoid
+
+❌ **Duplicating property collection logic**
+```javascript
+// BAD: Collecting BIM properties manually
+const bimProps = [];
+if (window.allRevitData) {
+    window.allRevitData.forEach(elem => {
+        Object.keys(elem.raw_data).forEach(key => {
+            bimProps.push({ label: `BIM.${key}`, value: key });
+        });
+    });
+}
+```
+
+✅ **Using existing function**
+```javascript
+// GOOD: Reuse existing function
+const bimOptions = generateBIMPropertyOptions();
+```
+
+❌ **Building context from scratch**
+```javascript
+// BAD: Manually building property context
+const context = {};
+context['BIM.Name'] = ao.cost_item.quantity_member.raw_element.raw_data.Name;
+context['QM.quantity'] = ao.cost_item.quantity_member.quantity;
+// ... 50 more lines
+```
+
+✅ **Using context builder**
+```javascript
+// GOOD: Use existing context builder
+const context = buildAoContext(ao);
+```
+
+#### Benefits of Function Reuse
+
+1. **Consistency**: Same logic everywhere = predictable behavior
+2. **Maintainability**: Fix once, fix everywhere
+3. **Property Inheritance**: Reusing functions ensures complete inheritance chain
+4. **Debugging**: Single point of failure is easier to debug
+5. **Performance**: Optimized functions are reused
+
+#### Refactoring Guidelines
+
+When you find duplicated logic:
+
+1. Extract to a shared function in appropriate file:
+   - Property generation → `ui.js`
+   - Context building → `*_manager.js`
+   - Data transformation → `app_core.js`
+
+2. Name clearly and document:
+   ```javascript
+   /**
+    * Generates complete property options for ActivityObject
+    * Includes inherited properties from CI, QM, BIM, and own AO properties
+    * @returns {Array<{group: string, options: Array}>} Property option groups
+    */
+   function generateAOPropertyOptions() { ... }
+   ```
+
+3. Update all usage sites to call the new function
+
+4. Add to CLAUDE.md if it's a commonly needed pattern
+
+**Remember**: Every hardcoded instance is a future maintenance burden. Invest time in finding or creating reusable functions.
+
 ### Python Code
 - Follow Django conventions and patterns
 - Use `@database_sync_to_async` for database operations in async consumers
