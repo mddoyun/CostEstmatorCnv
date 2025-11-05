@@ -4532,6 +4532,10 @@
         const member = ao.quantity_member || (ao.cost_item && ao.cost_item.quantity_member_id ?
             window.loadedQuantityMembers?.find(m => m.id === ao.cost_item.quantity_member_id) : null);
 
+        console.log('[DEBUG][displayActivityDetails] member:', member);
+        console.log('[DEBUG][displayActivityDetails] ao.cost_item:', ao.cost_item);
+        console.log('[DEBUG][displayActivityDetails] window.loadedQuantityMembers count:', window.loadedQuantityMembers?.length);
+
         if (member) {
             // QM 속성 수집
             allProperties.push({ label: 'QM.System.id', value: member.id || 'N/A' });
@@ -4594,14 +4598,20 @@
                     : 'N/A';
                 allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay });
 
-                // BIM 기본 속성
+                // BIM 기본 속성 (평탄화된 키 처리 포함)
                 const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
                 for (const [attr, value] of Object.entries(rawData)) {
                     if (excludedKeys.includes(attr)) continue;
                     if (value === undefined || value === null || value === '') continue;
                     if (typeof value === 'object') continue;
 
-                    allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+                    // QuantitySet.*, PropertySet.*, Type.*, Spatial_Container.* 등 평탄화된 키는 그대로 사용
+                    if (attr.startsWith('QuantitySet.') || attr.startsWith('PropertySet.') ||
+                        attr.startsWith('Type.') || attr.startsWith('Spatial_Container.')) {
+                        allProperties.push({ label: `BIM.${attr}`, value: String(value) });
+                    } else {
+                        allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+                    }
                 }
 
                 // BIM Parameters
