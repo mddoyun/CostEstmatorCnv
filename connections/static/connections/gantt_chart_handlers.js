@@ -1560,11 +1560,35 @@ async function renderBoqSummary() {
             return;
         }
 
+        // ▼▼▼ [수정] 서버에서 enriched cost items 로드 (2025-11-05) ▼▼▼
         // 액티비티에 연결된 산출항목 수집
         const activityIds = new Set(activeActivities.map(a => a.activityId));
-        const relevantCostItems = ganttCostItems.filter(item =>
-            item.activities && item.activities.some(actId => activityIds.has(actId))
-        );
+
+        // 서버에서 enriched cost items 가져오기 (CostCode 필드 포함)
+        const response = await fetch(`/connections/api/cost-items/${currentProjectId}/`);
+        if (!response.ok) throw new Error('산출항목 데이터를 불러오는데 실패했습니다.');
+
+        const allEnrichedCostItems = await response.json();
+        console.log('[BOQ Summary] Loaded enriched cost items:', allEnrichedCostItems.length);
+
+        // ganttCostItems에서 활동 ID 정보 가져오기
+        const costItemActivitiesMap = new Map();
+        ganttCostItems.forEach(item => {
+            if (item.activities) {
+                costItemActivitiesMap.set(item.id, item.activities);
+            }
+        });
+
+        // enriched cost items에 활동 정보 추가하고 필터링
+        const relevantCostItems = allEnrichedCostItems
+            .map(item => ({
+                ...item,
+                activities: costItemActivitiesMap.get(item.id) || []
+            }))
+            .filter(item =>
+                item.activities.some(actId => activityIds.has(actId))
+            );
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         console.log('[BOQ Summary] Relevant cost items:', relevantCostItems.length);
 
@@ -1626,15 +1650,28 @@ async function loadGanttUnitPrices() {
 function aggregateGanttByCostCode(costItems) {
     const aggregated = {};
 
+    // ▼▼▼ [수정] CostItem 자체에 있는 공사코드 정보 사용 (2025-11-05) ▼▼▼
     costItems.forEach(item => {
-        const key = item.cost_code || 'UNKNOWN';
+        console.log('[Gantt BOQ] Item:', item.name, 'CostItem fields:', {
+            cost_code_code: item.cost_code_code,
+            cost_code_detail_code: item.cost_code_detail_code,
+            cost_code_category: item.cost_code_category,
+            cost_code_product_name: item.cost_code_product_name,
+            cost_code_spec: item.cost_code_spec,
+            unit: item.unit
+        });
+
+        const key = item.cost_code_code || item.cost_code || 'UNKNOWN';
 
         if (!aggregated[key]) {
             aggregated[key] = {
-                cost_code: item.cost_code,
-                cost_code_detail_code: item.cost_code_detail_code,
-                cost_code_name: item.cost_code_name,
-                cost_code_unit: item.cost_code_unit,
+                cost_code: item.cost_code_code || key,
+                detail_code: item.cost_code_detail_code || '',
+                category: item.cost_code_category || '',
+                product_name: item.cost_code_product_name || '',
+                spec: item.cost_code_spec || '',
+                name: item.cost_code_name || '',
+                unit: item.unit || '',
                 quantity: 0,
                 material_cost: 0,
                 material_amount: 0,
@@ -1651,21 +1688,27 @@ function aggregateGanttByCostCode(costItems) {
         aggregated[key].quantity += parseFloat(item.quantity || 0);
         aggregated[key].items.push(item);
     });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // 단가 정보 적용 및 금액 계산
+    // ▼▼▼ [수정] 단가 정보 적용 및 금액 계산 (2025-11-05) ▼▼▼
     Object.values(aggregated).forEach(agg => {
-        // 단가 정보 찾기 (첫 번째 항목 기준)
-        const firstItem = agg.items[0];
-        if (firstItem && firstItem.id) {
-            // 간단히 첫 번째 UnitPrice 사용 (실제로는 UnitPriceType에 따라 선택해야 함)
-            const unitPriceList = ganttUnitPrices[firstItem.cost_code];
+        // cost_code를 키로 사용하여 단가 정보 찾기
+        const costCodeKey = agg.cost_code;
+        if (costCodeKey && ganttUnitPrices[costCodeKey]) {
+            const unitPriceList = ganttUnitPrices[costCodeKey];
             if (unitPriceList && unitPriceList.length > 0) {
                 const up = unitPriceList[0];
                 agg.material_cost = parseFloat(up.material_cost || 0);
                 agg.labor_cost = parseFloat(up.labor_cost || 0);
                 agg.expense_cost = parseFloat(up.expense_cost || 0);
                 agg.total_cost = parseFloat(up.total_cost || 0);
+
+                console.log(`[BOQ] Unit price found for ${costCodeKey}:`, up);
+            } else {
+                console.warn(`[BOQ] No unit price found for cost code: ${costCodeKey}`);
             }
+        } else {
+            console.warn(`[BOQ] Cost code not found or no unit prices: ${costCodeKey}`);
         }
 
         // 금액 계산
@@ -1673,7 +1716,10 @@ function aggregateGanttByCostCode(costItems) {
         agg.labor_amount = agg.labor_cost * agg.quantity;
         agg.expense_amount = agg.expense_cost * agg.quantity;
         agg.total_amount = agg.total_cost * agg.quantity;
+
+        console.log(`[BOQ] Aggregated ${agg.cost_code}: qty=${agg.quantity.toFixed(2)}, total_cost=${agg.total_cost}, total_amount=${agg.total_amount.toFixed(0)}`);
     });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     return Object.values(aggregated);
 }
@@ -1702,6 +1748,7 @@ function renderGanttBoqTable(boqData) {
         total_amount: 0
     });
 
+    // ▼▼▼ [수정] 헤더에서 CostCode. 제거 (2025-11-05) ▼▼▼
     let html = `
         <div style="background: white; border-radius: 8px; padding: 20px; height: 100%;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -1715,8 +1762,9 @@ function renderGanttBoqTable(boqData) {
                     <thead>
                         <tr style="background: #1976d2; color: white;">
                             <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">내역코드</th>
-                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">세부코드</th>
+                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">공종</th>
                             <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">품명</th>
+                            <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">규격</th>
                             <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">단위</th>
                             <th style="padding: 12px; border: 1px solid #ddd; text-align: right;">수량</th>
                             <th style="padding: 12px; border: 1px solid #ddd; text-align: right;">재료비단가</th>
@@ -1736,10 +1784,11 @@ function renderGanttBoqTable(boqData) {
         const bgColor = index % 2 === 0 ? '#ffffff' : '#f9f9f9';
         html += `
             <tr style="background: ${bgColor};">
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${row.cost_code || '-'}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${row.cost_code_detail_code || '-'}</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">${row.cost_code_name || '-'}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${row.cost_code_unit || '-'}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${row.detail_code || '-'}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${row.category || '-'}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${row.product_name || '-'}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${row.spec || '-'}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${row.unit || '-'}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${row.quantity.toFixed(2)}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${row.material_cost.toLocaleString('ko-KR')}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${Math.round(row.material_amount).toLocaleString('ko-KR')}</td>
@@ -1752,11 +1801,12 @@ function renderGanttBoqTable(boqData) {
             </tr>
         `;
     });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // 합계 행
     html += `
                         <tr style="background: #e3f2fd; font-weight: bold;">
-                            <td colspan="4" style="padding: 12px; border: 1px solid #ddd; text-align: center;">합계</td>
+                            <td colspan="5" style="padding: 12px; border: 1px solid #ddd; text-align: center;">합계</td>
                             <td style="padding: 12px; border: 1px solid #ddd; text-align: right;">${totals.quantity.toFixed(2)}</td>
                             <td style="padding: 12px; border: 1px solid #ddd;"></td>
                             <td style="padding: 12px; border: 1px solid #ddd; text-align: right; color: #1976d2;">${Math.round(totals.material_amount).toLocaleString('ko-KR')}</td>
@@ -1777,6 +1827,7 @@ function renderGanttBoqTable(boqData) {
             </div>
         </div>
     `;
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     boqContainer.innerHTML = html;
 }

@@ -57,7 +57,7 @@ function renderCostCodesTable(codes, editId = null) {
                 <th>이름</th>
                 <th>설명</th>
                 <th>내역코드</th>
-                <th>공정</th>
+                <th>공종</th>
                 <th>품명</th>
                 <th>규격</th>
                 <th>단위</th>
@@ -99,7 +99,7 @@ function renderCostCodesTable(codes, editId = null) {
                 }" placeholder="내역코드"></td>
                 <td><input type="text" class="cost-category-input" value="${
                     code.category || ''
-                }" placeholder="공정"></td>
+                }" placeholder="공종"></td>
                 <td><input type="text" class="cost-product-name-input" value="${
                     code.product_name || ''
                 }" placeholder="품명"></td>

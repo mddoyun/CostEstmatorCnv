@@ -1183,7 +1183,7 @@ function populateCiFieldSelection(items) {
         { key: 'cost_code_name', label: 'CostCode.이름', section: 'CostCode' },
         { key: 'cost_code_description', label: 'CostCode.설명', section: 'CostCode' },
         { key: 'cost_code_detail_code', label: 'CostCode.내역코드', section: 'CostCode' },
-        { key: 'cost_code_category', label: 'CostCode.공정', section: 'CostCode' },
+        { key: 'cost_code_category', label: 'CostCode.공종', section: 'CostCode' },
         { key: 'cost_code_product_name', label: 'CostCode.품명', section: 'CostCode' },
         { key: 'cost_code_spec', label: 'CostCode.규격', section: 'CostCode' },
         { key: 'cost_code_unit', label: 'CostCode.단위', section: 'CostCode' },
@@ -1516,6 +1516,43 @@ function renderCiSelectedProperties() {
     }
     html += '</tbody></table>';
     html += '</div>';
+
+    // ▼▼▼ [추가] CostCode 속성 표시 (2025-11-05) ▼▼▼
+    html += '<div class="property-section">';
+    html += '<h4 style="color: #4caf50; border-bottom: 2px solid #4caf50; padding-bottom: 5px;">💰 공사코드 속성 (CostCode)</h4>';
+    html += '<table class="properties-table"><tbody>';
+    if (item.cost_code_code) {
+        html += `<tr><td class="prop-name">CostCode.코드</td><td class="prop-value">${item.cost_code_code}</td></tr>`;
+    }
+    if (item.cost_code_name) {
+        html += `<tr><td class="prop-name">CostCode.이름</td><td class="prop-value">${item.cost_code_name}</td></tr>`;
+    }
+    if (item.cost_code_description) {
+        html += `<tr><td class="prop-name">CostCode.설명</td><td class="prop-value">${item.cost_code_description}</td></tr>`;
+    }
+    if (item.cost_code_detail_code) {
+        html += `<tr><td class="prop-name">CostCode.내역코드</td><td class="prop-value">${item.cost_code_detail_code}</td></tr>`;
+    }
+    if (item.cost_code_category) {
+        html += `<tr><td class="prop-name">CostCode.공종</td><td class="prop-value">${item.cost_code_category}</td></tr>`;
+    }
+    if (item.cost_code_product_name) {
+        html += `<tr><td class="prop-name">CostCode.품명</td><td class="prop-value">${item.cost_code_product_name}</td></tr>`;
+    }
+    if (item.cost_code_spec) {
+        html += `<tr><td class="prop-name">CostCode.규격</td><td class="prop-value">${item.cost_code_spec}</td></tr>`;
+    }
+    if (item.cost_code_unit) {
+        html += `<tr><td class="prop-name">CostCode.단위</td><td class="prop-value">${item.cost_code_unit}</td></tr>`;
+    }
+    if (item.cost_code_note) {
+        html += `<tr><td class="prop-name">CostCode.비고</td><td class="prop-value">${item.cost_code_note}</td></tr>`;
+    }
+    html += `<tr><td class="prop-name">CostCode.AI개략견적</td><td class="prop-value">${item.cost_code_ai_sd_enabled ? '사용' : '미사용'}</td></tr>`;
+    html += `<tr><td class="prop-name">CostCode.상세견적</td><td class="prop-value">${item.cost_code_dd_enabled ? '사용' : '미사용'}</td></tr>`;
+    html += '</tbody></table>';
+    html += '</div>';
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     if (!member) {
         html += '<div class="property-section">';
@@ -2079,43 +2116,107 @@ function buildCostItemContext(costItem) {
                 if (rawElement && rawElement.raw_data) {
                     const rd = rawElement.raw_data;
 
-                    // IFC 기본 속성들 (Attributes로 취급)
-                    // IFC 파일에서는 raw_data의 직접 속성으로 저장됨
-                    const ifcAttributeKeys = ['Name', 'IfcClass', 'ElementId', 'UniqueId',
-                                              'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
-                    ifcAttributeKeys.forEach(key => {
-                        if (rd[key] !== undefined) {
-                            context[`bim_attr_${key}`] = rd[key];
+                    // ▼▼▼ [수정] raw_data가 이미 평탄화되어 있는 경우 처리 (2025-11-05) ▼▼▼
+                    // IFC 데이터는 이미 "Attributes.XXX", "Parameters.XXX" 형태로 평탄화되어 저장됨
+
+                    console.log('[DEBUG][buildCostItemContext] Processing raw_data with', Object.keys(rd).length, 'keys');
+
+                    // ▼▼▼ [디버그] raw_data의 모든 키 출력 (2025-11-05) ▼▼▼
+                    const allKeys = Object.keys(rd);
+                    console.log('[DEBUG][buildCostItemContext] All raw_data keys:', allKeys);
+                    const quantityKeys = allKeys.filter(k => k.includes('Quantity'));
+                    console.log('[DEBUG][buildCostItemContext] Quantity-related keys:', quantityKeys);
+                    // ▲▲▲ [디버그] 여기까지 ▲▲▲
+
+                    // raw_data의 모든 키를 순회하며 적절한 prefix로 context에 저장
+                    Object.keys(rd).forEach(key => {
+                        const value = rd[key];
+
+                        // "Attributes.XXX" 형태의 키 처리
+                        if (key.startsWith('Attributes.')) {
+                            const attrKey = key.substring(11); // "Attributes." 제거
+                            context[`bim_attr_${attrKey}`] = value;
+                        }
+                        // "Parameters.XXX" 형태의 키 처리
+                        else if (key.startsWith('Parameters.')) {
+                            const paramKey = key.substring(11); // "Parameters." 제거
+                            context[`bim_param_${paramKey}`] = value;
+                        }
+                        // "TypeParameters.XXX" 형태의 키 처리
+                        else if (key.startsWith('TypeParameters.')) {
+                            const tparamKey = key.substring(15); // "TypeParameters." 제거
+                            context[`bim_tparam_${tparamKey}`] = value;
+                        }
+                        // ▼▼▼ [추가] QuantitySet.XXX 형태의 키 처리 (2025-11-05) ▼▼▼
+                        // IFC 데이터의 QuantitySet은 Attributes 접두어 없이 저장됨
+                        else if (key.startsWith('QuantitySet.')) {
+                            // QuantitySet은 BIM.Attributes.QuantitySet으로 참조되므로 bim_attr_ 접두어 사용
+                            context[`bim_attr_${key}`] = value;
+                            console.log(`[DEBUG][buildCostItemContext] Stored QuantitySet: bim_attr_${key} = ${value}`);
+                        }
+                        // ▲▲▲ [추가] 여기까지 ▲▲▲
+                        // IFC 기본 속성들 (최상위 키)
+                        else if (['Name', 'IfcClass', 'ElementId', 'UniqueId', 'RelatingType',
+                                  'SpatialContainer', 'Aggregates', 'Nests'].includes(key)) {
+                            context[`bim_attr_${key}`] = value;
+                        }
+                        // Revit System properties (최상위 키)
+                        else if (['Category', 'Family', 'Type', 'Level', 'Id', 'System'].includes(key)) {
+                            context[`bim_system_${key}`] = value;
                         }
                     });
 
-                    // System properties (Revit 전용)
-                    ['Category', 'Family', 'Type', 'Level', 'Id'].forEach(key => {
-                        if (rd[key] !== undefined) {
-                            context[`bim_system_${key}`] = rd[key];
-                        }
-                    });
+                    // ▼▼▼ [하위 호환성] Revit 구조용 - 중첩 객체 처리 ▼▼▼
+                    // Revit 데이터는 rd.Attributes, rd.Parameters, rd.TypeParameters 형태일 수 있음
 
-                    // Attributes (Revit 구조용 - 하위 호환성)
                     if (rd.Attributes && typeof rd.Attributes === 'object') {
-                        Object.keys(rd.Attributes).forEach(key => {
-                            context[`bim_attr_${key}`] = rd.Attributes[key];
-                        });
+                        function flattenObject(obj, prefix = '') {
+                            Object.keys(obj).forEach(key => {
+                                const fullKey = prefix ? `${prefix}.${key}` : key;
+                                const value = obj[key];
+
+                                if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                                    flattenObject(value, fullKey);
+                                } else {
+                                    context[`bim_attr_${fullKey}`] = value;
+                                }
+                            });
+                        }
+                        flattenObject(rd.Attributes);
                     }
 
-                    // Parameters
-                    if (rd.Parameters) {
-                        Object.keys(rd.Parameters).forEach(key => {
-                            context[`bim_param_${key}`] = rd.Parameters[key];
-                        });
+                    if (rd.Parameters && typeof rd.Parameters === 'object') {
+                        function flattenParams(obj, prefix = '') {
+                            Object.keys(obj).forEach(key => {
+                                const fullKey = prefix ? `${prefix}.${key}` : key;
+                                const value = obj[key];
+
+                                if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                                    flattenParams(value, fullKey);
+                                } else {
+                                    context[`bim_param_${fullKey}`] = value;
+                                }
+                            });
+                        }
+                        flattenParams(rd.Parameters);
                     }
 
-                    // TypeParameters
-                    if (rd.TypeParameters) {
-                        Object.keys(rd.TypeParameters).forEach(key => {
-                            context[`bim_tparam_${key}`] = rd.TypeParameters[key];
-                        });
+                    if (rd.TypeParameters && typeof rd.TypeParameters === 'object') {
+                        function flattenTypeParams(obj, prefix = '') {
+                            Object.keys(obj).forEach(key => {
+                                const fullKey = prefix ? `${prefix}.${key}` : key;
+                                const value = obj[key];
+
+                                if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                                    flattenTypeParams(value, fullKey);
+                                } else {
+                                    context[`bim_tparam_${fullKey}`] = value;
+                                }
+                            });
+                        }
+                        flattenTypeParams(rd.TypeParameters);
                     }
+                    // ▲▲▲ [하위 호환성] 여기까지 ▲▲▲
                 }
             }
 
@@ -2139,6 +2240,11 @@ function buildCostItemContext(costItem) {
             }
         }
     }
+
+    // ▼▼▼ [디버그] Context 내용 확인 (2025-11-05) ▼▼▼
+    console.log('[DEBUG][buildCostItemContext] Built context for item:', costItem.id);
+    console.log('[DEBUG][buildCostItemContext] Context keys:', Object.keys(context).filter(k => k.startsWith('bim_')));
+    // ▲▲▲ [디버그] 여기까지 ▲▲▲
 
     return context;
 }
@@ -2672,6 +2778,13 @@ async function assignActivityToCi() {
 
         // 액티비티 목록 렌더링
         renderCiActivitiesList();
+
+        // ▼▼▼ [추가] 액티비티별 뷰 자동 업데이트 (2025-11-05) ▼▼▼
+        // 액티비티별 뷰가 로드되어 있으면 자동 갱신
+        if (window.loadActivityObjects && typeof window.loadActivityObjects === 'function') {
+            await window.loadActivityObjects();
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     } catch (error) {
         showToast(error.message, 'error');
     }

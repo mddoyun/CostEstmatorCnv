@@ -1723,6 +1723,13 @@ def evaluate_expression_for_cost_item(expression, quantity_member):
                 value = get_value_from_element(raw_data, placeholder)
 
             if value is not None:
+                # ▼▼▼ [추가] 값이 계산식이면 재귀 평가 (2025-11-05) ▼▼▼
+                # QM properties 값이 "{...}" 또는 "{{...}}" 형태의 계산식이면 다시 평가
+                if isinstance(value, str) and ('{' in value or '{{' in value):
+                    # evaluate_expression 함수를 사용하여 계산식 평가
+                    value = evaluate_expression(value, raw_data)
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 replacement = str(value) if is_numeric(value) else f'"{str(value)}"'
                 temp_expression = temp_expression.replace(f'{{{placeholder}}}', replacement)
             else:
@@ -1761,6 +1768,14 @@ def cost_items_api(request, project_id, item_id=None):
                 'cost_code_detail_code': item.cost_code.detail_code if item.cost_code else None,  # ▼▼▼ [추가] 상세코드/이름 ▼▼▼
                 'cost_code_unit': item.cost_code.unit if item.cost_code else None,  # ▼▼▼ [추가] 단위 ▼▼▼
                 'cost_code_note': item.cost_code.note if item.cost_code else None,  # ▼▼▼ [추가] 비고 ▼▼▼
+                # ▼▼▼ [추가] 나머지 CostCode 필드들 (2025-11-05) ▼▼▼
+                'cost_code_product_name': item.cost_code.product_name if item.cost_code else None,  # 품명
+                'cost_code_spec': item.cost_code.spec if item.cost_code else None,  # 규격
+                'cost_code_category': item.cost_code.category if item.cost_code else None,  # 공정
+                'cost_code_description': item.cost_code.description if item.cost_code else None,  # 설명
+                'cost_code_ai_sd_enabled': item.cost_code.ai_sd_enabled if item.cost_code else False,  # AI 개략견적
+                'cost_code_dd_enabled': item.cost_code.dd_enabled if item.cost_code else False,  # 상세견적
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
                 'quantity_member_id': str(item.quantity_member_id) if item.quantity_member_id else None,
                 'quantity_member': str(item.quantity_member_id) if item.quantity_member_id else None,  # ▼▼▼ [추가] quantity_member FK ▼▼▼
                 'quantity_member_name': item.quantity_member.name if item.quantity_member else None,  # ▼▼▼ [추가] QM 이름 ▼▼▼
@@ -1786,7 +1801,27 @@ def cost_items_api(request, project_id, item_id=None):
             }
             
             if item.quantity_member:
-                item_data['quantity_member_properties'] = item.quantity_member.properties or {}
+                # ▼▼▼ [수정] QM properties의 계산식을 평가하여 결과값 전달 (2025-11-05) ▼▼▼
+                qm_properties = item.quantity_member.properties or {}
+                evaluated_properties = {}
+
+                # RawElement의 raw_data를 가져와서 계산식 평가에 사용
+                raw_data = {}
+                if item.quantity_member.raw_element:
+                    raw_data = item.quantity_member.raw_element.raw_data or {}
+
+                # 각 property를 순회하며 계산식이면 평가, 아니면 그대로 사용
+                for key, value in qm_properties.items():
+                    if isinstance(value, str) and ('{' in value or '{{' in value):
+                        # 계산식인 경우 evaluate_expression으로 평가
+                        evaluated_value = evaluate_expression(value, raw_data)
+                        evaluated_properties[key] = evaluated_value
+                    else:
+                        # 계산식이 아닌 경우 원본 값 사용
+                        evaluated_properties[key] = value
+
+                item_data['quantity_member_properties'] = evaluated_properties
+                # ▲▲▲ [수정] 여기까지 ▲▲▲
                 item_data['space_name'] = item.quantity_member.space_name if hasattr(item.quantity_member, 'space_name') else None
 
                 if item.quantity_member.member_mark:
@@ -2451,22 +2486,31 @@ def get_boq_grouping_fields_api(request, project_id):
         if member.raw_element and member.raw_element.raw_data and isinstance(member.raw_element.raw_data, dict):
             raw_data = member.raw_element.raw_data
 
-            # raw_data의 최상위 속성들 (Attributes)
-            basic_attrs = ['Category', 'Family', 'Type', 'Level', 'Name']
-            for attr in basic_attrs:
-                if attr in raw_data and not isinstance(raw_data[attr], (dict, list)):
+            # raw_data의 ALL 최상위 속성들 (Attributes) - 하드코딩 제거
+            # Parameters, TypeParameters, Geometry, GeometryData, Materials 제외
+            excluded_keys = {'Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'}
+            for attr, value in raw_data.items():
+                if attr not in excluded_keys and not isinstance(value, (dict, list)):
                     add_field(f'quantity_member__raw_element__raw_data__{attr}', f'BIM.Attributes.{attr}')
 
-            # BIM.Parameters.*
+            # BIM.Parameters.* - 모든 파라미터 포함 (복잡한 중첩 객체 제외)
             if 'Parameters' in raw_data and isinstance(raw_data['Parameters'], dict):
-                for key in raw_data['Parameters'].keys():
-                    if key != 'Geometry' and not isinstance(raw_data['Parameters'][key], (dict, list)):
+                for key, value in raw_data['Parameters'].items():
+                    if key == 'Geometry':
+                        continue  # Skip Geometry (too large)
+                    # Skip complex nested objects (but allow simple values)
+                    if isinstance(value, dict) and len(value) > 5:
+                        continue
+                    if not isinstance(value, list):  # Allow non-list values
                         add_field(f'quantity_member__raw_element__raw_data__Parameters__{key}', f'BIM.Parameters.{key}')
 
-            # BIM.TypeParameters.*
+            # BIM.TypeParameters.* - 모든 타입 파라미터 포함 (복잡한 중첩 객체 제외)
             if 'TypeParameters' in raw_data and isinstance(raw_data['TypeParameters'], dict):
-                for key in raw_data['TypeParameters'].keys():
-                    if not isinstance(raw_data['TypeParameters'][key], (dict, list)):
+                for key, value in raw_data['TypeParameters'].items():
+                    # Skip complex nested objects (but allow simple values)
+                    if isinstance(value, dict) and len(value) > 5:
+                        continue
+                    if not isinstance(value, list):  # Allow non-list values
                         add_field(f'quantity_member__raw_element__raw_data__TypeParameters__{key}', f'BIM.TypeParameters.{key}')
 
     return JsonResponse(sorted(fields, key=lambda x: x['label']), safe=False)
@@ -2644,6 +2688,34 @@ def generate_boq_report_api(request, project_id):
         processed_item['total_cost_unit'] = tot_unit
 
         processed_item['has_missing_price'] = unit_price_obj is None
+
+        # ▼▼▼ [추가] QM properties 계산식 평가 (2025-11-05) ▼▼▼
+        # quantity_member_properties를 계산된 값으로 추가
+        qm_properties = db_item.get('quantity_member__properties') or {}
+        evaluated_qm_properties = {}
+
+        # RawElement의 raw_data를 가져와서 계산식 평가에 사용
+        raw_data = db_item.get('quantity_member__raw_element__raw_data') or {}
+
+        # 각 property를 순회하며 계산식이면 평가, 아니면 그대로 사용
+        for key, value in qm_properties.items():
+            if isinstance(value, str) and ('{' in value or '{{' in value):
+                # 계산식인 경우 evaluate_expression으로 평가
+                evaluated_value = evaluate_expression(value, raw_data)
+                evaluated_qm_properties[key] = evaluated_value
+            else:
+                # 계산식이 아닌 경우 원본 값 사용
+                evaluated_qm_properties[key] = value
+
+        processed_item['quantity_member_properties'] = evaluated_qm_properties
+
+        # MM properties도 추가
+        processed_item['member_mark_properties'] = db_item.get('quantity_member__member_mark__properties') or {}
+        processed_item['member_mark_mark'] = None  # .values()로는 mark 가져올 수 없음
+
+        # Space name도 추가
+        processed_item['space_name'] = None  # .values()로는 space_name 가져올 수 없음
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
         items.append(processed_item)
 
@@ -6566,7 +6638,8 @@ def chat_conversation_api(request):
         command_detected = None
         command_keywords = {
             'select': ['선택', 'select', '찾아', '골라'],
-            'count': ['개수', '몇 개', '몇개', 'count', '카운트'],
+            'count': ['개수', '몇 개', '몇개', '몇 개야', '몇개야', 'count', '카운트', '얼마나'],
+            'info': ['정보', '속성', '주요정보', 'info', 'information', 'properties', '알려줘', '알려주', '요약'],
             'hide': ['숨겨', '숨기', 'hide', '안 보이', '안보이'],
             'show': ['보여', '보이', 'show', '표시'],
             'focus': ['줌', 'zoom', '포커스', 'focus', '확대'],
@@ -6589,26 +6662,47 @@ def chat_conversation_api(request):
 
 사용자가 "{command_detected}" 명령을 요청했습니다.
 
-**임무:**
-1. 사용자 메시지에서 대상 객체를 찾으세요
-2. 짧은 확인 응답을 하세요
-3. 반드시 마지막에 [TARGET]대상명[/TARGET] 형식으로 대상을 표시하세요
+**중요: 메시지에서 BIM 객체 이름을 찾아 [TARGET]...[/TARGET]로 표시하세요!**
+
+**BIM 객체 키워드:**
+- 벽, wall, brick → [TARGET]벽[/TARGET]
+- 문, door → [TARGET]문[/TARGET]
+- 창, 창문, window → [TARGET]창[/TARGET]
+- 슬래브, 바닥, slab, floor → [TARGET]슬래브[/TARGET]
+- 기둥, column → [TARGET]기둥[/TARGET]
+- 보, beam → [TARGET]보[/TARGET]
 
 **예시:**
 사용자: "벽을 선택해줘"
 어시스턴트: "벽 객체를 선택하겠습니다. [TARGET]벽[/TARGET]"
 
-사용자: "brick을 3d뷰포트에서 선택해줘"
-어시스턴트: "brick 객체를 찾아 선택하겠습니다. [TARGET]brick[/TARGET]"
+사용자: "이 프로젝트의 벽은 몇개야?"
+어시스턴트: "벽 객체의 개수를 확인하겠습니다. [TARGET]벽[/TARGET]"
 
-사용자: "문 객체 몇 개야?"
-어시스턴트: "문 객체의 개수를 확인하겠습니다. [TARGET]문[/TARGET]"
+사용자: "brick 몇 개?"
+어시스턴트: "brick 객체의 개수를 확인하겠습니다. [TARGET]brick[/TARGET]"
 
-사용자: "wall 찾아줘"
-어시스턴트: "wall 객체를 찾겠습니다. [TARGET]wall[/TARGET]"
+사용자: "wall을 3d뷰포트에서 선택해줘"
+어시스턴트: "wall 객체를 선택하겠습니다. [TARGET]wall[/TARGET]"
 
-**대상을 찾을 수 없으면:**
-[TARGET]unknown[/TARGET]로 표시하세요.
+사용자: "모든 객체는 몇개야?"
+어시스턴트: "전체 객체의 개수를 확인하겠습니다. [TARGET]모든[/TARGET]"
+
+사용자: "지금 객체 총 몇 개?"
+어시스턴트: "전체 객체의 개수를 확인하겠습니다. [TARGET]전체[/TARGET]"
+
+사용자: "바닥 객체 주요정보 알려줘"
+어시스턴트: "바닥 객체의 주요 정보를 정리하겠습니다. [TARGET]바닥[/TARGET]"
+
+사용자: "여기있는 모든 벽 정보를 정리해줘"
+어시스턴트: "벽 객체의 정보를 정리하겠습니다. [TARGET]벽[/TARGET]"
+
+**주의:**
+- 메시지에서 건축 객체 이름을 찾으면 반드시 [TARGET]이름[/TARGET]로 표시
+- "이 프로젝트의 벽" → [TARGET]벽[/TARGET]
+- "프로젝트에 문" → [TARGET]문[/TARGET]
+- "모든 객체", "전체 객체" → [TARGET]모든[/TARGET] 또는 [TARGET]전체[/TARGET]
+- "바닥 정보", "벽 속성" → [TARGET]바닥[/TARGET], [TARGET]벽[/TARGET]
 
 지금 처리할 메시지:"""
 
@@ -6711,25 +6805,55 @@ def chat_conversation_api(request):
                             print(f"[Chat Conversation] Target unknown, no command")
                     else:
                         # 태그가 없으면 메시지에서 직접 추출 시도
-                        # 명사들 추출 (간단한 방식)
-                        import re
-                        # 한글, 영문, 숫자로 이루어진 단어 찾기
-                        words = re.findall(r'[가-힣a-zA-Z]+', message)
-                        # 명령 키워드 제외
-                        excluded = ['선택', 'select', '찾아', '골라', '개수', '몇', '몇개', 'count',
-                                    '숨겨', '숨기', 'hide', '보여', '보이', 'show', '줌', 'zoom',
-                                    '포커스', 'focus', '해제', 'clear', '초기화', 'reset',
-                                    '을', '를', '이', '가', '에서', '해줘', '줘', '뷰포트', '객체']
-                        targets = [w for w in words if w not in excluded and len(w) >= 2]
+                        print(f"[Chat Conversation] No TARGET tag, using fallback extraction")
 
-                        if targets:
-                            target = targets[0]  # 첫 번째 명사 사용
+                        # BIM 객체 키워드 우선 검색
+                        bim_keywords = {
+                            '벽': '벽', 'wall': 'wall', 'brick': 'brick',
+                            '문': '문', 'door': 'door',
+                            '창': '창', '창문': '창문', 'window': 'window',
+                            '슬래브': '슬래브', '바닥': '바닥', 'slab': 'slab', 'floor': 'floor',
+                            '기둥': '기둥', 'column': 'column',
+                            '보': '보', 'beam': 'beam',
+                            '지붕': '지붕', 'roof': 'roof',
+                            '계단': '계단', 'stair': 'stair',
+                            # 특수 키워드
+                            '모든': '모든', '전체': '전체', 'all': 'all', 'total': 'total', '모두': '모두'
+                        }
+
+                        message_lower = message.lower()
+                        target = None
+
+                        # BIM 키워드 먼저 찾기
+                        for keyword, obj_name in bim_keywords.items():
+                            if keyword in message_lower:
+                                target = obj_name
+                                print(f"[Chat Conversation] Found BIM keyword: {keyword} → {obj_name}")
+                                break
+
+                        # BIM 키워드가 없으면 일반 명사 추출
+                        if not target:
+                            words = re.findall(r'[가-힣a-zA-Z]+', message)
+                            excluded = ['선택', 'select', '찾아', '골라', '개수', '몇', '몇개', 'count', '카운트',
+                                        '숨겨', '숨기', 'hide', '보여', '보이', 'show', '줌', 'zoom',
+                                        '포커스', 'focus', '해제', 'clear', '초기화', 'reset', '얼마나',
+                                        '을', '를', '이', '가', '는', '은', '의', '에서', '에', '에게',
+                                        '해줘', '줘', '주세요', '뷰포트', '객체', '프로젝트', '이', '그']
+                            targets = [w for w in words if w.lower() not in excluded and len(w) >= 2]
+
+                            if targets:
+                                target = targets[0]
+                                print(f"[Chat Conversation] Found general noun: {target}")
+
+                        if target:
                             command = {
                                 'action': command_detected,
                                 'target': target,
                                 'parameters': {}
                             }
                             print(f"[Chat Conversation] Command built from fallback: {command}")
+                        else:
+                            print(f"[Chat Conversation] No target found, command will be None")
 
                 return JsonResponse({
                     'success': True,

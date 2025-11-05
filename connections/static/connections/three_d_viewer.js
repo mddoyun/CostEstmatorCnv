@@ -4554,13 +4554,14 @@
             return;
         }
 
+        // ▼▼▼ [수정] 헤더 CostCode. 제거 및 CostCode 객체에서 데이터 가져오기 (2025-11-05) ▼▼▼
         // Render table
         let html = '<table class="cost-items-table">';
         html += '<thead>';
         html += '<tr>';
-        html += '<th>공사코드</th>';
+        html += '<th>내역코드</th>';
         html += '<th>공종</th>';
-        html += '<th>이름</th>';
+        html += '<th>품명</th>';
         html += '<th>규격</th>';
         html += '<th>단위</th>';
         html += '<th>수량</th>';
@@ -4606,17 +4607,26 @@
             totalExpense += expenseAmount;
             totalAmount += itemTotalAmount;
 
-            // Extract cost code info from item
-            const costCodeCode = item.cost_code_code || '-';
-            const costCodeName = item.cost_code_name || '-';
-            const workType = item.work_type || '-';
-            const spec = item.spec || '-';
+            // ▼▼▼ [수정] CostItem 자체에 있는 공사코드 정보 사용 (2025-11-05) ▼▼▼
+            console.log('[3D Viewer] CostItem fields:', {
+                cost_code_detail_code: item.cost_code_detail_code,
+                cost_code_category: item.cost_code_category,
+                cost_code_product_name: item.cost_code_product_name,
+                cost_code_spec: item.cost_code_spec,
+                unit: item.unit
+            });
+
+            const detailCode = item.cost_code_detail_code || '-';
+            const category = item.cost_code_category || '-';
+            const productName = item.cost_code_product_name || '-';
+            const spec = item.cost_code_spec || '-';
             const unit = item.unit || '-';
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             html += '<tr>';
-            html += `<td>${costCodeCode}</td>`;
-            html += `<td>${workType}</td>`;
-            html += `<td>${costCodeName}</td>`;
+            html += `<td>${detailCode}</td>`;
+            html += `<td>${category}</td>`;
+            html += `<td>${productName}</td>`;
             html += `<td>${spec}</td>`;
             html += `<td>${unit}</td>`;
             html += `<td class="number">${formatNumber(quantity)}</td>`;
@@ -4630,6 +4640,7 @@
             html += `<td class="number">${formatNumber(itemTotalAmount)}</td>`;
             html += '</tr>';
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         html += '</tbody>';
         html += '<tfoot>';
@@ -8968,11 +8979,35 @@
                 return;
             }
 
+            // ▼▼▼ [수정] 서버에서 enriched cost items 로드 (2025-11-05) ▼▼▼
             // 액티비티에 연결된 산출항목 수집
             const activityIds = new Set(activeActivities.map(a => a.activityId));
-            const relevantCostItems = window.ganttCostItems.filter(item =>
-                item.activities && item.activities.some(actId => activityIds.has(actId))
-            );
+
+            // 서버에서 enriched cost items 가져오기 (CostCode 필드 포함)
+            const response = await fetch(`/connections/api/cost-items/${window.currentProjectId}/`);
+            if (!response.ok) throw new Error('산출항목 데이터를 불러오는데 실패했습니다.');
+
+            const allEnrichedCostItems = await response.json();
+            console.log('[Viewer BOQ] Loaded enriched cost items:', allEnrichedCostItems.length);
+
+            // ganttCostItems에서 활동 ID 정보 가져오기
+            const costItemActivitiesMap = new Map();
+            window.ganttCostItems.forEach(item => {
+                if (item.activities) {
+                    costItemActivitiesMap.set(item.id, item.activities);
+                }
+            });
+
+            // enriched cost items에 활동 정보 추가하고 필터링
+            const relevantCostItems = allEnrichedCostItems
+                .map(item => ({
+                    ...item,
+                    activities: costItemActivitiesMap.get(item.id) || []
+                }))
+                .filter(item =>
+                    item.activities.some(actId => activityIds.has(actId))
+                );
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             console.log('[Viewer BOQ] Relevant cost items:', relevantCostItems.length);
 
@@ -9027,26 +9062,43 @@
 
     /**
      * CostCode별로 그룹화 및 집계
+     * ▼▼▼ [수정] CostItem 자체에 있는 공사코드 정보 사용 (2025-11-05) ▼▼▼
      */
     function aggregateViewerByCostCode(costItems) {
         const aggregated = {};
 
         costItems.forEach(item => {
-            const costCode = item.cost_code;
+            console.log('[Simulation BOQ] Item:', item.name, 'CostItem fields:', {
+                cost_code_code: item.cost_code_code,
+                cost_code_detail_code: item.cost_code_detail_code,
+                cost_code_category: item.cost_code_category,
+                cost_code_product_name: item.cost_code_product_name,
+                cost_code_spec: item.cost_code_spec,
+                unit: item.unit
+            });
 
-            if (!aggregated[costCode]) {
-                const unitPrice = window.ganttUnitPriceMap?.get(costCode);
+            const key = item.cost_code_code || item.cost_code || 'UNKNOWN';
 
-                aggregated[costCode] = {
-                    cost_code: costCode,
-                    cost_code_detail_code: item.cost_code_detail_code || '',
-                    cost_code_name: item.cost_code_name || '',
-                    cost_code_unit: item.cost_code_unit || '',
+            if (!aggregated[key]) {
+                // 단가 조회
+                const costCodeKey = item.cost_code_code || key;
+                const unitPrice = window.ganttUnitPriceMap?.get(costCodeKey);
+
+                console.log('[Simulation BOQ] New key:', key, 'costCodeKey for price:', costCodeKey, 'unitPrice found:', !!unitPrice);
+
+                aggregated[key] = {
+                    cost_code: item.cost_code_code || key,
+                    detail_code: item.cost_code_detail_code || '',
+                    category: item.cost_code_category || '',
+                    product_name: item.cost_code_product_name || '',
+                    spec: item.cost_code_spec || '',
+                    name: item.cost_code_name || '',
+                    unit: item.unit || '',
                     quantity: 0,
-                    material_cost: unitPrice?.material_cost || 0,
-                    labor_cost: unitPrice?.labor_cost || 0,
-                    expense_cost: unitPrice?.expense_cost || 0,
-                    total_cost: unitPrice?.total_cost || 0,
+                    material_cost: parseFloat(unitPrice?.material_cost || 0),
+                    labor_cost: parseFloat(unitPrice?.labor_cost || 0),
+                    expense_cost: parseFloat(unitPrice?.expense_cost || 0),
+                    total_cost: parseFloat(unitPrice?.total_cost || 0),
                     material_amount: 0,
                     labor_amount: 0,
                     expense_amount: 0,
@@ -9055,15 +9107,22 @@
             }
 
             const quantity = item.quantity || 0;
-            aggregated[costCode].quantity += quantity;
-            aggregated[costCode].material_amount += quantity * aggregated[costCode].material_cost;
-            aggregated[costCode].labor_amount += quantity * aggregated[costCode].labor_cost;
-            aggregated[costCode].expense_amount += quantity * aggregated[costCode].expense_cost;
-            aggregated[costCode].total_amount += quantity * aggregated[costCode].total_cost;
+            aggregated[key].quantity += quantity;
+        });
+
+        // 금액 계산 (단가 × 수량)
+        Object.values(aggregated).forEach(agg => {
+            agg.material_amount = agg.material_cost * agg.quantity;
+            agg.labor_amount = agg.labor_cost * agg.quantity;
+            agg.expense_amount = agg.expense_cost * agg.quantity;
+            agg.total_amount = agg.total_cost * agg.quantity;
+
+            console.log('[Simulation BOQ] Final aggregated:', agg.cost_code, 'Quantity:', agg.quantity, 'Total amount:', agg.total_amount);
         });
 
         return Object.values(aggregated);
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     /**
      * 내역집계표 테이블 렌더링
@@ -9091,6 +9150,7 @@
             total_amount: 0
         });
 
+        // ▼▼▼ [수정] 헤더에서 CostCode. 제거 (2025-11-05) ▼▼▼
         let html = `
             <div style="background: white; border-radius: 8px; padding: 15px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -9104,8 +9164,9 @@
                         <thead>
                             <tr style="background: #f5f5f5; color: black;">
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">내역코드</th>
-                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">세부코드</th>
-                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">이름</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">공종</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">품명</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">규격</th>
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">단위</th>
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">수량</th>
                                 <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">재료비단가</th>
@@ -9125,10 +9186,11 @@
             const bgColor = index % 2 === 0 ? '#ffffff' : '#f9f9f9';
             html += `
                 <tr style="background: ${bgColor};">
-                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.cost_code || '-'}</td>
-                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.cost_code_detail_code || '-'}</td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${row.cost_code_name || '-'}</td>
-                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.cost_code_unit || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.detail_code || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.category || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${row.product_name || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${row.spec || '-'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${row.unit || '-'}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.quantity.toFixed(2)}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${row.material_cost.toLocaleString('ko-KR')}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${Math.round(row.material_amount).toLocaleString('ko-KR')}</td>
@@ -9141,11 +9203,12 @@
                 </tr>
             `;
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // 합계 행
         html += `
                             <tr style="background: #e3f2fd; font-weight: bold;">
-                                <td colspan="4" style="padding: 10px; border: 1px solid #ddd; text-align: center;">합계</td>
+                                <td colspan="5" style="padding: 10px; border: 1px solid #ddd; text-align: center;">합계</td>
                                 <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${totals.quantity.toFixed(2)}</td>
                                 <td style="padding: 10px; border: 1px solid #ddd;"></td>
                                 <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #1976d2;">${Math.round(totals.material_amount).toLocaleString('ko-KR')}</td>
@@ -9166,6 +9229,7 @@
                 </div>
             </div>
         `;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         boqContainer.innerHTML = html;
     }

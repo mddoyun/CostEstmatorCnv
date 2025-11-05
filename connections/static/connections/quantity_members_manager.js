@@ -19,10 +19,8 @@ function setupQuantityMembersListeners() {
         qmTableContainer.addEventListener('click', handleQuantityMemberActions); // 수정, 삭제, 저장, 취소, 행 선택, 그룹 토글 위임
         qmTableContainer.addEventListener('keyup', handleQmColumnFilter); // 필터
     }
-    document
-        .getElementById('qm-selected-properties-container')
-        ?.closest('.control-box')
-        ?.addEventListener('click', handleQmPropertiesActions); // 속성 추가/삭제 위임
+    // Note: Property add/delete event listeners are now handled within renderQmSelectedProperties()
+    // to avoid duplicate event handlers and have access to member context
     // 할당 버튼들
     document
         .getElementById('qm-assign-cost-code-btn')
@@ -95,6 +93,11 @@ function setupQuantityMembersListeners() {
     document
         .getElementById('qm-apply-property-rules-btn')
         ?.addEventListener('click', applyPropertyRulesToAllQm);
+    // ▼▼▼ [추가] 수동 수량 산출식 업데이트 버튼 (2025-11-05) ▼▼▼
+    document
+        .getElementById('qm-update-formulas-btn')
+        ?.addEventListener('click', updateAllQmFormulas);
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
     // 필드 선택 버튼들
     document
         .getElementById('qm-select-all-fields-btn')
@@ -553,23 +556,12 @@ async function handleQuantityMemberActions(event) {
     }
 }
 
+// DEPRECATED: This function is no longer used
+// Property add/delete actions are now handled within renderQmSelectedProperties()
+// to have direct access to the member object and avoid duplicate event handlers
 function handleQmPropertiesActions(event) {
-    const target = event.target;
-
-    // 속성 추가 버튼
-    if (target.id === 'add-property-btn') {
-        addPropertyToQm();
-        return;
-    }
-
-    // 속성 삭제 버튼
-    if (target.classList.contains('delete-property-btn')) {
-        const key = target.dataset.key;
-        if (key) {
-            deletePropertyFromQm(key);
-        }
-        return;
-    }
+    // This function is kept for backward compatibility but should not be called
+    console.warn('[handleQmPropertiesActions] DEPRECATED: This function should not be called');
 }
 
 function renderQmCostCodesList() {
@@ -2115,33 +2107,110 @@ function renderQmSelectedProperties() {
         return;
     }
 
+    // ▼▼▼ [수정] fullBimObject를 여기서 미리 가져오기 (2025-11-05) ▼▼▼
+    // BIM 원본 요소 (allRevitData에서 실제 RawElement 객체 찾기)
+    const elementId = member.split_element_id || member.raw_element_id;
+    const fullBimObject = elementId && allRevitData ?
+        allRevitData.find(item => item.id === elementId) : null;
+
+    console.log('[DEBUG] renderQmSelectedProperties - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
+    console.log('[DEBUG] allRevitData available:', !!allRevitData, 'count:', allRevitData ? allRevitData.length : 0);
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
     let html = '';
 
-    // 기본 속성 (QM. 접두어 사용)
-    html += '<div class="property-section">';
-    html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성</h4>';
-    html += '<table class="properties-table"><tbody>';
-    html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${member.id || 'N/A'}</td></tr>`;
-    if (member.name) {
-        html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${member.name}</td></tr>`;
-    }
-    if (member.classification_tag_name) {
-        html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${member.classification_tag_name}</td></tr>`;
-    }
-    html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${member.is_active ? 'true' : 'false'}</td></tr>`;
-
-    // RawElement ID 추가
-    if (member.raw_element_id) {
-        html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${member.raw_element_id}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    html += '</div>';
-
+    // ▼▼▼ [수정] 부재 속성 섹션을 기본 속성보다 위로 이동 (2025-11-05) ▼▼▼
     // 부재 속성 (QM.properties.XXX) - 편집 가능
     html += '<div class="property-section">';
     html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">';
     html += '<span>🔢 부재 속성</span>';
     html += '</h4>';
+
+    // ▼▼▼ [수정] 새 속성 추가 폼을 맨 위로 이동 (2025-11-05) ▼▼▼
+    html += '<div class="add-property-form" style="margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;">';
+    html += '<h5 style="margin: 0 0 10px 0;">새 속성 추가</h5>';
+    html += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    html += '<input type="text" id="new-property-key" placeholder="필드명 (예: 면적)" style="padding: 6px; border: 1px solid #ccc; border-radius: 3px;">';
+
+    // 속성 선택 도우미 - 콤보박스와 적용 버튼을 세로로 배치
+    html += '<div style="display: flex; flex-direction: column; gap: 4px;">';
+    html += '<select id="property-helper-select" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px;">';
+    html += '<option value="">-- 속성 선택 (산출식 작성 도움) --</option>';
+
+    // BIM 속성 그룹
+    if (fullBimObject && fullBimObject.raw_data) {
+        const rd = fullBimObject.raw_data;
+
+        // System 속성
+        html += '<optgroup label="BIM 시스템 속성">';
+        ['Category', 'Family', 'Type', 'Level', 'Id'].forEach(key => {
+            if (rd[key] !== undefined) {
+                html += `<option value="{BIM.System.${key}}">{BIM.System.${key}}</option>`;
+            }
+        });
+        html += '</optgroup>';
+
+        // Attributes 속성
+        const attrKeys = Object.keys(rd).filter(k => k.startsWith('Attributes.') || k.startsWith('QuantitySet.'));
+        if (attrKeys.length > 0) {
+            html += '<optgroup label="BIM Attributes 속성">';
+            attrKeys.slice(0, 20).forEach(key => { // 최대 20개만 표시
+                const displayKey = key.startsWith('Attributes.') ? key.substring(11) : key;
+                html += `<option value="{BIM.Attributes.${displayKey}}">{BIM.Attributes.${displayKey}}</option>`;
+            });
+            html += '</optgroup>';
+        }
+
+        // Parameters 속성
+        if (rd.Parameters && typeof rd.Parameters === 'object') {
+            const paramKeys = Object.keys(rd.Parameters);
+            if (paramKeys.length > 0) {
+                html += '<optgroup label="BIM Parameters 속성">';
+                paramKeys.slice(0, 20).forEach(key => {
+                    html += `<option value="{BIM.Parameters.${key}}">{BIM.Parameters.${key}}</option>`;
+                });
+                html += '</optgroup>';
+            }
+        }
+    }
+
+    // QM 기본 속성
+    html += '<optgroup label="QM 기본 속성">';
+    html += '<option value="{QM.volume}">{QM.volume}</option>';
+    html += '<option value="{QM.area}">{QM.area}</option>';
+    html += '<option value="{QM.length}">{QM.length}</option>';
+    html += '</optgroup>';
+
+    // QM properties
+    if (member.properties && Object.keys(member.properties).length > 0) {
+        html += '<optgroup label="QM 사용자 속성">';
+        Object.keys(member.properties).forEach(key => {
+            if (!key.endsWith('_산출식')) { // 산출식 필드는 제외
+                html += `<option value="{QM.properties.${key}}">{QM.properties.${key}}</option>`;
+            }
+        });
+        html += '</optgroup>';
+    }
+
+    // MM properties
+    if (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0) {
+        html += '<optgroup label="MM 일람부호 속성">';
+        Object.keys(member.member_mark_properties).forEach(key => {
+            html += `<option value="{MM.properties.${key}}">{MM.properties.${key}}</option>`;
+        });
+        html += '</optgroup>';
+    }
+
+    html += '</select>';
+    html += '<button id="insert-property-btn" style="width: 100%; padding: 8px; background: #2196f3; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: 500;">적용</button>';
+    html += '</div>';
+
+    html += '<input type="text" id="new-property-value" placeholder="값 또는 산출식 (예: {BIM.Attributes.XXX} * 1.03)" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box;">';
+    html += '<button id="add-property-btn" style="width: 100%; padding: 8px; background: #4caf50; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: 500;">추가</button>';
+    html += '</div>';
+    html += '<small style="color: #666; margin-top: 8px; display: block;">💡 팁: 위 콤보박스에서 속성을 선택하고 "적용" 버튼을 클릭하여 산출식을 쉽게 작성할 수 있습니다.</small>';
+    html += '</div>';
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // 기존 속성 테이블
     if (member.properties && Object.keys(member.properties).length > 0) {
@@ -2180,17 +2249,28 @@ function renderQmSelectedProperties() {
         html += '<p style="color: #999; font-style: italic; margin: 10px 0;">속성이 없습니다.</p>';
     }
 
-    // 속성 추가 폼
-    html += '<div class="add-property-form" style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;">';
-    html += '<h5 style="margin: 0 0 10px 0;">새 속성 추가</h5>';
-    html += '<div style="display: flex; flex-direction: column; gap: 8px;">';
-    html += '<input type="text" id="new-property-key" placeholder="필드명 (예: 면적)" style="padding: 6px; border: 1px solid #ccc; border-radius: 3px;">';
-    html += '<input type="text" id="new-property-value" placeholder="값 또는 산출식 (예: {BIM.Parameters.길이} * {BIM.Parameters.너비})" style="padding: 6px; border: 1px solid #ccc; border-radius: 3px;">';
-    html += '<button id="add-property-btn" style="padding: 8px; background: #4caf50; color: white; border: none; border-radius: 3px; cursor: pointer;">추가</button>';
+    html += '</div>'; // 부재 속성 섹션 닫기
+
+    // 기본 속성 (QM. 접두어 사용)
+    html += '<div class="property-section">';
+    html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성</h4>';
+    html += '<table class="properties-table"><tbody>';
+    html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${member.id || 'N/A'}</td></tr>`;
+    if (member.name) {
+        html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${member.name}</td></tr>`;
+    }
+    if (member.classification_tag_name) {
+        html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${member.classification_tag_name}</td></tr>`;
+    }
+    html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${member.is_active ? 'true' : 'false'}</td></tr>`;
+
+    // RawElement ID 추가
+    if (member.raw_element_id) {
+        html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${member.raw_element_id}</td></tr>`;
+    }
+    html += '</tbody></table>';
     html += '</div>';
-    html += '<small style="color: #666; margin-top: 8px; display: block;">💡 팁: 산출식에는 {QM.properties.XXX}, {BIM.Parameters.XXX}, {MM.properties.XXX} 형식으로 다른 속성을 참조할 수 있습니다.</small>';
-    html += '</div>';
-    html += '</div>';
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // 일람부호 (MM.XXX)
     if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
@@ -2221,13 +2301,9 @@ function renderQmSelectedProperties() {
         html += '</div>';
     }
 
-    // BIM 원본 요소 (allRevitData에서 실제 RawElement 객체 찾기)
-    const elementId = member.split_element_id || member.raw_element_id;
-    const fullBimObject = elementId && allRevitData ?
-        allRevitData.find(item => item.id === elementId) : null;
-
-    console.log('[DEBUG] renderQmSelectedProperties - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
-    console.log('[DEBUG] allRevitData available:', !!allRevitData, 'count:', allRevitData ? allRevitData.length : 0);
+    // ▼▼▼ [수정] fullBimObject는 이미 위에서 정의했으므로 중복 제거 (2025-11-05) ▼▼▼
+    // (이전에 여기 있던 const elementId, const fullBimObject 정의는 위로 이동)
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     if (fullBimObject && fullBimObject.raw_data) {
         html += '<div class="property-section">';
@@ -2252,59 +2328,84 @@ function renderQmSelectedProperties() {
         html += '</tbody></table>';
         html += '</div>';
 
-        // BIM 기본 속성 (BIM.Attributes.*)
+        // BIM 기본 속성 (시스템 속성)
         html += '<div class="property-section">';
-        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (BIM.Attributes.*)</h4>';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (상속 from BIM)</h4>';
         html += '<table class="properties-table"><tbody>';
 
         const rawData = fullBimObject.raw_data;
 
-        // Basic Information (BIM.Attributes.*)
-        const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description', 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
-        basicAttrs.forEach(attr => {
-            if (rawData[attr] !== undefined && rawData[attr] !== null) {
-                const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(attr) : `BIM.Attributes.${attr}`;
-                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${rawData[attr]}</td></tr>`;
-            }
-        });
+        // Show ALL top-level properties from raw_data (not just predefined list)
+        // Exclude nested objects like Parameters, TypeParameters, Geometry
+        const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
+
+        for (const [attr, value] of Object.entries(rawData)) {
+            // Skip excluded keys, null/undefined values, and nested objects/arrays
+            if (excludedKeys.includes(attr)) continue;
+            if (value === undefined || value === null || value === '') continue;
+            if (typeof value === 'object') continue; // Skip nested objects/arrays
+
+            // Use BIM.Attributes.XXX format to match field selector naming
+            html += `<tr><td class="prop-name">BIM.Attributes.${attr}</td><td class="prop-value">${value}</td></tr>`;
+        }
 
         html += '</tbody></table>';
         html += '</div>';
 
-        // Parameters (BIM.Parameters.*)
+        // Parameters - Use BIM.Parameters.XXX format to match field selector
         if (rawData.Parameters && typeof rawData.Parameters === 'object' && Object.keys(rawData.Parameters).length > 0) {
             html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 파라메터 (BIM.Parameters.*)</h4>';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM Parameters (상속 from BIM)</h4>';
             html += '<table class="properties-table"><tbody>';
-            for (const [key, value] of Object.entries(rawData.Parameters)) {
+
+            // Sort parameters for better readability
+            const sortedParams = Object.entries(rawData.Parameters).sort((a, b) => a[0].localeCompare(b[0]));
+
+            for (const [key, value] of sortedParams) {
                 if (key === 'Geometry') continue; // Skip Geometry (too large)
-                if (value !== null && value !== undefined) {
-                    const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(key) : `BIM.Parameters.${key}`;
-                    // nested object/array 지원
-                    const displayValue = (typeof value === 'object')
-                        ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
-                        : String(value).substring(0, 200);
-                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
+                if (value === null || value === undefined || value === '') continue; // Skip empty values
+
+                // Skip complex nested objects (but allow simple values and simple objects)
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
+                    continue; // Skip deeply nested objects
                 }
+
+                // Use BIM.Parameters.XXX format to match field selector naming
+                const displayName = `BIM.Parameters.${key}`;
+                // nested object/array 지원
+                const displayValue = (typeof value === 'object')
+                    ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
+                    : String(value).substring(0, 200);
+                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
             }
             html += '</tbody></table>';
             html += '</div>';
         }
 
-        // TypeParameters (BIM.TypeParameters.*)
+        // TypeParameters - Use BIM.TypeParameters.XXX format to match field selector
         if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object' && Object.keys(rawData.TypeParameters).length > 0) {
             html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 타입 파라메터 (BIM.TypeParameters.*)</h4>';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM TypeParameters (상속 from BIM)</h4>';
             html += '<table class="properties-table"><tbody>';
-            for (const [key, value] of Object.entries(rawData.TypeParameters)) {
-                if (value !== null && value !== undefined) {
-                    const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(`TypeParameters.${key}`) : `BIM.TypeParameters.${key}`;
-                    // nested object/array 지원
-                    const displayValue = (typeof value === 'object')
-                        ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
-                        : String(value).substring(0, 200);
-                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
+
+            // Sort type parameters for better readability
+            const sortedTypeParams = Object.entries(rawData.TypeParameters).sort((a, b) => a[0].localeCompare(b[0]));
+
+            for (const [key, value] of sortedTypeParams) {
+                if (value === null || value === undefined || value === '') continue; // Skip empty values
+
+                // Skip complex nested objects (but allow simple values and simple objects)
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
+                    continue; // Skip deeply nested objects
                 }
+
+                // Use BIM.TypeParameters.XXX format to match field selector naming
+                const displayName = `BIM.TypeParameters.${key}`;
+                // nested object/array 지원
+                const displayValue = (typeof value === 'object')
+                    ? (window.renderNestedValue ? window.renderNestedValue(value, 1) : JSON.stringify(value).substring(0, 100))
+                    : String(value).substring(0, 200);
+                html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
             }
             html += '</tbody></table>';
             html += '</div>';
@@ -2344,6 +2445,37 @@ function renderQmSelectedProperties() {
             return;
         }
     });
+
+    // ▼▼▼ [추가] 속성 삽입 버튼 (2025-11-05) ▼▼▼
+    const insertBtn = container.querySelector('#insert-property-btn');
+    if (insertBtn) {
+        insertBtn.addEventListener('click', () => {
+            const select = container.querySelector('#property-helper-select');
+            const valueInput = container.querySelector('#new-property-value');
+            const selectedValue = select.value;
+
+            if (!selectedValue) {
+                showToast('속성을 선택해주세요.', 'warning');
+                return;
+            }
+
+            // 커서 위치에 삽입
+            const startPos = valueInput.selectionStart;
+            const endPos = valueInput.selectionEnd;
+            const currentValue = valueInput.value;
+            const newValue = currentValue.substring(0, startPos) + selectedValue + currentValue.substring(endPos);
+            valueInput.value = newValue;
+
+            // 커서 위치 업데이트
+            const newCursorPos = startPos + selectedValue.length;
+            valueInput.setSelectionRange(newCursorPos, newCursorPos);
+            valueInput.focus();
+
+            // 선택 초기화
+            select.selectedIndex = 0;
+        });
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // 속성 추가 버튼
     const addBtn = container.querySelector('#add-property-btn');
@@ -2513,13 +2645,58 @@ function evaluatePropertyFormula(formula, member) {
 
 /**
  * 속성 경로를 해결하여 값을 가져옵니다.
- * @param {string} path - 속성 경로 (예: "QM.properties.면적", "BIM.Parameters.길이", "BIM.Attributes.Name")
+ * 새로운 형식 지원: {Category}, {Parameters.XXX}, {TypeParameters.XXX}
+ * 기존 형식도 지원: QM.properties.XXX, BIM.Parameters.XXX, MM.properties.XXX
+ * @param {string} path - 속성 경로
  * @param {object} member - 수량산출부재 객체
  * @returns {any} - 해결된 값
  */
 function resolvePropertyPath(path, member) {
     const parts = path.split('.');
 
+    // ===== 새 형식: {Parameters.XXX}, {TypeParameters.XXX} =====
+    if (parts[0] === 'Parameters' && parts.length >= 2) {
+        // {Parameters.XXX} → BIM raw_data.Parameters.XXX
+        const elementId = member.split_element_id || member.raw_element_id;
+        const fullBimObject = elementId && window.allRevitData ?
+            window.allRevitData.find(item => item.id === elementId) : null;
+
+        if (fullBimObject && fullBimObject.raw_data && fullBimObject.raw_data.Parameters) {
+            const key = parts.slice(1).join('.');
+            return fullBimObject.raw_data.Parameters[key];
+        }
+        return null;
+    }
+
+    if (parts[0] === 'TypeParameters' && parts.length >= 2) {
+        // {TypeParameters.XXX} → BIM raw_data.TypeParameters.XXX
+        const elementId = member.split_element_id || member.raw_element_id;
+        const fullBimObject = elementId && window.allRevitData ?
+            window.allRevitData.find(item => item.id === elementId) : null;
+
+        if (fullBimObject && fullBimObject.raw_data && fullBimObject.raw_data.TypeParameters) {
+            const key = parts.slice(1).join('.');
+            return fullBimObject.raw_data.TypeParameters[key];
+        }
+        return null;
+    }
+
+    // ===== 새 형식: {Category}, {Family}, {Type}, etc. =====
+    if (parts.length === 1) {
+        // 단일 속성명 → BIM raw_data의 최상위 속성 시도
+        const elementId = member.split_element_id || member.raw_element_id;
+        const fullBimObject = elementId && window.allRevitData ?
+            window.allRevitData.find(item => item.id === elementId) : null;
+
+        if (fullBimObject && fullBimObject.raw_data) {
+            const value = fullBimObject.raw_data[path];
+            if (value !== undefined && value !== null) {
+                return value;
+            }
+        }
+    }
+
+    // ===== 기존 형식: QM.XXX =====
     if (parts[0] === 'QM') {
         // QM.properties.XXX
         if (parts[1] === 'properties' && parts.length >= 3) {
@@ -2536,8 +2713,11 @@ function resolvePropertyPath(path, member) {
         if (parts.length === 2) {
             return member[parts[1]];
         }
-    } else if (parts[0] === 'BIM') {
-        // member.raw_element는 실제 raw_data 객체입니다
+    }
+
+    // ===== 기존 형식: BIM.XXX =====
+    else if (parts[0] === 'BIM') {
+        // member.raw_element는 실제 raw_data 객체입니다 (레거시 지원)
         const rawData = member.raw_element;
         if (!rawData) {
             console.warn(`[resolvePropertyPath] No raw_element data for member ${member.id}, path: ${path}`);
@@ -2564,7 +2744,10 @@ function resolvePropertyPath(path, member) {
             // BIM.XXX (직접 속성, 최상위)
             return rawData[parts[1]];
         }
-    } else if (parts[0] === 'MM') {
+    }
+
+    // ===== 기존 형식: MM.XXX =====
+    else if (parts[0] === 'MM') {
         // MM.properties.XXX 또는 MM.mark
         if (parts[1] === 'properties' && parts.length >= 3) {
             const key = parts.slice(2).join('.');
@@ -2766,8 +2949,29 @@ async function addPropertyToQm() {
     }
 
     try {
-        // 기존 properties에 새 속성 추가
-        const updatedProperties = { ...(member.properties || {}), [key]: value };
+        // ▼▼▼ [수정] 산출식 자동 처리 (2025-11-05) ▼▼▼
+        const updatedProperties = { ...(member.properties || {}) };
+
+        // 값이 산출식인지 확인 (중괄호 포함 여부)
+        const isFormula = value.includes('{') && value.includes('}');
+
+        if (isFormula) {
+            // 산출식인 경우: XXX_산출식 필드에 산식 저장, XXX 필드에 계산 결과 저장
+            const formulaKey = `${key}_산출식`;
+            updatedProperties[formulaKey] = value;
+
+            // 산출식 계산
+            const calculatedValue = evaluateQmPropertyFormula(value, member);
+            updatedProperties[key] = calculatedValue;
+
+            console.log(`[addPropertyToQm] 산출식 저장: ${formulaKey} = ${value}`);
+            console.log(`[addPropertyToQm] 계산 결과: ${key} = ${calculatedValue}`);
+        } else {
+            // 일반 값인 경우: 직접 저장
+            updatedProperties[key] = value;
+            console.log(`[addPropertyToQm] 직접 값 저장: ${key} = ${value}`);
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // 서버에 저장
         const response = await fetch(
@@ -2788,13 +2992,41 @@ async function addPropertyToQm() {
         }
 
         const result = await response.json();
-        showToast('속성이 추가되었습니다.', 'success');
 
         // 로컬 데이터 업데이트
         member.properties = updatedProperties;
 
-        // 재계산 (다른 산출식에 영향을 줄 수 있음)
-        recalculatePropertiesWithFormulas(member);
+        // ▼▼▼ [추가] 수동 추가된 속성 자동 잠금 (2025-11-05) ▼▼▼
+        // 기본 필드와 산출식 필드 모두 잠금
+        const lockedProps = member.locked_properties || [];
+        if (!lockedProps.includes(key)) {
+            lockedProps.push(key);
+        }
+        if (isFormula) {
+            const formulaKey = `${key}_산출식`;
+            if (!lockedProps.includes(formulaKey)) {
+                lockedProps.push(formulaKey);
+            }
+        }
+
+        // 서버에 잠금 상태 저장
+        await fetch(
+            `/connections/api/quantity-members/${currentProjectId}/${member.id}/`,
+            {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                },
+                body: JSON.stringify({ locked_properties: lockedProps }),
+            }
+        );
+
+        member.locked_properties = lockedProps;
+        console.log(`[addPropertyToQm] 속성 잠금 적용: ${key}${isFormula ? ', ' + key + '_산출식' : ''}`);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+        showToast('속성이 추가되었습니다. (자동 잠금됨)', 'success');
 
         // 입력 필드 초기화
         keyInput.value = '';
@@ -2814,20 +3046,11 @@ async function addPropertyToQm() {
 
 /**
  * 수량산출부재에서 속성을 삭제합니다.
+ * @param {string} memberId - 부재 ID
  * @param {string} key - 삭제할 속성의 키
  */
-async function deletePropertyFromQm(key) {
-    if (selectedQmIds.size !== 1) {
-        showToast('부재를 하나만 선택하세요.', 'warning');
-        return;
-    }
-
-    if (!confirm(`"${key}" 속성을 삭제하시겠습니까?`)) {
-        return;
-    }
-
-    const selectedId = selectedQmIds.values().next().value;
-    const member = loadedQuantityMembers.find(m => m.id.toString() === selectedId);
+async function deletePropertyFromQm(memberId, key) {
+    const member = loadedQuantityMembers.find(m => m.id.toString() === memberId);
 
     if (!member) {
         showToast('선택된 부재를 찾을 수 없습니다.', 'error');
@@ -2932,4 +3155,133 @@ async function togglePropertyLock(member, key, lock) {
         console.error('[togglePropertyLock] Error:', error);
         showToast(error.message, 'error');
     }
+}
+
+// =====================================================================
+// 수동 수량 산출식 계산 함수들 (2025-11-05 추가)
+// =====================================================================
+
+/**
+ * QM.properties의 산출식을 평가하여 숫자값을 반환
+ * @param {string} formula - 산출식 문자열 (예: "{BIM.Attributes.XXX}*1.03")
+ * @param {object} member - QuantityMember 객체
+ * @returns {number} - 계산된 값
+ */
+// ▼▼▼ [수정] resolvePropertyPath 재사용하여 MM.properties 지원 추가 (2025-11-05) ▼▼▼
+function evaluateQmPropertyFormula(formula, member) {
+    if (!formula || typeof formula !== 'string') return 0;
+
+    let evaluatedFormula = formula;
+
+    console.log('[evaluateQmPropertyFormula] Original formula:', formula);
+
+    // {PropertyPath} 패턴 찾기
+    const matches = formula.matchAll(/\{([^}]+)\}/g);
+    for (const match of matches) {
+        const fullMatch = match[0]; // {BIM.Attributes.XXX} 또는 {MM.properties.XXX}
+        const propertyPath = match[1]; // BIM.Attributes.XXX 또는 MM.properties.XXX
+
+        // resolvePropertyPath 함수를 사용하여 모든 경로 지원
+        const actualValue = resolvePropertyPath(propertyPath, member);
+
+        if (actualValue !== null && actualValue !== undefined) {
+            evaluatedFormula = evaluatedFormula.replace(fullMatch, actualValue);
+            console.log(`[evaluateQmPropertyFormula] Replaced ${fullMatch} with ${actualValue}`);
+        } else {
+            console.warn(`[evaluateQmPropertyFormula] Missing value for ${propertyPath}`);
+            evaluatedFormula = evaluatedFormula.replace(fullMatch, '0');
+        }
+    }
+
+    console.log('[evaluateQmPropertyFormula] Evaluated formula:', evaluatedFormula);
+
+    // 수식 계산
+    try {
+        const result = eval(evaluatedFormula);
+        console.log('[evaluateQmPropertyFormula] Result:', result);
+        return result;
+    } catch (e) {
+        console.error('[evaluateQmPropertyFormula] Evaluation error:', e);
+        return 0;
+    }
+}
+// ▲▲▲ [수정] 여기까지 ▲▲▲
+
+/**
+ * 모든 수량산출부재의 산출식 기반 속성을 일괄 업데이트
+ */
+async function updateAllQmFormulas() {
+    if (!loadedQuantityMembers || loadedQuantityMembers.length === 0) {
+        showToast('업데이트할 부재가 없습니다.', 'warning');
+        return;
+    }
+
+    let updatedCount = 0;
+    const errors = [];
+
+    for (const member of loadedQuantityMembers) {
+        if (!member.properties) continue;
+
+        const updatedProperties = { ...member.properties };
+        let hasUpdates = false;
+
+        // XXX_산출식 필드 찾기
+        for (const key in updatedProperties) {
+            if (key.endsWith('_산출식')) {
+                const baseKey = key.substring(0, key.length - 4); // "_산출식" 제거
+                const formula = updatedProperties[key];
+
+                if (formula && typeof formula === 'string') {
+                    // 산출식 계산
+                    const calculatedValue = evaluateQmPropertyFormula(formula, member);
+                    updatedProperties[baseKey] = calculatedValue;
+                    hasUpdates = true;
+
+                    console.log(`[updateAllQmFormulas] Updated ${member.id} - ${baseKey}: ${calculatedValue} (from formula: ${formula})`);
+                }
+            }
+        }
+
+        if (hasUpdates) {
+            try {
+                // 서버에 저장
+                const response = await fetch(
+                    `/connections/api/quantity-members/${currentProjectId}/${member.id}/`,
+                    {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCSRFToken(),
+                        },
+                        body: JSON.stringify({ properties: updatedProperties }),
+                    }
+                );
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    errors.push(`${member.name}: ${error.message || '저장 실패'}`);
+                } else {
+                    // 로컬 데이터 업데이트
+                    member.properties = updatedProperties;
+                    updatedCount++;
+                }
+            } catch (error) {
+                console.error(`[updateAllQmFormulas] Error updating member ${member.id}:`, error);
+                errors.push(`${member.name}: ${error.message}`);
+            }
+        }
+    }
+
+    if (errors.length > 0) {
+        showToast(`${updatedCount}개 부재 업데이트 완료, ${errors.length}개 오류 발생`, 'warning');
+        console.error('[updateAllQmFormulas] Errors:', errors);
+    } else if (updatedCount > 0) {
+        showToast(`${updatedCount}개 부재의 산출식이 업데이트되었습니다.`, 'success');
+    } else {
+        showToast('업데이트할 산출식이 없습니다.', 'info');
+    }
+
+    // UI 갱신
+    renderActiveQmView();
+    renderQmSelectedProperties();
 }

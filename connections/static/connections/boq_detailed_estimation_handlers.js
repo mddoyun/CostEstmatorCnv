@@ -619,11 +619,17 @@ function handleBoqSelectInViewerFromDetail(costItemId) {
 
     console.log(`[DEBUG] Found RawElement ID to select in viewer: ${rawElement.id}`);
 
+    // ▼▼▼ [수정] window.selectObjectsIn3DViewer 함수 사용 (2025-11-05) ▼▼▼
     // 3D 뷰어에서 객체 선택 (three_d_viewer.js의 함수 사용)
-    if (typeof selectObjectsInViewer === 'function') {
-        selectObjectsInViewer([rawElement.id]);
+    if (typeof window.selectObjectsIn3DViewer === 'function') {
+        window.selectObjectsIn3DViewer([rawElement.id]);
         showToast("3D 뷰어에서 객체를 선택했습니다.", "success");
         console.log(`[DEBUG] Selected object ${rawElement.id} in 3D viewer.`);
+
+        // 선택한 객체로 카메라 포커스
+        if (typeof window.focusOnSelectedObjects === 'function') {
+            setTimeout(() => window.focusOnSelectedObjects(), 100);
+        }
 
         // 3D 뷰어 탭으로 전환
         if (typeof switchTab === 'function') {
@@ -631,8 +637,9 @@ function handleBoqSelectInViewerFromDetail(costItemId) {
         }
     } else {
         showToast("3D 뷰어 기능을 사용할 수 없습니다.", "error");
-        console.error("[ERROR] selectObjectsInViewer function not found.");
+        console.error("[ERROR] window.selectObjectsIn3DViewer function not found.");
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 }
 
 /**
@@ -825,8 +832,9 @@ function updateBoqLeftPanelProperties(itemIds) {
 
     console.log(`[DEBUG] Updating BOQ left panel properties for itemIds:`, itemIds);
 
-    // CostItem 가져오기
-    const costItem = window.loadedCostItems.find(
+    // ▼▼▼ [수정] BOQ 전용 loadedDdCostItems 우선 사용 (2025-11-05) ▼▼▼
+    // CostItem 가져오기 (DD 탭에서는 loadedDdCostItems 사용)
+    const costItem = (loadedDdCostItems || window.loadedCostItems || []).find(
         (item) => itemIds[0] === item.id
     );
     if (!costItem) {
@@ -834,6 +842,7 @@ function updateBoqLeftPanelProperties(itemIds) {
         console.warn(`[WARN] CostItem not found for IDs:`, itemIds);
         return;
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     const memberId = costItem.quantity_member_id;
     if (!memberId) {
@@ -879,7 +888,48 @@ function updateBoqLeftPanelProperties(itemIds) {
     html += '</tbody></table>';
     html += '</div>';
 
-    // ============ 2. QM 기본 속성 (상속) ============
+    // ============ 2. CostCode 공사코드 속성 (상속 from CostCode) ============
+    // Display all CostCode properties if cost code is assigned
+    if (costItem.cost_code || costItem.cost_code_name) {
+        html += '<div class="property-section">';
+        html += '<h4 style="color: #e65100; border-bottom: 2px solid #e65100; padding-bottom: 5px;">📝 공사코드 정보 (상속 from CostCode)</h4>';
+        html += '<table class="properties-table"><tbody>';
+
+        if (costItem.cost_code) {
+            html += `<tr><td class="prop-name">CostCode.코드</td><td class="prop-value">${costItem.cost_code}</td></tr>`;
+        }
+        if (costItem.cost_code_name) {
+            html += `<tr><td class="prop-name">CostCode.이름</td><td class="prop-value">${costItem.cost_code_name}</td></tr>`;
+        }
+        if (costItem.cost_code_product_name) {
+            html += `<tr><td class="prop-name">CostCode.품명</td><td class="prop-value">${costItem.cost_code_product_name}</td></tr>`;
+        }
+        if (costItem.cost_code_spec) {
+            html += `<tr><td class="prop-name">CostCode.규격</td><td class="prop-value">${costItem.cost_code_spec}</td></tr>`;
+        }
+        if (costItem.cost_code_unit) {
+            html += `<tr><td class="prop-name">CostCode.단위</td><td class="prop-value">${costItem.cost_code_unit}</td></tr>`;
+        }
+        if (costItem.cost_code_category) {
+            html += `<tr><td class="prop-name">CostCode.공종</td><td class="prop-value">${costItem.cost_code_category}</td></tr>`;
+        }
+        if (costItem.cost_code_detail_code) {
+            html += `<tr><td class="prop-name">CostCode.내역코드</td><td class="prop-value">${costItem.cost_code_detail_code}</td></tr>`;
+        }
+        if (costItem.cost_code_description) {
+            html += `<tr><td class="prop-name">CostCode.설명</td><td class="prop-value">${costItem.cost_code_description}</td></tr>`;
+        }
+        if (costItem.cost_code_note) {
+            html += `<tr><td class="prop-name">CostCode.비고</td><td class="prop-value">${costItem.cost_code_note}</td></tr>`;
+        }
+        html += `<tr><td class="prop-name">CostCode.AI개략견적</td><td class="prop-value">${costItem.cost_code_ai_sd_enabled ? '사용' : '미사용'}</td></tr>`;
+        html += `<tr><td class="prop-name">CostCode.상세견적</td><td class="prop-value">${costItem.cost_code_dd_enabled ? '사용' : '미사용'}</td></tr>`;
+
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+
+    // ============ 3. QM 기본 속성 (상속) ============
     html += '<div class="property-section">';
     html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성 (상속 from QM)</h4>';
     html += '<table class="properties-table"><tbody>';
@@ -900,12 +950,14 @@ function updateBoqLeftPanelProperties(itemIds) {
     html += '</tbody></table>';
     html += '</div>';
 
-    // ============ 3. QM 부재 속성 (상속) ============
-    if (member.properties && Object.keys(member.properties).length > 0) {
+    // ============ 4. QM 부재 속성 (상속) ============
+    // ▼▼▼ [수정] costItem.quantity_member_properties 사용 (계산된 값) (2025-11-05) ▼▼▼
+    const qmProperties = costItem.quantity_member_properties || {};
+    if (Object.keys(qmProperties).length > 0) {
         html += '<div class="property-section">';
         html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
         html += '<table class="properties-table"><tbody>';
-        for (const [key, value] of Object.entries(member.properties)) {
+        for (const [key, value] of Object.entries(qmProperties)) {
             if (value !== null && value !== undefined) {
                 const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
                 html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
@@ -914,43 +966,49 @@ function updateBoqLeftPanelProperties(itemIds) {
         html += '</tbody></table>';
         html += '</div>';
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // ============ 4. MM 일람부호 (상속) ============
-    if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
+    // ============ 5. MM 일람부호 (상속) ============
+    // ▼▼▼ [수정] costItem의 MM 데이터 사용 (2025-11-05) ▼▼▼
+    const mmMark = costItem.member_mark_mark || null;
+    const mmProperties = costItem.member_mark_properties || {};
+    if (mmMark || Object.keys(mmProperties).length > 0) {
         html += '<div class="property-section">';
         html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호 (상속 from MM)</h4>';
         html += '<table class="properties-table"><tbody>';
-        if (member.member_mark_mark) {
-            html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${member.member_mark_mark}</td></tr>`;
+        if (mmMark) {
+            html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${mmMark}</td></tr>`;
         }
-        if (member.member_mark_properties) {
-            for (const [key, value] of Object.entries(member.member_mark_properties)) {
-                if (value !== null && value !== undefined) {
-                    html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
-                }
+        for (const [key, value] of Object.entries(mmProperties)) {
+            if (value !== null && value !== undefined) {
+                html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
             }
         }
         html += '</tbody></table>';
         html += '</div>';
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // ============ 5. Space 공간분류 (상속) ============
-    if (member.space_name) {
+    // ============ 6. Space 공간분류 (상속) ============
+    // ▼▼▼ [수정] costItem의 Space 데이터 사용 (2025-11-05) ▼▼▼
+    const spaceName = costItem.space_name || null;
+    if (spaceName) {
         html += '<div class="property-section">';
         html += '<h4 style="color: #388e3c; border-bottom: 2px solid #388e3c; padding-bottom: 5px;">📍 공간분류 (상속 from Space)</h4>';
         html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">Space.name</td><td class="prop-value">${member.space_name}</td></tr>`;
+        html += `<tr><td class="prop-name">Space.name</td><td class="prop-value">${spaceName}</td></tr>`;
         html += '</tbody></table>';
         html += '</div>';
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-    // ============ 6~9. BIM 원본 속성 (상속) ============
+    // ============ 7~10. BIM 원본 속성 (상속) ============
     const elementId = member.split_element_id || member.raw_element_id;
     const fullBimObject = elementId && window.allRevitData ?
         window.allRevitData.find(item => item.id === elementId) : null;
 
     if (fullBimObject && fullBimObject.raw_data) {
-        // 6. BIM 시스템 속성
+        // 7. BIM 시스템 속성
         html += '<div class="property-section">';
         html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 시스템 속성 (상속 from BIM.System.*)</h4>';
         html += '<table class="properties-table"><tbody>';
@@ -967,42 +1025,76 @@ function updateBoqLeftPanelProperties(itemIds) {
         html += '</tbody></table>';
         html += '</div>';
 
-        // 7. BIM 기본 속성
-        const { Category, Family, Type, Level, Name } = fullBimObject.raw_data;
+        // 8. BIM 기본 속성 - Show ALL top-level properties
         html += '<div class="property-section">';
-        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (상속 from BIM.*)</h4>';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (상속 from BIM)</h4>';
         html += '<table class="properties-table"><tbody>';
-        if (Category) html += `<tr><td class="prop-name">BIM.Category</td><td class="prop-value">${Category}</td></tr>`;
-        if (Family) html += `<tr><td class="prop-name">BIM.Family</td><td class="prop-value">${Family}</td></tr>`;
-        if (Type) html += `<tr><td class="prop-name">BIM.Type</td><td class="prop-value">${Type}</td></tr>`;
-        if (Level) html += `<tr><td class="prop-name">BIM.Level</td><td class="prop-value">${Level}</td></tr>`;
-        if (Name) html += `<tr><td class="prop-name">BIM.Name</td><td class="prop-value">${Name}</td></tr>`;
+
+        const rawData = fullBimObject.raw_data;
+        // Exclude nested objects like Parameters, TypeParameters, Geometry
+        const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
+
+        for (const [attr, value] of Object.entries(rawData)) {
+            // Skip excluded keys, null/undefined values, and nested objects/arrays
+            if (excludedKeys.includes(attr)) continue;
+            if (value === undefined || value === null || value === '') continue;
+            if (typeof value === 'object') continue; // Skip nested objects/arrays
+
+            // Use BIM.Attributes.XXX format to match field selector naming
+            html += `<tr><td class="prop-name">BIM.Attributes.${attr}</td><td class="prop-value">${value}</td></tr>`;
+        }
+
         html += '</tbody></table>';
         html += '</div>';
 
-        // 8. BIM Parameters
-        if (fullBimObject.raw_data.Parameters && Object.keys(fullBimObject.raw_data.Parameters).length > 0) {
+        // 9. BIM Parameters - Use BIM.Parameters.XXX format
+        if (rawData.Parameters && Object.keys(rawData.Parameters).length > 0) {
             html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM Parameters (상속 from BIM.Parameters.*)</h4>';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM Parameters (상속 from BIM)</h4>';
             html += '<table class="properties-table"><tbody>';
-            for (const [key, value] of Object.entries(fullBimObject.raw_data.Parameters)) {
-                if (value !== null && value !== undefined && typeof value !== 'object') {
-                    html += `<tr><td class="prop-name">BIM.Parameters.${key}</td><td class="prop-value">${value}</td></tr>`;
+
+            // Sort parameters for better readability
+            const sortedParams = Object.entries(rawData.Parameters).sort((a, b) => a[0].localeCompare(b[0]));
+
+            for (const [key, value] of sortedParams) {
+                if (key === 'Geometry') continue; // Skip Geometry
+                if (value === null || value === undefined || value === '') continue; // Skip empty values
+
+                // Skip complex nested objects (but allow simple values)
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
+                    continue;
                 }
+
+                const displayValue = (typeof value === 'object')
+                    ? JSON.stringify(value).substring(0, 100)
+                    : String(value).substring(0, 200);
+                html += `<tr><td class="prop-name">BIM.Parameters.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
             }
             html += '</tbody></table>';
             html += '</div>';
         }
 
-        // 9. BIM TypeParameters
-        if (fullBimObject.raw_data.TypeParameters && Object.keys(fullBimObject.raw_data.TypeParameters).length > 0) {
+        // 10. BIM TypeParameters - Use BIM.TypeParameters.XXX format
+        if (rawData.TypeParameters && Object.keys(rawData.TypeParameters).length > 0) {
             html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM TypeParameters (상속 from BIM.TypeParameters.*)</h4>';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM TypeParameters (상속 from BIM)</h4>';
             html += '<table class="properties-table"><tbody>';
-            for (const [key, value] of Object.entries(fullBimObject.raw_data.TypeParameters)) {
-                if (value !== null && value !== undefined && typeof value !== 'object') {
-                    html += `<tr><td class="prop-name">BIM.TypeParameters.${key}</td><td class="prop-value">${value}</td></tr>`;
+
+            // Sort type parameters for better readability
+            const sortedTypeParams = Object.entries(rawData.TypeParameters).sort((a, b) => a[0].localeCompare(b[0]));
+
+            for (const [key, value] of sortedTypeParams) {
+                if (value === null || value === undefined || value === '') continue; // Skip empty values
+
+                // Skip complex nested objects (but allow simple values)
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
+                    continue;
                 }
+
+                const displayValue = (typeof value === 'object')
+                    ? JSON.stringify(value).substring(0, 100)
+                    : String(value).substring(0, 200);
+                html += `<tr><td class="prop-name">BIM.TypeParameters.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
             }
             html += '</tbody></table>';
             html += '</div>';

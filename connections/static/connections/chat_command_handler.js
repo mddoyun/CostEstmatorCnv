@@ -346,11 +346,161 @@
                         break;
                     }
 
-                    const countObjects = findBIMObjects(countTarget);
+                    // "모든", "전체", "all" 같은 키워드 처리
+                    const allKeywords = ['모든', '전체', 'all', 'total', '모두'];
+                    if (allKeywords.includes(countTarget.toLowerCase())) {
+                        // 전체 객체 개수 + 타입별 요약
+                        if (!window.allRevitData || window.allRevitData.length === 0) {
+                            result = {
+                                success: false,
+                                message: '불러온 BIM 데이터가 없습니다.'
+                            };
+                            break;
+                        }
+
+                        const totalCount = window.allRevitData.length;
+
+                        // 타입별 카운트
+                        const typeCounts = {};
+                        window.allRevitData.forEach(obj => {
+                            const raw = obj.raw_data || {};
+                            const type = raw.IfcClass || raw.Category || 'Unknown';
+                            typeCounts[type] = (typeCounts[type] || 0) + 1;
+                        });
+
+                        // 메시지 구성
+                        let message = `📊 **전체 객체: ${totalCount}개**\n\n`;
+                        message += '**타입별 상세:**\n';
+
+                        // 정렬해서 표시
+                        const sortedTypes = Object.entries(typeCounts)
+                            .sort((a, b) => b[1] - a[1]); // 개수 많은 순
+
+                        sortedTypes.forEach(([type, count]) => {
+                            message += `• ${type}: ${count}개\n`;
+                        });
+
+                        result = {
+                            success: true,
+                            message: message,
+                            count: totalCount,
+                            breakdown: typeCounts
+                        };
+                    } else {
+                        // 특정 타입 개수
+                        const countObjects = findBIMObjects(countTarget);
+                        result = {
+                            success: true,
+                            message: `📊 "${countTarget}" 객체는 총 ${countObjects.length}개 있습니다.`,
+                            count: countObjects.length
+                        };
+                    }
+                    break;
+
+                case 'info':
+                    // 객체 정보 요약
+                    const infoTarget = cmd.target || cmd.object_type || cmd.query;
+                    if (!infoTarget) {
+                        result = {
+                            success: false,
+                            message: '정보를 조회할 객체 타입을 알 수 없습니다.'
+                        };
+                        break;
+                    }
+
+                    const infoObjects = findBIMObjects(infoTarget);
+
+                    if (infoObjects.length === 0) {
+                        result = {
+                            success: false,
+                            message: `"${infoTarget}" 객체를 찾을 수 없습니다.`
+                        };
+                        break;
+                    }
+
+                    // 주요 정보 추출
+                    let infoMessage = `📋 **"${infoTarget}" 객체 정보 (총 ${infoObjects.length}개)**\n\n`;
+
+                    infoObjects.forEach((obj, idx) => {
+                        const raw = obj.raw_data || {};
+
+                        infoMessage += `**${idx + 1}. ${raw.Name || raw.IfcClass || 'Unknown'}**\n`;
+
+                        // 기본 정보
+                        if (raw.IfcClass) infoMessage += `   • 타입: ${raw.IfcClass}\n`;
+                        if (raw.Category) infoMessage += `   • 카테고리: ${raw.Category}\n`;
+                        if (raw.Family) infoMessage += `   • 패밀리: ${raw.Family}\n`;
+                        if (raw.Type) infoMessage += `   • 유형: ${raw.Type}\n`;
+
+                        // 수량 정보
+                        if (raw.Parameters) {
+                            const params = raw.Parameters;
+
+                            // 주요 파라미터만 표시
+                            const importantParams = ['면적', 'Area', '부피', 'Volume', '길이', 'Length',
+                                                     '높이', 'Height', '너비', 'Width', '두께', 'Thickness',
+                                                     '레벨', 'Level', '마감재', 'Material'];
+
+                            const foundParams = [];
+                            importantParams.forEach(key => {
+                                if (params[key] !== undefined && params[key] !== null) {
+                                    foundParams.push(`${key}: ${params[key]}`);
+                                }
+                            });
+
+                            if (foundParams.length > 0) {
+                                infoMessage += `   • 주요 속성:\n`;
+                                foundParams.forEach(p => {
+                                    infoMessage += `      - ${p}\n`;
+                                });
+                            }
+                        }
+
+                        // 볼륨 정보
+                        if (obj.geometry_volume) {
+                            infoMessage += `   • 지오메트리 볼륨: ${obj.geometry_volume.toFixed(3)} m³\n`;
+                        }
+
+                        infoMessage += '\n';
+                    });
+
+                    // 너무 길면 요약
+                    if (infoObjects.length > 5) {
+                        infoMessage = `📋 **"${infoTarget}" 객체 정보 (총 ${infoObjects.length}개)**\n\n`;
+                        infoMessage += `처음 5개 객체의 정보만 표시합니다.\n\n`;
+
+                        infoObjects.slice(0, 5).forEach((obj, idx) => {
+                            const raw = obj.raw_data || {};
+                            infoMessage += `**${idx + 1}. ${raw.Name || raw.IfcClass || 'Unknown'}**\n`;
+                            if (raw.IfcClass) infoMessage += `   • 타입: ${raw.IfcClass}\n`;
+                            if (raw.Category) infoMessage += `   • 카테고리: ${raw.Category}\n`;
+
+                            // 주요 파라미터 2-3개만
+                            if (raw.Parameters) {
+                                const params = raw.Parameters;
+                                const keys = Object.keys(params).filter(k =>
+                                    k.includes('면적') || k.includes('Area') ||
+                                    k.includes('부피') || k.includes('Volume') ||
+                                    k.includes('레벨') || k.includes('Level')
+                                ).slice(0, 3);
+
+                                if (keys.length > 0) {
+                                    keys.forEach(k => {
+                                        infoMessage += `   • ${k}: ${params[k]}\n`;
+                                    });
+                                }
+                            }
+                            infoMessage += '\n';
+                        });
+
+                        infoMessage += `... 외 ${infoObjects.length - 5}개 객체\n`;
+                    }
+
                     result = {
                         success: true,
-                        message: `📊 "${countTarget}" 객체는 총 ${countObjects.length}개 있습니다.`,
-                        count: countObjects.length
+                        message: infoMessage,
+                        count: infoObjects.length,
+                        objects: infoObjects
                     };
                     break;
 
@@ -456,9 +606,22 @@
 저는 일반 대화와 BIM 명령을 모두 이해할 수 있습니다!
 
 **🎯 명령 예시**
+
+**선택 명령:**
 • "벽을 3D 뷰포트에서 선택해줘"
 • "brick 선택"
+
+**개수 확인:**
 • "문 객체 몇 개야?"
+• "모든 객체는 몇개야?"
+• "전체 객체 개수"
+
+**정보 조회:**
+• "바닥 객체 정보 알려줘"
+• "벽의 주요정보를 정리해줘"
+• "여기있는 모든 문 속성 요약"
+
+**뷰 제어:**
 • "선택한 객체로 줌"
 • "선택 해제"
 • "카메라 리셋"

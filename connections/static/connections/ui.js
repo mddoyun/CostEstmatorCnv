@@ -816,6 +816,14 @@ function renderRawQmTable(members, editingMemberId = null) {
     const getQmValue = (item, field) => {
         if (!field) return '';
 
+        // ▼▼▼ [수정] QM.properties 속성 처리 (2025-11-05) ▼▼▼
+        // 이제 산출식은 저장 시점에 계산되므로, 테이블에서는 저장된 값만 표시
+        if (field.startsWith('qm_prop_')) {
+            const propName = field.substring(8); // 'qm_prop_' 제거
+            return item.properties?.[propName] ?? '';
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
         // MM 속성 처리 (mm_prop_*, member_mark_mark)
         if (field === 'member_mark_mark') {
             return item.member_mark_mark ?? '';
@@ -934,6 +942,12 @@ function renderRawQmTable(members, editingMemberId = null) {
         if (qmFieldLabels[fieldKey]) {
             return qmFieldLabels[fieldKey];
         }
+
+        // ▼▼▼ [추가] QM.properties 필드 처리 (2025-11-05) ▼▼▼
+        if (fieldKey.startsWith('qm_prop_')) {
+            return `QM.properties.${fieldKey.substring(8)}`;
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // MM 필드
         if (fieldKey.startsWith('mm_prop_')) {
