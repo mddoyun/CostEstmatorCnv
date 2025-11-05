@@ -759,7 +759,7 @@ async function runBatchAutoUpdate() {
         // ========== 8단계: 코스트아이템 - 룰셋수량계산 (전체) ==========
         console.log("[DEBUG] (8/13) 코스트아이템 - 룰셋수량계산 (전체) 시작...");
         showToast("8/13: 코스트아이템의 룰셋수량계산을 실행합니다...", "info");
-        await applyCostItemQuantityRules(true); // skipConfirmation = true
+        await applyCostItemQuantityRules(false); // selectedOnly = false (전체 항목 대상)
         if (progressBar && progressStatus) {
             progressBar.value = 8;
             progressStatus.textContent = `8/${TOTAL_STEPS} 완료`;
