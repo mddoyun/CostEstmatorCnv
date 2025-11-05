@@ -4319,8 +4319,13 @@
         // 액티비티 객체가 로드되지 않았으면 로드
         if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
             console.log('[3D Viewer] Loading activity objects...');
+            listContainer.innerHTML = '<p class="no-selection">액티비티 객체를 로딩 중...</p>';
             if (window.loadActivityObjects) {
                 await window.loadActivityObjects();
+                console.log('[3D Viewer] Activity objects loaded, redisplaying...');
+                // 로딩 완료 후 다시 표시
+                displayActivitiesInTab(object);
+                return;
             }
         }
 
