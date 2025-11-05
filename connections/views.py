@@ -7249,15 +7249,24 @@ def home_dashboard_api(request, project_id):
         project = Project.objects.get(id=project_id)
         print(f"[Dashboard API] Loading dashboard data for project: {project.name}")
 
-        # ===== 1. 총 공사비 계산 (CostItem의 total_price 합산) =====
+        # ===== 1. 총 공사비 계산 (CostItem의 비용 항목별 합산) =====
         cost_items = CostItem.objects.filter(project=project)
+        material_cost = Decimal('0')
+        labor_cost = Decimal('0')
+        expense_cost = Decimal('0')
         total_cost = Decimal('0')
 
         for ci in cost_items:
-            if ci.total_price:
-                total_cost += Decimal(str(ci.total_price))
+            if ci.material_cost_total:
+                material_cost += Decimal(str(ci.material_cost_total))
+            if ci.labor_cost_total:
+                labor_cost += Decimal(str(ci.labor_cost_total))
+            if ci.expense_cost_total:
+                expense_cost += Decimal(str(ci.expense_cost_total))
+            if ci.total_cost_total:
+                total_cost += Decimal(str(ci.total_cost_total))
 
-        print(f"[Dashboard API] Total cost calculated: {total_cost}")
+        print(f"[Dashboard API] Cost breakdown - Material: {material_cost}, Labor: {labor_cost}, Expense: {expense_cost}, Total: {total_cost}")
 
         # ===== 2. 공정 기간 계산 (Activity의 시작일/종료일) =====
         activities = Activity.objects.filter(project=project)
@@ -7286,11 +7295,21 @@ def home_dashboard_api(request, project_id):
         return JsonResponse({
             'success': True,
             'data': {
-                'total_cost': float(total_cost),
-                'total_cost_formatted': f"{total_cost:,.0f}" if total_cost > 0 else "-",
+                'costs': {
+                    'material': float(material_cost),
+                    'material_formatted': f"{material_cost:,.0f}" if material_cost > 0 else "-",
+                    'labor': float(labor_cost),
+                    'labor_formatted': f"{labor_cost:,.0f}" if labor_cost > 0 else "-",
+                    'expense': float(expense_cost),
+                    'expense_formatted': f"{expense_cost:,.0f}" if expense_cost > 0 else "-",
+                    'total': float(total_cost),
+                    'total_formatted': f"{total_cost:,.0f}" if total_cost > 0 else "-"
+                },
                 'schedule': {
                     'start_date': start_date.strftime('%Y-%m-%d') if start_date else None,
                     'end_date': end_date.strftime('%Y-%m-%d') if end_date else None,
+                    'start_date_formatted': start_date.strftime('%Y. %-m. %-d.') if start_date else None,
+                    'end_date_formatted': end_date.strftime('%Y. %-m. %-d.') if end_date else None,
                     'total_days': total_days
                 }
             }

@@ -581,34 +581,42 @@ async function loadHomeDashboardData(projectId) {
 function updateDashboardUI(data) {
     console.log('[Dashboard] Updating dashboard UI with data:', data);
 
-    // 1. 총 공사비 업데이트
-    const totalCostElement = document.getElementById('dashboard-total-cost');
-    if (totalCostElement) {
-        if (data.total_cost > 0) {
-            totalCostElement.textContent = data.total_cost_formatted + '원';
-        } else {
-            totalCostElement.textContent = '데이터 없음';
-            totalCostElement.style.fontSize = '18px';
+    // 1. 비용 항목별 업데이트 (표 형식)
+    if (data.costs) {
+        // 재료비
+        const materialCostElement = document.getElementById('dashboard-material-cost');
+        if (materialCostElement) {
+            materialCostElement.textContent = data.costs.material_formatted + '원';
+        }
+
+        // 노무비
+        const laborCostElement = document.getElementById('dashboard-labor-cost');
+        if (laborCostElement) {
+            laborCostElement.textContent = data.costs.labor_formatted + '원';
+        }
+
+        // 경비
+        const expenseCostElement = document.getElementById('dashboard-expense-cost');
+        if (expenseCostElement) {
+            expenseCostElement.textContent = data.costs.expense_formatted + '원';
+        }
+
+        // 합계금액
+        const totalCostElement = document.getElementById('dashboard-total-cost');
+        if (totalCostElement) {
+            totalCostElement.textContent = data.costs.total_formatted + '원';
         }
     }
 
-    // 2. 공정 기간 업데이트
-    const startDateElement = document.getElementById('dashboard-start-date');
-    const endDateElement = document.getElementById('dashboard-end-date');
-    const totalDaysElement = document.getElementById('dashboard-total-days');
-
+    // 2. 공정 기간 업데이트 (프로젝트 기간 형식)
     if (data.schedule) {
-        if (startDateElement) {
-            startDateElement.textContent = data.schedule.start_date || '-';
-        }
-        if (endDateElement) {
-            endDateElement.textContent = data.schedule.end_date || '-';
-        }
-        if (totalDaysElement) {
-            if (data.schedule.total_days > 0) {
-                totalDaysElement.textContent = data.schedule.total_days.toLocaleString();
+        const scheduleDatesElement = document.getElementById('dashboard-schedule-dates');
+        if (scheduleDatesElement) {
+            if (data.schedule.start_date_formatted && data.schedule.end_date_formatted && data.schedule.total_days > 0) {
+                // 형식: "2025. 1. 1. ~ 2025. 12. 31. (365일)"
+                scheduleDatesElement.textContent = `${data.schedule.start_date_formatted} ~ ${data.schedule.end_date_formatted} (${data.schedule.total_days}일)`;
             } else {
-                totalDaysElement.textContent = '-';
+                scheduleDatesElement.textContent = '데이터 없음';
             }
         }
     }
