@@ -7288,29 +7288,44 @@ def home_dashboard_api(request, project_id):
 
         print(f"[Dashboard API] Cost breakdown (DD enabled only) - Material: {material_cost}, Labor: {labor_cost}, Expense: {expense_cost}, Total: {total_cost}")
 
-        # ===== 2. 공정 기간 계산 (Activity의 시작일/종료일) =====
-        activities = Activity.objects.filter(project=project)
+        # ===== 2. 공정 기간 계산 (간트 차트와 동일한 방식) =====
+        print("\n" + "="*80)
+        print("[Dashboard API] ===== SCHEDULE CALCULATION START =====")
+        print("="*80)
+
+        # ActivityObject의 start_date와 end_date를 수집 (간트 차트와 동일)
+        activity_objects = ActivityObject.objects.filter(
+            project=project,
+            is_active=True
+        )
+        print(f"[Dashboard API] Found {activity_objects.count()} ActivityObjects in project")
 
         start_date = None
         end_date = None
         total_days = 0
 
-        if activities.exists():
-            # 모든 Activity의 시작일/종료일 계산
-            for activity in activities:
-                if activity.start_date:
-                    if not start_date or activity.start_date < start_date:
-                        start_date = activity.start_date
+        # 유효한 날짜를 가진 ActivityObject만 필터링
+        valid_dates = []
+        for ao in activity_objects:
+            if ao.start_date and ao.end_date:
+                valid_dates.append(ao.start_date)
+                valid_dates.append(ao.end_date)
+                print(f"[Dashboard API] ActivityObject {ao.id}: {ao.start_date} ~ {ao.end_date}")
 
-                if activity.end_date:
-                    if not end_date or activity.end_date > end_date:
-                        end_date = activity.end_date
+        if valid_dates:
+            # 간트 차트와 동일한 방식: min/max 계산
+            start_date = min(valid_dates)
+            end_date = max(valid_dates)
+            total_days = (end_date - start_date).days + 1  # 시작일 포함
 
-            # 총 공기 계산
-            if start_date and end_date:
-                total_days = (end_date - start_date).days + 1  # 시작일 포함
+            print(f"[Dashboard API] ✓ Calculated from {len(valid_dates)//2} valid ActivityObjects")
+            print(f"[Dashboard API] Start: {start_date}")
+            print(f"[Dashboard API] End: {end_date}")
+            print(f"[Dashboard API] Total Days: {total_days}")
+        else:
+            print("[Dashboard API] ✗ No valid date information found!")
 
-        print(f"[Dashboard API] Schedule: {start_date} ~ {end_date} ({total_days} days)")
+        print("="*80 + "\n")
 
         return JsonResponse({
             'success': True,

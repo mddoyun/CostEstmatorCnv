@@ -548,6 +548,7 @@ function hideHomeDashboard() {
 
 /**
  * 대시보드 데이터 로드
+ * 간트 차트와 동일한 방식으로 공정 기간 계산
  */
 async function loadHomeDashboardData(projectId) {
     console.log('[Dashboard] Loading dashboard data for project:', projectId);
@@ -558,12 +559,30 @@ async function loadHomeDashboardData(projectId) {
     }
 
     try {
+        // 1. ActivityObjects를 먼저 로드 (공정 기간 계산에 필요)
+        if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
+            console.log('[Dashboard] Loading activity objects first...');
+            const aoResponse = await fetch(`/connections/api/activity-objects/${projectId}/`);
+            const aoData = await aoResponse.json();
+            if (aoData && Array.isArray(aoData)) {
+                window.loadedActivityObjects = aoData;
+                console.log('[Dashboard] Loaded', aoData.length, 'activity objects');
+            }
+        }
+
+        // 2. 비용 데이터는 API에서 가져오기
         const response = await fetch(`/connections/api/dashboard/${projectId}/`);
         const result = await response.json();
 
         console.log('[Dashboard] Dashboard data loaded:', result);
 
         if (result.success && result.data) {
+            // 3. 공정 기간은 간트 차트와 동일한 방식으로 프론트엔드에서 계산
+            const scheduleData = calculateScheduleDatesFromGantt();
+
+            // 기존 data에 계산된 schedule 데이터를 덮어쓰기
+            result.data.schedule = scheduleData;
+
             updateDashboardUI(result.data);
         } else {
             console.error('[Dashboard] Failed to load dashboard data:', result.error);
@@ -573,6 +592,107 @@ async function loadHomeDashboardData(projectId) {
         console.error('[Dashboard] Error loading dashboard data:', error);
         showToast('대시보드 데이터 로드 중 오류가 발생했습니다.', 'error');
     }
+}
+
+/**
+ * 간트 차트와 동일한 방식으로 공정 기간 계산
+ * 간트 차트 탭의 "프로젝트 기간" 표시 로직 재사용
+ */
+function calculateScheduleDatesFromGantt() {
+    console.log('[Dashboard] Calculating schedule dates from gantt chart logic...');
+
+    // window.ganttMinDate, ganttMaxDate가 있으면 사용 (간트 차트 이미 렌더링됨)
+    if (window.ganttMinDate && window.ganttMaxDate) {
+        console.log('[Dashboard] Using existing gantt dates:', window.ganttMinDate, window.ganttMaxDate);
+
+        // 간트 차트와 동일한 계산 방식 (Math.ceil만 사용, +1 안함)
+        const totalDays = Math.ceil((window.ganttMaxDate - window.ganttMinDate) / (1000 * 60 * 60 * 24));
+
+        return {
+            start_date_formatted: window.ganttMinDate.toLocaleDateString('ko-KR'),
+            end_date_formatted: window.ganttMaxDate.toLocaleDateString('ko-KR'),
+            total_days: totalDays
+        };
+    }
+
+    // 간트 차트가 아직 렌더링 안됐으면 loadedActivityObjects에서 직접 계산
+    // (간트 차트 handlers의 buildGanttTasks 로직 간소화 버전)
+    if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
+        console.log('[Dashboard] No activity objects available');
+        return {
+            start_date_formatted: null,
+            end_date_formatted: null,
+            total_days: 0
+        };
+    }
+
+    console.log('[Dashboard] Calculating from activity objects:', window.loadedActivityObjects.length);
+
+    // ActivityObject에서 actual_duration 합산하여 Activity별 duration 계산
+    const activityDurationMap = new Map();
+    const activityMap = new Map();
+
+    window.loadedActivityObjects.forEach(ao => {
+        if (!ao.activity || !ao.actual_duration) return;
+
+        const activityId = ao.activity.id;
+        const duration = parseFloat(ao.actual_duration) || 0;
+
+        if (!activityMap.has(activityId)) {
+            activityMap.set(activityId, ao.activity);
+        }
+
+        const currentDuration = activityDurationMap.get(activityId) || 0;
+        activityDurationMap.set(activityId, currentDuration + duration);
+    });
+
+    if (activityDurationMap.size === 0) {
+        console.log('[Dashboard] No valid activity durations');
+        return {
+            start_date_formatted: null,
+            end_date_formatted: null,
+            total_days: 0
+        };
+    }
+
+    // 프로젝트 시작일 기준으로 task start/end 계산 (간단 버전)
+    const projectStartDate = new Date(); // 임시: 오늘 날짜 기준
+    const allDates = [];
+
+    activityDurationMap.forEach((totalDuration, activityId) => {
+        const activity = activityMap.get(activityId);
+        if (!activity) return;
+
+        // 수동 시작일이 있으면 사용
+        const startDate = activity.manual_start_date ? new Date(activity.manual_start_date) : new Date(projectStartDate);
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + Math.ceil(totalDuration));
+
+        allDates.push(startDate);
+        allDates.push(endDate);
+    });
+
+    if (allDates.length === 0) {
+        console.log('[Dashboard] No valid dates calculated');
+        return {
+            start_date_formatted: null,
+            end_date_formatted: null,
+            total_days: 0
+        };
+    }
+
+    const minDate = new Date(Math.min(...allDates));
+    const maxDate = new Date(Math.max(...allDates));
+    // 간트 차트와 동일한 계산 방식 (Math.ceil만 사용, +1 안함)
+    const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
+
+    console.log('[Dashboard] Calculated dates:', minDate, maxDate, totalDays);
+
+    return {
+        start_date_formatted: minDate.toLocaleDateString('ko-KR'),
+        end_date_formatted: maxDate.toLocaleDateString('ko-KR'),
+        total_days: totalDays
+    };
 }
 
 /**
@@ -638,4 +758,5 @@ window.navigateToTab = navigateToTab;
 window.showHomeDashboard = showHomeDashboard;  // NEW
 window.hideHomeDashboard = hideHomeDashboard;  // NEW
 window.loadHomeDashboardData = loadHomeDashboardData;  // NEW
+window.calculateScheduleDatesFromGantt = calculateScheduleDatesFromGantt;  // NEW
 window.updateDashboardUI = updateDashboardUI;  // NEW
