@@ -12520,6 +12520,16 @@
         console.log('[3D Viewer] Section Box planes initialized:', sectionBoxBounds);
     }
 
+    // Section Box 상태를 외부에서 접근 가능하도록 노출
+    Object.defineProperty(window, 'sectionBoxEnabled', {
+        get: () => sectionBoxEnabled,
+        set: (value) => { sectionBoxEnabled = value; }
+    });
+    Object.defineProperty(window, 'sectionBoxBounds', {
+        get: () => sectionBoxBounds,
+        set: (value) => { sectionBoxBounds = value; }
+    });
+
     /**
      * Section Box 토글
      */
@@ -12648,7 +12658,7 @@
     /**
      * Section Box 업데이트 (경계 변경 후 호출)
      */
-    function updateSectionBox() {
+    window.updateSectionBox = function() {
         // Planes 업데이트
         sectionBoxPlanes[0].constant = sectionBoxBounds.maxX;
         sectionBoxPlanes[1].constant = -sectionBoxBounds.minX;
@@ -12670,7 +12680,7 @@
             scene.remove(sectionBoxHelper);
             createSectionBoxHelper();
         }
-    }
+    };
 
     /**
      * Fit Section Box to all geometry
@@ -12692,7 +12702,7 @@
             sectionBoxBounds.maxZ = bbox.max.z;
 
             if (sectionBoxEnabled) {
-                updateSectionBox();
+                window.updateSectionBox();
             }
             console.log('[3D Viewer] Section Box fitted to geometry:', sectionBoxBounds);
         }

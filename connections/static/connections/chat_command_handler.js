@@ -504,6 +504,73 @@
                     };
                     break;
 
+                case 'section_box':
+                case 'set_section':
+                    // 단면 상자 설정
+                    console.log('[Chat] Section Box command parameters:', cmd.parameters);
+
+                    // Section Box 토글 함수 확인
+                    if (typeof window.toggleSectionBox !== 'function') {
+                        result = {
+                            success: false,
+                            message: '단면 상자 기능을 사용할 수 없습니다. 3D 뷰어가 초기화되지 않았습니다.'
+                        };
+                        break;
+                    }
+
+                    // Section Box 활성화 (비활성화 상태인 경우에만)
+                    if (typeof window.sectionBoxEnabled === 'undefined' || !window.sectionBoxEnabled) {
+                        window.toggleSectionBox();
+                    }
+
+                    // 파라미터 파싱
+                    const params = cmd.parameters || {};
+                    let minHeight = params.min_height ?? params.minHeight ?? 0;
+                    let maxHeight = params.max_height ?? params.maxHeight ?? null;
+
+                    // 단위 변환 (mm → m)
+                    if (params.unit === 'mm' || (typeof params.max_height === 'string' && params.max_height.includes('mm'))) {
+                        // mm 단위인 경우 m로 변환
+                        if (typeof maxHeight === 'string') {
+                            maxHeight = parseFloat(maxHeight.replace(/[^\d.-]/g, '')) / 1000;
+                        } else if (typeof maxHeight === 'number') {
+                            maxHeight = maxHeight / 1000;
+                        }
+
+                        if (typeof minHeight === 'string') {
+                            minHeight = parseFloat(minHeight.replace(/[^\d.-]/g, '')) / 1000;
+                        } else if (typeof minHeight === 'number' && params.unit === 'mm') {
+                            minHeight = minHeight / 1000;
+                        }
+                    }
+
+                    console.log('[Chat] Parsed heights - min:', minHeight, 'max:', maxHeight);
+
+                    // sectionBoxBounds 업데이트 (Z축만)
+                    if (typeof window.sectionBoxBounds === 'object') {
+                        window.sectionBoxBounds.minZ = minHeight;
+
+                        if (maxHeight !== null) {
+                            window.sectionBoxBounds.maxZ = maxHeight;
+                        }
+
+                        // Section Box 시각화 업데이트 (기존 함수 재사용)
+                        if (typeof window.updateSectionBox === 'function') {
+                            window.updateSectionBox();
+                        }
+
+                        result = {
+                            success: true,
+                            message: `✅ 단면 상자를 설정했습니다.\n높이 범위: ${(minHeight * 1000).toFixed(0)}mm ~ ${maxHeight !== null ? (maxHeight * 1000).toFixed(0) + 'mm' : '최대 높이'}`
+                        };
+                    } else {
+                        result = {
+                            success: false,
+                            message: 'Section Box 데이터 구조를 찾을 수 없습니다.'
+                        };
+                    }
+                    break;
+
                 default:
                     console.warn('[Chat] Unknown command action:', cmd.action);
                     result = {
@@ -625,6 +692,11 @@
 • "선택한 객체로 줌"
 • "선택 해제"
 • "카메라 리셋"
+
+**단면 상자:**
+• "뷰포트에서 단면상자 만들고 원점높이에서 높이 1500mm높이까지 잘라서 보여줘"
+• "단면 상자 0에서 3000mm까지"
+• "섹션 박스 높이 2m까지만 보여줘"
 
 **💡 일반 대화**
 • "안녕하세요"
