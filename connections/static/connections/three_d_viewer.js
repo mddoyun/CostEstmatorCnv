@@ -3872,6 +3872,20 @@
                 }
             });
 
+            // ▼▼▼ [추가] 평탄화된 BIM 속성들 (QuantitySet.*, PropertySet.*, Type.*, Spatial_Container.*) (2025-11-05) ▼▼▼
+            const flatKeys = Object.keys(rawData).filter(k =>
+                k.startsWith('QuantitySet.') || k.startsWith('PropertySet.') ||
+                k.startsWith('Type.') || k.startsWith('Spatial_Container.')
+            );
+            flatKeys.forEach(key => {
+                const value = rawData[key];
+                if (value !== null && value !== undefined && typeof value !== 'object') {
+                    const displayValue = String(value).substring(0, 200);
+                    allProperties.push({ label: `BIM.${key}`, value: displayValue });
+                }
+            });
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             // BIM.Parameters.*
             if (rawData.Parameters && typeof rawData.Parameters === 'object') {
                 for (const [key, value] of Object.entries(rawData.Parameters)) {
@@ -4196,14 +4210,22 @@
             allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay });
 
             // BIM 기본 속성 (rawData의 top-level 속성들)
+            // ▼▼▼ [수정] QuantitySet, PropertySet, Type, Spatial_Container 등 평탄화된 키 처리 (2025-11-05) ▼▼▼
             const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
             for (const [attr, value] of Object.entries(rawData)) {
                 if (excludedKeys.includes(attr)) continue;
                 if (value === undefined || value === null || value === '') continue;
                 if (typeof value === 'object') continue;
 
-                allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+                // QuantitySet.*, PropertySet.*, Type.*, Spatial_Container.* 등 평탄화된 키는 그대로 사용
+                if (attr.startsWith('QuantitySet.') || attr.startsWith('PropertySet.') ||
+                    attr.startsWith('Type.') || attr.startsWith('Spatial_Container.')) {
+                    allProperties.push({ label: `BIM.${attr}`, value: String(value) });
+                } else {
+                    allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+                }
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             // BIM Parameters
             if (rawData.Parameters && typeof rawData.Parameters === 'object') {

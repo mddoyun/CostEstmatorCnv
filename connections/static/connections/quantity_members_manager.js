@@ -2070,14 +2070,22 @@ function renderQmSelectedProperties() {
         allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay, editable: false });
 
         // BIM 기본 속성 (rawData의 top-level 속성들)
+        // ▼▼▼ [수정] QuantitySet, PropertySet, Type, Spatial_Container 등 평탄화된 키 처리 (2025-11-05) ▼▼▼
         const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
         for (const [attr, value] of Object.entries(rawData)) {
             if (excludedKeys.includes(attr)) continue;
             if (value === undefined || value === null || value === '') continue;
             if (typeof value === 'object') continue;
 
-            allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value), editable: false });
+            // QuantitySet.*, PropertySet.*, Type.*, Spatial_Container.* 등 평탄화된 키는 그대로 사용
+            if (attr.startsWith('QuantitySet.') || attr.startsWith('PropertySet.') ||
+                attr.startsWith('Type.') || attr.startsWith('Spatial_Container.')) {
+                allProperties.push({ label: `BIM.${attr}`, value: String(value), editable: false });
+            } else {
+                allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value), editable: false });
+            }
         }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // BIM Parameters
         if (rawData.Parameters && typeof rawData.Parameters === 'object') {
