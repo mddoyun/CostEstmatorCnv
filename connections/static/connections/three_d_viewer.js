@@ -3781,6 +3781,7 @@
     }
 
     // Display details of a selected quantity member
+    // ▼▼▼ [수정] 통일된 그룹핑 시스템 적용 (2025-11-05) ▼▼▼
     function displayQuantityMemberDetails(qm) {
         console.log('[3D Viewer] displayQuantityMemberDetails called with:', qm);
         const detailsContainer = document.getElementById('three-d-quantity-member-details');
@@ -3790,171 +3791,173 @@
             return;
         }
 
-        let html = '';
+        // BIM 원본 요소 (allRevitData에서 실제 RawElement 객체 찾기)
+        const elementId = qm.split_element_id || qm.raw_element_id;
+        const fullBimObject = elementId && window.allRevitData ?
+            window.allRevitData.find(item => item.id === elementId) : null;
 
-        // 기본 속성 (QM. 접두어 사용) - '산출'-'수량산출부재' 탭과 동일한 형태
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${qm.id || 'N/A'}</td></tr>`;
+        console.log('[DEBUG] displayQuantityMemberDetails - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
+
+        // 모든 속성을 수집하여 첫 번째 접두어로 그룹핑
+        const allProperties = [];
+
+        // QM 속성 수집
+        allProperties.push({ label: 'QM.System.id', value: qm.id || 'N/A' });
         if (qm.name) {
-            html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${qm.name}</td></tr>`;
+            allProperties.push({ label: 'QM.System.name', value: qm.name });
         }
-        if (qm.tag_name || qm.classification_tag_name) {
-            html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${qm.tag_name || qm.classification_tag_name || 'N/A'}</td></tr>`;
+        if (qm.classification_tag_name || qm.tag_name) {
+            allProperties.push({ label: 'QM.System.classification_tag', value: qm.classification_tag_name || qm.tag_name });
         }
-        html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${qm.is_active !== undefined ? (qm.is_active ? 'true' : 'false') : 'N/A'}</td></tr>`;
-
-        // RawElement ID 추가
+        allProperties.push({ label: 'QM.System.is_active', value: qm.is_active ? 'true' : 'false' });
         if (qm.raw_element_id) {
-            html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${qm.raw_element_id}</td></tr>`;
+            allProperties.push({ label: 'QM.System.raw_element_id', value: qm.raw_element_id });
         }
-        html += '</tbody></table>';
-        html += '</div>';
+        if (qm.split_element_id) {
+            allProperties.push({ label: 'QM.System.split_element_id', value: qm.split_element_id });
+        }
 
-        // 부재 속성 (QM.properties.XXX) - '산출'-'수량산출부재' 탭과 동일한 형태
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성</h4>';
-
+        // QM.properties 수집
         if (qm.properties && Object.keys(qm.properties).length > 0) {
             const lockedProps = qm.locked_properties || [];
-            html += '<table class="properties-table"><tbody>';
             for (const [key, value] of Object.entries(qm.properties)) {
                 if (value !== null && value !== undefined) {
                     const isLocked = lockedProps.includes(key);
                     const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
-
-                    html += `<tr>`;
-                    html += `<td class="prop-name">QM.properties.${key}`;
-                    if (isLocked) {
-                        html += ` <span style="color: #f57c00; font-size: 12px;">🔒</span>`;
-                    }
-                    html += `</td>`;
-                    html += `<td class="prop-value">${displayValue}</td>`;
-                    html += `</tr>`;
+                    const label = isLocked ? `QM.Properties.${key} 🔒` : `QM.Properties.${key}`;
+                    allProperties.push({ label, value: displayValue });
                 }
             }
-            html += '</tbody></table>';
-        } else {
-            html += '<p style="color: #999; font-style: italic; margin: 10px 0;">속성이 없습니다.</p>';
         }
-        html += '</div>';
 
-        // 일람부호 (MM.XXX)
-        if (qm.member_mark_mark || (qm.member_mark_properties && Object.keys(qm.member_mark_properties).length > 0)) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호</h4>';
-            html += '<table class="properties-table"><tbody>';
-            if (qm.member_mark_mark) {
-                html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${qm.member_mark_mark}</td></tr>`;
-            }
-            if (qm.member_mark_properties) {
-                for (const [key, value] of Object.entries(qm.member_mark_properties)) {
-                    if (value !== null && value !== undefined) {
-                        html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
-                    }
+        // MM 속성 수집
+        if (qm.member_mark_mark) {
+            allProperties.push({ label: 'MM.System.mark', value: qm.member_mark_mark });
+        }
+        if (qm.member_mark_properties) {
+            for (const [key, value] of Object.entries(qm.member_mark_properties)) {
+                if (value !== null && value !== undefined) {
+                    allProperties.push({ label: `MM.Properties.${key}`, value: String(value) });
                 }
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
 
-        // 공간분류 (Space.XXX)
+        // SC 속성 수집 (Space.name → SC.System.name으로 수정)
         if (qm.space_name) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #388e3c; border-bottom: 2px solid #388e3c; padding-bottom: 5px;">📍 공간분류</h4>';
-            html += '<table class="properties-table"><tbody>';
-            html += `<tr><td class="prop-name">Space.name</td><td class="prop-value">${qm.space_name}</td></tr>`;
-            html += '</tbody></table>';
-            html += '</div>';
+            allProperties.push({ label: 'SC.System.name', value: qm.space_name });
         }
 
-        // BIM 원본 요소 (BIM 원본데이터 탭과 동일한 형식으로 모든 속성 표시)
-        if (qm.raw_element && Object.keys(qm.raw_element).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 원본</h4>';
-            html += '<table class="properties-table"><tbody>';
+        // BIM 속성 수집 (allRevitData에서 가져온 fullBimObject 사용)
+        if (fullBimObject && fullBimObject.raw_data) {
+            const rawData = fullBimObject.raw_data;
+            const excludedKeys = ['Geometry', 'Faces', 'Edges', 'Vertices'];
 
-            const rawData = qm.raw_element;
-
-            // Basic Information (BIM.Attributes.*)
-            const basicAttrs = ['Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description', 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'];
-            basicAttrs.forEach(attr => {
-                if (rawData[attr] !== undefined && rawData[attr] !== null) {
-                    const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(attr) : `BIM.Attributes.${attr}`;
-                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${rawData[attr]}</td></tr>`;
+            // BIM 시스템 속성 (Category, Family, Type, Level, Id)
+            ['Category', 'Family', 'Type', 'Level', 'Id'].forEach(key => {
+                if (rawData[key] !== undefined && rawData[key] !== null) {
+                    allProperties.push({ label: `BIM.System.${key}`, value: String(rawData[key]) });
                 }
             });
 
-            // Parameters (BIM.Parameters.*)
+            // BIM.Attributes.* (Attributes.로 시작하는 속성들)
+            const attrKeys = Object.keys(rawData).filter(k => k.startsWith('Attributes.'));
+            attrKeys.forEach(key => {
+                const value = rawData[key];
+                if (value !== null && value !== undefined) {
+                    const cleanKey = key.substring(11); // 'Attributes.' 제거
+                    const displayValue = typeof value === 'object'
+                        ? JSON.stringify(value).substring(0, 100)
+                        : String(value).substring(0, 200);
+                    allProperties.push({ label: `BIM.Attributes.${cleanKey}`, value: displayValue });
+                }
+            });
+
+            // BIM.Parameters.*
             if (rawData.Parameters && typeof rawData.Parameters === 'object') {
                 for (const [key, value] of Object.entries(rawData.Parameters)) {
-                    if (key === 'Geometry') continue; // Skip Geometry (too large)
+                    if (key === 'Geometry') continue;
                     if (value !== null && value !== undefined) {
-                        const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(key) : `BIM.Parameters.${key}`;
-                        const displayValue = typeof value === 'object' ? JSON.stringify(value).substring(0, 100) : String(value).substring(0, 100);
-                        html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                        if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
+                        const displayValue = (typeof value === 'object')
+                            ? JSON.stringify(value).substring(0, 100)
+                            : String(value).substring(0, 200);
+                        allProperties.push({ label: `BIM.Parameters.${key}`, value: displayValue });
                     }
                 }
             }
 
-            // TypeParameters (BIM.TypeParameters.*)
+            // BIM.TypeParameters.*
             if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
                 for (const [key, value] of Object.entries(rawData.TypeParameters)) {
                     if (value !== null && value !== undefined) {
-                        const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(`TypeParameters.${key}`) : `BIM.TypeParameters.${key}`;
-                        const displayValue = typeof value === 'object' ? JSON.stringify(value).substring(0, 100) : String(value).substring(0, 100);
-                        html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                        if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
+                        const displayValue = (typeof value === 'object')
+                            ? JSON.stringify(value).substring(0, 100)
+                            : String(value).substring(0, 200);
+                        allProperties.push({ label: `BIM.TypeParameters.${key}`, value: displayValue });
                     }
                 }
             }
 
-            // System Properties (BIM.System.*)
-            const systemProps = ['id', 'element_unique_id', 'geometry_volume', 'classification_tags'];
-            systemProps.forEach(prop => {
-                if (rawData[prop] !== undefined && rawData[prop] !== null) {
-                    const displayName = window.getDisplayFieldName ? window.getDisplayFieldName(prop) : `BIM.System.${prop}`;
-                    const displayValue = Array.isArray(rawData[prop]) ? rawData[prop].join(', ') : rawData[prop];
-                    html += `<tr><td class="prop-name">${displayName}</td><td class="prop-value">${displayValue}</td></tr>`;
-                }
-            });
+            // BIM의 다른 동적 속성들 (QuantitySet 등)
+            for (const [topLevelKey, topLevelValue] of Object.entries(rawData)) {
+                if (excludedKeys.includes(topLevelKey)) continue;
+                if (['Category', 'Family', 'Type', 'Level', 'Id'].includes(topLevelKey)) continue;
+                if (typeof topLevelValue === 'object' && topLevelValue !== null && !Array.isArray(topLevelValue)) {
+                    if (topLevelKey === 'Parameters' || topLevelKey === 'TypeParameters') continue;
 
-            // 그 외 모든 속성 (최상위 레벨, 객체가 아닌 경우)
-            for (const [key, value] of Object.entries(rawData)) {
-                // 이미 표시한 속성들은 건너뛰기
-                if (basicAttrs.includes(key) || key === 'Parameters' || key === 'TypeParameters' || systemProps.includes(key)) continue;
-
-                if (value !== null && value !== undefined && typeof value !== 'object') {
-                    const displayValue = String(value).substring(0, 100);
-                    html += `<tr><td class="prop-name">BIM.${key}</td><td class="prop-value">${displayValue}${String(value).length > 100 ? '...' : ''}</td></tr>`;
+                    for (const [key, value] of Object.entries(topLevelValue)) {
+                        if (value === null || value === undefined) continue;
+                        const displayValue = typeof value === 'object'
+                            ? JSON.stringify(value).substring(0, 100)
+                            : String(value).substring(0, 200);
+                        allProperties.push({ label: `BIM.${topLevelKey}.${key}`, value: displayValue });
+                    }
                 }
             }
-
-            html += '</tbody></table>';
-            html += '</div>';
         }
 
-        // 할당된 공사코드
+        // CC 속성 수집 (공사코드)
         if (qm.cost_codes && qm.cost_codes.length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px;">💰 할당된 공사코드</h4>';
-            html += '<table class="properties-table"><tbody>';
-            qm.cost_codes.forEach(code => {
-                // code가 객체인 경우와 문자열인 경우 모두 처리
-                if (typeof code === 'object' && code.code && code.name) {
-                    html += `<tr><td class="prop-name">${code.code}</td><td class="prop-value">${code.name}</td></tr>`;
+            qm.cost_codes.forEach((code, idx) => {
+                if (typeof code === 'object' && code.code) {
+                    allProperties.push({ label: `CC.System.code_${idx + 1}`, value: `${code.code} - ${code.name || ''}` });
                 } else {
-                    html += `<tr><td class="prop-name">cost_code</td><td class="prop-value">${code}</td></tr>`;
+                    allProperties.push({ label: `CC.System.code_${idx + 1}`, value: String(code) });
                 }
             });
-            html += '</tbody></table>';
-            html += '</div>';
         }
+
+        // 첫 번째 접두어로 그룹핑
+        const groupedProperties = window.groupFieldsByPrefix ? window.groupFieldsByPrefix(allProperties) : {};
+        const sectionDefs = window.getSectionDefinitions ? window.getSectionDefinitions() : [];
+
+        let html = '';
+
+        // 각 섹션별로 렌더링
+        sectionDefs.forEach(section => {
+            const properties = groupedProperties[section.key];
+            if (properties && properties.length > 0) {
+                html += '<div class="property-section">';
+                html += `<h4 style="color: ${section.color}; border-bottom: 2px solid ${section.color}; padding-bottom: 5px;">${section.title}</h4>`;
+                html += '<table class="properties-table"><tbody>';
+
+                // 정렬하여 표시
+                const sortedProps = properties.sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+                sortedProps.forEach(prop => {
+                    html += `<tr><td class="prop-name">${prop.label}</td><td class="prop-value">${prop.value}</td></tr>`;
+                });
+
+                html += '</tbody></table>';
+                html += '</div>';
+            }
+        });
 
         console.log('[3D Viewer] Setting details HTML, length:', html.length);
         detailsContainer.innerHTML = html;
         console.log('[3D Viewer] Details displayed successfully');
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // Clear quantity members panel
     function clearQuantityMembersPanel() {
@@ -4040,6 +4043,7 @@
         });
     }
 
+    // ▼▼▼ [수정] 통일된 그룹핑 시스템 적용 (2025-11-05) ▼▼▼
     // Display cost item details (same format as cost_item_manager.js renderCiSelectedProperties)
     function displayCostItemDetails(item) {
         const detailsContainer = document.getElementById('three-d-cost-item-details');
@@ -4048,96 +4052,236 @@
         // Find associated QuantityMember
         const member = item.quantity_member_id ? window.loadedQuantityMembers?.find(m => m.id === item.quantity_member_id) : null;
 
-        let html = '';
+        // 모든 속성을 수집하여 첫 번째 접두어로 그룹핑
+        const allProperties = [];
 
-        // ============ 1. CI 기본 속성 (코스트아이템 고유 속성) ============
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📊 산출항목 기본 속성</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">CI.id</td><td class="prop-value">${item.id || 'N/A'}</td></tr>`;
+        // CI 속성 수집
+        allProperties.push({ label: 'CI.System.id', value: item.id || 'N/A' });
         if (item.quantity !== undefined) {
-            html += `<tr><td class="prop-name">CI.quantity</td><td class="prop-value">${item.quantity}</td></tr>`;
+            allProperties.push({ label: 'CI.System.quantity', value: String(item.quantity) });
         }
         if (item.cost_code_name) {
-            html += `<tr><td class="prop-name">CI.cost_code_name</td><td class="prop-value">${item.cost_code_name}</td></tr>`;
+            allProperties.push({ label: 'CI.System.cost_code_name', value: item.cost_code_name });
         }
         if (item.description) {
-            html += `<tr><td class="prop-name">CI.description</td><td class="prop-value">${item.description}</td></tr>`;
+            allProperties.push({ label: 'CI.System.description', value: item.description });
         }
         if (item.quantity_member_id) {
-            html += `<tr><td class="prop-name">CI.quantity_member_id</td><td class="prop-value">${item.quantity_member_id}</td></tr>`;
+            allProperties.push({ label: 'CI.System.quantity_member_id', value: item.quantity_member_id });
         }
         if (item.raw_element_id) {
-            html += `<tr><td class="prop-name">CI.raw_element_id</td><td class="prop-value">${item.raw_element_id}</td></tr>`;
+            allProperties.push({ label: 'CI.System.raw_element_id', value: item.raw_element_id });
         }
-        html += '</tbody></table>';
-        html += '</div>';
+
+        // CC 속성 수집 (CostCode)
+        if (item.cost_code_code) {
+            allProperties.push({ label: 'CC.System.code', value: item.cost_code_code });
+        }
+        if (item.cost_code_name) {
+            allProperties.push({ label: 'CC.System.name', value: item.cost_code_name });
+        }
+        if (item.cost_code_description) {
+            allProperties.push({ label: 'CC.System.description', value: item.cost_code_description });
+        }
+        if (item.cost_code_detail_code) {
+            allProperties.push({ label: 'CC.System.detail_code', value: item.cost_code_detail_code });
+        }
+        if (item.cost_code_category) {
+            allProperties.push({ label: 'CC.System.category', value: item.cost_code_category });
+        }
+        if (item.cost_code_product_name) {
+            allProperties.push({ label: 'CC.System.product_name', value: item.cost_code_product_name });
+        }
+        if (item.cost_code_spec) {
+            allProperties.push({ label: 'CC.System.spec', value: item.cost_code_spec });
+        }
+        if (item.cost_code_unit) {
+            allProperties.push({ label: 'CC.System.unit', value: item.cost_code_unit });
+        }
+        if (item.cost_code_note) {
+            allProperties.push({ label: 'CC.System.note', value: item.cost_code_note });
+        }
+        allProperties.push({ label: 'CC.System.ai_sd_enabled', value: item.cost_code_ai_sd_enabled ? '사용' : '미사용' });
+        allProperties.push({ label: 'CC.System.dd_enabled', value: item.cost_code_dd_enabled ? '사용' : '미사용' });
 
         if (!member) {
-            html += '<div class="property-section">';
+            // CI와 CC만 표시
+            const groupedProperties = window.groupFieldsByPrefix ? window.groupFieldsByPrefix(allProperties) : {};
+            const sectionDefs = window.getSectionDefinitions ? window.getSectionDefinitions() : [];
+
+            let html = '<div class="property-section">';
             html += '<p style="color: #999; font-style: italic;">연결된 수량산출부재가 없습니다.</p>';
             html += '</div>';
+
+            sectionDefs.forEach(section => {
+                const properties = groupedProperties[section.key];
+                if (properties && properties.length > 0) {
+                    html += '<div class="property-section">';
+                    html += `<h4 style="color: ${section.color}; border-bottom: 2px solid ${section.color}; padding-bottom: 5px;">${section.title}</h4>`;
+                    html += '<table class="properties-table"><tbody>';
+
+                    const sortedProps = properties.sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+                    sortedProps.forEach(prop => {
+                        html += `<tr><td class="prop-name">${prop.label}</td><td class="prop-value">${prop.value}</td></tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                    html += '</div>';
+                }
+            });
+
             detailsContainer.innerHTML = html;
             return;
         }
 
-        // ============ 2. QM 기본 속성 (상속) ============
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📌 기본 속성 (상속 from QM)</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${member.id || 'N/A'}</td></tr>`;
+        // QM 속성 수집 (상속)
+        allProperties.push({ label: 'QM.System.id', value: member.id || 'N/A' });
         if (member.name) {
-            html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${member.name}</td></tr>`;
+            allProperties.push({ label: 'QM.System.name', value: member.name });
         }
         if (member.classification_tag_name) {
-            html += `<tr><td class="prop-name">QM.classification_tag</td><td class="prop-value">${member.classification_tag_name}</td></tr>`;
+            allProperties.push({ label: 'QM.System.classification_tag', value: member.classification_tag_name });
         }
-        html += `<tr><td class="prop-name">QM.is_active</td><td class="prop-value">${member.is_active ? 'true' : 'false'}</td></tr>`;
+        allProperties.push({ label: 'QM.System.is_active', value: member.is_active ? 'true' : 'false' });
         if (member.raw_element_id) {
-            html += `<tr><td class="prop-name">QM.raw_element_id</td><td class="prop-value">${member.raw_element_id}</td></tr>`;
+            allProperties.push({ label: 'QM.System.raw_element_id', value: member.raw_element_id });
         }
         if (member.split_element_id) {
-            html += `<tr><td class="prop-name">QM.split_element_id</td><td class="prop-value">${member.split_element_id}</td></tr>`;
+            allProperties.push({ label: 'QM.System.split_element_id', value: member.split_element_id });
         }
-        html += '</tbody></table>';
-        html += '</div>';
 
-        // ============ 3. QM 부재 속성 (상속) ============
-        if (member.properties && Object.keys(member.properties).length > 0) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
-            html += '<table class="properties-table"><tbody>';
+        // QM properties
+        if (member.properties) {
             for (const [key, value] of Object.entries(member.properties)) {
                 if (value !== null && value !== undefined) {
-                    const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
-                    html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
+                    const displayValue = typeof value === 'number' ? value.toFixed(3) : String(value);
+                    allProperties.push({ label: `QM.Properties.${key}`, value: displayValue });
                 }
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
 
-        // ============ 4. MM 일람부호 (상속) ============
-        if (member.member_mark_mark || (member.member_mark_properties && Object.keys(member.member_mark_properties).length > 0)) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #7b1fa2; border-bottom: 2px solid #7b1fa2; padding-bottom: 5px;">📋 일람부호 (상속 from MM)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            if (member.member_mark_mark) {
-                html += `<tr><td class="prop-name">MM.mark</td><td class="prop-value">${member.member_mark_mark}</td></tr>`;
+        // MM 속성 수집 (상속)
+        if (member.member_mark_mark) {
+            allProperties.push({ label: 'MM.System.mark', value: member.member_mark_mark });
+        }
+        if (member.member_mark_properties) {
+            for (const [key, value] of Object.entries(member.member_mark_properties)) {
+                if (value !== null && value !== undefined) {
+                    allProperties.push({ label: `MM.Properties.${key}`, value: String(value) });
+                }
             }
-            if (member.member_mark_properties) {
-                for (const [key, value] of Object.entries(member.member_mark_properties)) {
-                    if (value !== null && value !== undefined) {
-                        html += `<tr><td class="prop-name">MM.properties.${key}</td><td class="prop-value">${value}</td></tr>`;
+        }
+
+        // SC 속성 수집 (상속)
+        if (member.space_name) {
+            allProperties.push({ label: 'SC.System.name', value: member.space_name });
+        }
+
+        // BIM 속성 수집 (상속)
+        const elementId = member.split_element_id || member.raw_element_id;
+        const fullBimObject = elementId && window.allRevitData ?
+            window.allRevitData.find(item => item.id === elementId) : null;
+
+        if (fullBimObject && fullBimObject.raw_data) {
+            const rawData = fullBimObject.raw_data;
+
+            // BIM 시스템 속성
+            allProperties.push({ label: 'BIM.System.id', value: fullBimObject.id || 'N/A' });
+            allProperties.push({ label: 'BIM.System.element_unique_id', value: fullBimObject.element_unique_id || 'N/A' });
+            allProperties.push({ label: 'BIM.System.geometry_volume', value: fullBimObject.geometry_volume || 'N/A' });
+
+            const tagsDisplay = Array.isArray(fullBimObject.classification_tags) && fullBimObject.classification_tags.length > 0
+                ? fullBimObject.classification_tags.join(', ')
+                : 'N/A';
+            allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay });
+
+            // BIM 기본 속성 (rawData의 top-level 속성들)
+            const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
+            for (const [attr, value] of Object.entries(rawData)) {
+                if (excludedKeys.includes(attr)) continue;
+                if (value === undefined || value === null || value === '') continue;
+                if (typeof value === 'object') continue;
+
+                allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+            }
+
+            // BIM Parameters
+            if (rawData.Parameters && typeof rawData.Parameters === 'object') {
+                for (const [key, value] of Object.entries(rawData.Parameters)) {
+                    if (key === 'Geometry') continue;
+                    if (value === null || value === undefined || value === '') continue;
+                    if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
+
+                    const displayValue = (typeof value === 'object')
+                        ? JSON.stringify(value).substring(0, 100)
+                        : String(value).substring(0, 200);
+                    allProperties.push({ label: `BIM.Parameters.${key}`, value: displayValue });
+                }
+            }
+
+            // BIM TypeParameters
+            if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
+                for (const [key, value] of Object.entries(rawData.TypeParameters)) {
+                    if (value === null || value === undefined || value === '') continue;
+                    if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
+
+                    const displayValue = (typeof value === 'object')
+                        ? JSON.stringify(value).substring(0, 100)
+                        : String(value).substring(0, 200);
+                    allProperties.push({ label: `BIM.TypeParameters.${key}`, value: displayValue });
+                }
+            }
+
+            // BIM의 다른 동적 속성들 (QuantitySet 등)
+            for (const [topLevelKey, topLevelValue] of Object.entries(rawData)) {
+                if (excludedKeys.includes(topLevelKey)) continue;
+                if (['Category', 'Family', 'Type', 'Level', 'Id', 'Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description', 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'].includes(topLevelKey)) continue;
+                if (typeof topLevelValue === 'object' && topLevelValue !== null && !Array.isArray(topLevelValue)) {
+                    if (topLevelKey === 'Parameters' || topLevelKey === 'TypeParameters') continue;
+
+                    for (const [key, value] of Object.entries(topLevelValue)) {
+                        if (value === null || value === undefined) continue;
+                        const displayValue = typeof value === 'object'
+                            ? JSON.stringify(value).substring(0, 100)
+                            : String(value).substring(0, 200);
+                        allProperties.push({ label: `BIM.${topLevelKey}.${key}`, value: displayValue });
                     }
                 }
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
+
+        // 할당된 공사코드 (from QM)
+        if (member.cost_codes && member.cost_codes.length > 0) {
+            member.cost_codes.forEach((code, idx) => {
+                allProperties.push({ label: `CC.Assigned.code_${idx + 1}`, value: code });
+            });
+        }
+
+        // 첫 번째 접두어로 그룹핑하여 렌더링
+        let html = '';
+        const groupedProperties = window.groupFieldsByPrefix ? window.groupFieldsByPrefix(allProperties) : {};
+        const sectionDefs = window.getSectionDefinitions ? window.getSectionDefinitions() : [];
+
+        sectionDefs.forEach(section => {
+            const properties = groupedProperties[section.key];
+            if (properties && properties.length > 0) {
+                html += '<div class="property-section">';
+                html += `<h4 style="color: ${section.color}; border-bottom: 2px solid ${section.color}; padding-bottom: 5px;">${section.title}</h4>`;
+                html += '<table class="properties-table"><tbody>';
+
+                const sortedProps = properties.sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+                sortedProps.forEach(prop => {
+                    html += `<tr><td class="prop-name">${prop.label}</td><td class="prop-value">${prop.value}</td></tr>`;
+                });
+
+                html += '</tbody></table>';
+                html += '</div>';
+            }
+        });
 
         detailsContainer.innerHTML = html;
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // Display activity objects in tab for selected BIM object
     function displayActivitiesInTab(object) {
@@ -4258,110 +4402,243 @@
         });
     }
 
+    // ▼▼▼ [수정] 통일된 그룹핑 시스템 적용 (2025-11-05) ▼▼▼
     // Display activity object details (same format as activity_object_manager.js renderAoPropertiesPanel)
     function displayActivityDetails(ao) {
         const detailsContainer = document.getElementById('three-d-activity-details');
         if (!detailsContainer) return;
 
-        let html = '';
+        // 모든 속성을 수집하여 첫 번째 접두어로 그룹핑
+        const allProperties = [];
 
-        // ============ 1. AO 기본 속성 ============
-        html += '<div class="property-section">';
-        html += '<h4 style="color: #6a1b9a; border-bottom: 2px solid #6a1b9a; padding-bottom: 5px;">📅 액티비티 객체 기본 속성</h4>';
-        html += '<table class="properties-table"><tbody>';
-        html += `<tr><td class="prop-name">AO.id</td><td class="prop-value">${ao.id || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">AO.start_date</td><td class="prop-value">${ao.start_date || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">AO.end_date</td><td class="prop-value">${ao.end_date || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">AO.actual_duration</td><td class="prop-value">${ao.actual_duration || 'N/A'}</td></tr>`;
-        html += `<tr><td class="prop-name">AO.quantity</td><td class="prop-value">${ao.quantity}</td></tr>`;
-        html += `<tr><td class="prop-name">AO.is_manual</td><td class="prop-value">${ao.is_manual ? 'true' : 'false'}</td></tr>`;
-        if (ao.manual_formula) {
-            html += `<tr><td class="prop-name">AO.manual_formula</td><td class="prop-value">${ao.manual_formula}</td></tr>`;
+        // AO 속성 수집
+        allProperties.push({ label: 'AO.System.id', value: ao.id || 'N/A' });
+        if (ao.start_date) {
+            allProperties.push({ label: 'AO.System.start_date', value: ao.start_date });
         }
-        html += `<tr><td class="prop-name">AO.progress</td><td class="prop-value">${ao.progress}%</td></tr>`;
-        html += '</tbody></table>';
-        html += '</div>';
+        if (ao.end_date) {
+            allProperties.push({ label: 'AO.System.end_date', value: ao.end_date });
+        }
+        if (ao.actual_duration !== null && ao.actual_duration !== undefined) {
+            allProperties.push({ label: 'AO.System.actual_duration', value: String(ao.actual_duration) });
+        }
+        if (ao.quantity !== null && ao.quantity !== undefined) {
+            allProperties.push({ label: 'AO.System.quantity', value: String(ao.quantity) });
+        }
+        allProperties.push({ label: 'AO.System.is_manual', value: ao.is_manual ? 'true' : 'false' });
+        if (ao.manual_formula) {
+            allProperties.push({ label: 'AO.System.manual_formula', value: ao.manual_formula });
+        }
+        if (ao.progress !== null && ao.progress !== undefined) {
+            allProperties.push({ label: 'AO.System.progress', value: `${ao.progress}%` });
+        }
+        if (ao.cost_item_id) {
+            allProperties.push({ label: 'AO.System.cost_item_id', value: ao.cost_item_id });
+        }
+        if (ao.activity_id) {
+            allProperties.push({ label: 'AO.System.activity_id', value: ao.activity_id });
+        }
 
-        // ============ 2. Activity 속성 ============
+        // AC 속성 수집 (Activity Code)
         if (ao.activity) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #d84315; border-bottom: 2px solid #d84315; padding-bottom: 5px;">⚙️ 액티비티 코드 속성</h4>';
-            html += '<table class="properties-table"><tbody>';
-            html += `<tr><td class="prop-name">Activity.code</td><td class="prop-value">${ao.activity.code || 'N/A'}</td></tr>`;
-            html += `<tr><td class="prop-name">Activity.name</td><td class="prop-value">${ao.activity.name || 'N/A'}</td></tr>`;
+            allProperties.push({ label: 'AC.System.code', value: ao.activity.code || 'N/A' });
+            allProperties.push({ label: 'AC.System.name', value: ao.activity.name || 'N/A' });
             if (ao.activity.duration_per_unit !== null && ao.activity.duration_per_unit !== undefined) {
-                html += `<tr><td class="prop-name">Activity.duration_per_unit</td><td class="prop-value">${ao.activity.duration_per_unit}</td></tr>`;
+                allProperties.push({ label: 'AC.System.duration_per_unit', value: String(ao.activity.duration_per_unit) });
             }
             if (ao.activity.responsible_person) {
-                html += `<tr><td class="prop-name">Activity.responsible_person</td><td class="prop-value">${ao.activity.responsible_person}</td></tr>`;
+                allProperties.push({ label: 'AC.System.responsible_person', value: ao.activity.responsible_person });
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
 
-        // ============ 3. CI 속성 (상속) ============
+        // CI 속성 수집 (CostItem)
         if (ao.cost_item) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #1976d2; border-bottom: 2px solid #1976d2; padding-bottom: 5px;">📊 산출항목 속성 (상속 from CI)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            html += `<tr><td class="prop-name">CI.id</td><td class="prop-value">${ao.cost_item.id || 'N/A'}</td></tr>`;
+            allProperties.push({ label: 'CI.System.id', value: ao.cost_item.id || 'N/A' });
             if (ao.cost_item.quantity !== undefined) {
-                html += `<tr><td class="prop-name">CI.quantity</td><td class="prop-value">${ao.cost_item.quantity}</td></tr>`;
+                allProperties.push({ label: 'CI.System.quantity', value: String(ao.cost_item.quantity) });
             }
             if (ao.cost_item.description) {
-                html += `<tr><td class="prop-name">CI.description</td><td class="prop-value">${ao.cost_item.description}</td></tr>`;
+                allProperties.push({ label: 'CI.System.description', value: ao.cost_item.description });
             }
-            html += '</tbody></table>';
-            html += '</div>';
+            if (ao.cost_item.quantity_member_id) {
+                allProperties.push({ label: 'CI.System.quantity_member_id', value: ao.cost_item.quantity_member_id });
+            }
         }
 
-        // ============ 4. CostCode 속성 (상속) ============
+        // CC 속성 수집 (CostCode)
         if (ao.cost_code) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #c62828; border-bottom: 2px solid #c62828; padding-bottom: 5px;">💰 공사코드 속성 (상속 from CostCode)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            html += `<tr><td class="prop-name">CostCode.code</td><td class="prop-value">${ao.cost_code.code || 'N/A'}</td></tr>`;
-            html += `<tr><td class="prop-name">CostCode.name</td><td class="prop-value">${ao.cost_code.name || 'N/A'}</td></tr>`;
+            allProperties.push({ label: 'CC.System.code', value: ao.cost_code.code || 'N/A' });
+            allProperties.push({ label: 'CC.System.name', value: ao.cost_code.name || 'N/A' });
             if (ao.cost_code.detail_code) {
-                html += `<tr><td class="prop-name">CostCode.detail_code</td><td class="prop-value">${ao.cost_code.detail_code}</td></tr>`;
+                allProperties.push({ label: 'CC.System.detail_code', value: ao.cost_code.detail_code });
+            }
+            if (ao.cost_code.description) {
+                allProperties.push({ label: 'CC.System.description', value: ao.cost_code.description });
+            }
+            if (ao.cost_code.category) {
+                allProperties.push({ label: 'CC.System.category', value: ao.cost_code.category });
+            }
+            if (ao.cost_code.product_name) {
+                allProperties.push({ label: 'CC.System.product_name', value: ao.cost_code.product_name });
+            }
+            if (ao.cost_code.spec) {
+                allProperties.push({ label: 'CC.System.spec', value: ao.cost_code.spec });
+            }
+            if (ao.cost_code.unit) {
+                allProperties.push({ label: 'CC.System.unit', value: ao.cost_code.unit });
             }
             if (ao.cost_code.note) {
-                html += `<tr><td class="prop-name">CostCode.note</td><td class="prop-value">${ao.cost_code.note}</td></tr>`;
+                allProperties.push({ label: 'CC.System.note', value: ao.cost_code.note });
             }
-            html += '</tbody></table>';
-            html += '</div>';
         }
 
-        // ============ 5. QM 속성 (상속) ============
-        if (ao.quantity_member) {
-            html += '<div class="property-section">';
-            html += '<h4 style="color: #0288d1; border-bottom: 2px solid #0288d1; padding-bottom: 5px;">📌 수량산출부재 기본 속성 (상속 from QM)</h4>';
-            html += '<table class="properties-table"><tbody>';
-            html += `<tr><td class="prop-name">QM.id</td><td class="prop-value">${ao.quantity_member.id || 'N/A'}</td></tr>`;
-            if (ao.quantity_member.name) {
-                html += `<tr><td class="prop-name">QM.name</td><td class="prop-value">${ao.quantity_member.name}</td></tr>`;
+        // QuantityMember에서 상속받을 속성들
+        const member = ao.quantity_member || (ao.cost_item && ao.cost_item.quantity_member_id ?
+            window.loadedQuantityMembers?.find(m => m.id === ao.cost_item.quantity_member_id) : null);
+
+        if (member) {
+            // QM 속성 수집
+            allProperties.push({ label: 'QM.System.id', value: member.id || 'N/A' });
+            if (member.name) {
+                allProperties.push({ label: 'QM.System.name', value: member.name });
             }
-            html += '</tbody></table>';
-            html += '</div>';
+            if (member.classification_tag_name) {
+                allProperties.push({ label: 'QM.System.classification_tag', value: member.classification_tag_name });
+            }
+            allProperties.push({ label: 'QM.System.is_active', value: member.is_active ? 'true' : 'false' });
+            if (member.raw_element_id) {
+                allProperties.push({ label: 'QM.System.raw_element_id', value: member.raw_element_id });
+            }
+            if (member.split_element_id) {
+                allProperties.push({ label: 'QM.System.split_element_id', value: member.split_element_id });
+            }
 
             // QM properties
-            if (ao.quantity_member.properties && Object.keys(ao.quantity_member.properties).length > 0) {
-                html += '<div class="property-section">';
-                html += '<h4 style="color: #f57c00; border-bottom: 2px solid #f57c00; padding-bottom: 5px;">🔢 부재 속성 (상속 from QM)</h4>';
-                html += '<table class="properties-table"><tbody>';
-                for (const [key, value] of Object.entries(ao.quantity_member.properties)) {
+            if (member.properties) {
+                for (const [key, value] of Object.entries(member.properties)) {
                     if (value !== null && value !== undefined) {
-                        const displayValue = typeof value === 'number' ? value.toFixed(3) : value;
-                        html += `<tr><td class="prop-name">QM.properties.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
+                        const displayValue = typeof value === 'number' ? value.toFixed(3) : String(value);
+                        allProperties.push({ label: `QM.Properties.${key}`, value: displayValue });
                     }
                 }
+            }
+
+            // MM 속성 수집 (상속)
+            if (member.member_mark_mark) {
+                allProperties.push({ label: 'MM.System.mark', value: member.member_mark_mark });
+            }
+            if (member.member_mark_properties) {
+                for (const [key, value] of Object.entries(member.member_mark_properties)) {
+                    if (value !== null && value !== undefined) {
+                        allProperties.push({ label: `MM.Properties.${key}`, value: String(value) });
+                    }
+                }
+            }
+
+            // SC 속성 수집 (상속)
+            if (member.space_name) {
+                allProperties.push({ label: 'SC.System.name', value: member.space_name });
+            }
+
+            // BIM 속성 수집 (상속)
+            const elementId = member.split_element_id || member.raw_element_id;
+            const fullBimObject = elementId && window.allRevitData ?
+                window.allRevitData.find(item => item.id === elementId) : null;
+
+            if (fullBimObject && fullBimObject.raw_data) {
+                const rawData = fullBimObject.raw_data;
+
+                // BIM 시스템 속성
+                allProperties.push({ label: 'BIM.System.id', value: fullBimObject.id || 'N/A' });
+                allProperties.push({ label: 'BIM.System.element_unique_id', value: fullBimObject.element_unique_id || 'N/A' });
+                allProperties.push({ label: 'BIM.System.geometry_volume', value: fullBimObject.geometry_volume || 'N/A' });
+
+                const tagsDisplay = Array.isArray(fullBimObject.classification_tags) && fullBimObject.classification_tags.length > 0
+                    ? fullBimObject.classification_tags.join(', ')
+                    : 'N/A';
+                allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay });
+
+                // BIM 기본 속성
+                const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
+                for (const [attr, value] of Object.entries(rawData)) {
+                    if (excludedKeys.includes(attr)) continue;
+                    if (value === undefined || value === null || value === '') continue;
+                    if (typeof value === 'object') continue;
+
+                    allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+                }
+
+                // BIM Parameters
+                if (rawData.Parameters && typeof rawData.Parameters === 'object') {
+                    for (const [key, value] of Object.entries(rawData.Parameters)) {
+                        if (key === 'Geometry') continue;
+                        if (value === null || value === undefined || value === '') continue;
+                        if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
+
+                        const displayValue = (typeof value === 'object')
+                            ? JSON.stringify(value).substring(0, 100)
+                            : String(value).substring(0, 200);
+                        allProperties.push({ label: `BIM.Parameters.${key}`, value: displayValue });
+                    }
+                }
+
+                // BIM TypeParameters
+                if (rawData.TypeParameters && typeof rawData.TypeParameters === 'object') {
+                    for (const [key, value] of Object.entries(rawData.TypeParameters)) {
+                        if (value === null || value === undefined || value === '') continue;
+                        if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) continue;
+
+                        const displayValue = (typeof value === 'object')
+                            ? JSON.stringify(value).substring(0, 100)
+                            : String(value).substring(0, 200);
+                        allProperties.push({ label: `BIM.TypeParameters.${key}`, value: displayValue });
+                    }
+                }
+
+                // BIM의 다른 동적 속성들
+                for (const [topLevelKey, topLevelValue] of Object.entries(rawData)) {
+                    if (excludedKeys.includes(topLevelKey)) continue;
+                    if (['Category', 'Family', 'Type', 'Level', 'Id', 'Name', 'IfcClass', 'ElementId', 'UniqueId', 'Description', 'RelatingType', 'SpatialContainer', 'Aggregates', 'Nests'].includes(topLevelKey)) continue;
+                    if (typeof topLevelValue === 'object' && topLevelValue !== null && !Array.isArray(topLevelValue)) {
+                        if (topLevelKey === 'Parameters' || topLevelKey === 'TypeParameters') continue;
+
+                        for (const [key, value] of Object.entries(topLevelValue)) {
+                            if (value === null || value === undefined) continue;
+                            const displayValue = typeof value === 'object'
+                                ? JSON.stringify(value).substring(0, 100)
+                                : String(value).substring(0, 200);
+                            allProperties.push({ label: `BIM.${topLevelKey}.${key}`, value: displayValue });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 첫 번째 접두어로 그룹핑하여 렌더링
+        let html = '';
+        const groupedProperties = window.groupFieldsByPrefix ? window.groupFieldsByPrefix(allProperties) : {};
+        const sectionDefs = window.getSectionDefinitions ? window.getSectionDefinitions() : [];
+
+        sectionDefs.forEach(section => {
+            const properties = groupedProperties[section.key];
+            if (properties && properties.length > 0) {
+                html += '<div class="property-section">';
+                html += `<h4 style="color: ${section.color}; border-bottom: 2px solid ${section.color}; padding-bottom: 5px;">${section.title}</h4>`;
+                html += '<table class="properties-table"><tbody>';
+
+                const sortedProps = properties.sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+                sortedProps.forEach(prop => {
+                    html += `<tr><td class="prop-name">${prop.label}</td><td class="prop-value">${prop.value}</td></tr>`;
+                });
+
                 html += '</tbody></table>';
                 html += '</div>';
             }
-        }
+        });
 
         detailsContainer.innerHTML = html;
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // Find activity by ID
     function findActivityById(activityId) {
