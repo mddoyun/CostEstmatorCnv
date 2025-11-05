@@ -6415,6 +6415,7 @@ def activity_objects_api(request, project_id, ao_id=None):
                 'quantity': float(ao.quantity),
                 'is_manual': ao.is_manual,
                 'manual_formula': ao.manual_formula,
+                'quantity_expression': ao.quantity_expression,  # ▼▼▼ [추가] quantity_expression 필드 추가 (2025-11-05) ▼▼▼
                 'progress': float(ao.progress),
                 'metadata': ao.metadata,
                 'created_at': ao.created_at.isoformat() if ao.created_at else None,

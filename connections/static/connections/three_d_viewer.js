@@ -4283,8 +4283,9 @@
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
+    // ▼▼▼ [수정] 액티비티 객체 자동 로드 추가 (2025-11-05) ▼▼▼
     // Display activity objects in tab for selected BIM object
-    function displayActivitiesInTab(object) {
+    async function displayActivitiesInTab(object) {
         const listContainer = document.getElementById('three-d-activities-list');
         if (!listContainer) {
             console.error('[3D Viewer] three-d-activities-list element not found!');
@@ -4292,6 +4293,14 @@
         }
         console.log('[3D Viewer] displayActivitiesInTab called for object:', object.userData);
         console.log('[3D Viewer] window.loadedActivityObjects:', window.loadedActivityObjects);
+
+        // 액티비티 객체가 로드되지 않았으면 로드
+        if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
+            console.log('[3D Viewer] Loading activity objects...');
+            if (window.loadActivityObjects) {
+                await window.loadActivityObjects();
+            }
+        }
 
         // Find activity objects related to this object through cost items
         let activityObjects = [];
