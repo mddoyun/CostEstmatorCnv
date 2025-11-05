@@ -3204,33 +3204,60 @@ def export_classification_rules(request, project_id):
 
 @require_http_methods(["POST"])
 def import_classification_rules(request, project_id):
+    print(f"[DEBUG][import_classification_rules] Request received for project_id: {project_id}")
     project = Project.objects.get(id=project_id)
     csv_file = request.FILES.get('csv_file')
+    print(f"[DEBUG][import_classification_rules] CSV file: {csv_file}")
     if not csv_file:
         return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
 
     try:
         ClassificationRule.objects.filter(project=project).delete()
-        decoded_file = csv_file.read().decode('utf-8').splitlines()
+        print(f"[DEBUG][import_classification_rules] Deleted existing rules")
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        decoded_file = csv_file.read().decode('utf-8-sig').splitlines()
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         reader = csv.DictReader(decoded_file)
-        
+
+        imported_count = 0
+        created_tags = []
         for row in reader:
             tag_name = row.get('target_tag_name')
-            try:
-                target_tag = QuantityClassificationTag.objects.get(project=project, name=tag_name)
-                # ▼▼▼ [수정] priority 필드 제거 (2025-11-05) ▼▼▼
-                ClassificationRule.objects.create(
-                    project=project,
-                    description=row.get('description', ''),
-                    target_tag=target_tag,
-                    conditions=json.loads(row.get('conditions', '[]'))
-                )
-                # ▲▲▲ [수정] 여기까지 ▲▲▲
-            except QuantityClassificationTag.DoesNotExist:
-                print(f"경고: '{tag_name}' 태그를 찾을 수 없어 해당 규칙을 건너뜁니다.")
-                continue
-        return JsonResponse({'status': 'success', 'message': '분류 할당 룰셋을 성공적으로 가져왔습니다.'})
+            print(f"[DEBUG][import_classification_rules] Processing row: tag_name={tag_name}")
+
+            # ▼▼▼ [수정] 태그가 없으면 자동 생성 (2025-11-05) ▼▼▼
+            target_tag, created = QuantityClassificationTag.objects.get_or_create(
+                project=project,
+                name=tag_name
+            )
+            if created:
+                print(f"[DEBUG][import_classification_rules] Created new tag: {tag_name}")
+                created_tags.append(tag_name)
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+            # ▼▼▼ [수정] priority 필드 제거 (2025-11-05) ▼▼▼
+            ClassificationRule.objects.create(
+                project=project,
+                description=row.get('description', ''),
+                target_tag=target_tag,
+                conditions=json.loads(row.get('conditions', '[]'))
+            )
+            imported_count += 1
+            print(f"[DEBUG][import_classification_rules] Created rule for tag: {tag_name}")
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        print(f"[DEBUG][import_classification_rules] Successfully imported {imported_count} rules, created {len(created_tags)} new tags")
+
+        # ▼▼▼ [수정] 생성된 태그가 있으면 정보 메시지 표시 (2025-11-05) ▼▼▼
+        if created_tags:
+            created_list = ', '.join(created_tags)
+            message = f'{imported_count}개의 분류 할당 룰셋을 성공적으로 가져왔습니다. 새로 생성된 태그: {created_list}'
+            return JsonResponse({'status': 'success', 'message': message})
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        return JsonResponse({'status': 'success', 'message': f'{imported_count}개의 분류 할당 룰셋을 성공적으로 가져왔습니다.'})
     except Exception as e:
+        print(f"[ERROR][import_classification_rules] Error: {e}")
         return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 # --- 2. PropertyMappingRule ---
@@ -3261,7 +3288,9 @@ def import_property_mapping_rules(request, project_id):
     if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         PropertyMappingRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             try:
                 target_tag = QuantityClassificationTag.objects.get(project=project, name=row.get('target_tag_name'))
@@ -3303,7 +3332,9 @@ def import_cost_code_rules(request, project_id):
     if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         CostCodeRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             try:
                 target_cost_code = CostCode.objects.get(project=project, code=row.get('target_cost_code_code'))
@@ -3340,7 +3371,9 @@ def import_member_mark_assignment_rules(request, project_id):
     if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         MemberMarkAssignmentRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             MemberMarkAssignmentRule.objects.create(
                 project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
@@ -3373,7 +3406,9 @@ def import_cost_code_assignment_rules(request, project_id):
     if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         CostCodeAssignmentRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             CostCodeAssignmentRule.objects.create(
                 project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
@@ -3409,7 +3444,9 @@ def import_space_classification_rules(request, project_id):
     if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         SpaceClassificationRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             SpaceClassificationRule.objects.create(
                 project=project, level_depth=int(row.get('level_depth')), level_name=row.get('level_name'),
@@ -3447,7 +3484,9 @@ def import_space_assignment_rules(request, project_id):
     if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         SpaceAssignmentRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             SpaceAssignmentRule.objects.create(
                 project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
@@ -3490,7 +3529,9 @@ def import_activity_assignment_rules(request, project_id):
         return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
     try:
         ActivityAssignmentRule.objects.filter(project=project).delete()
-        reader = csv.DictReader(csv_file.read().decode('utf-8').splitlines())
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         for row in reader:
             activity_code = row.get('target_activity_code')
             try:
@@ -3540,8 +3581,10 @@ def import_cost_codes(request, project_id):
     try:
         # 기존 데이터를 모두 삭제 (덮어쓰기 방식)
         CostCode.objects.filter(project=project).delete()
-        
-        decoded_file = csv_file.read().decode('utf-8').splitlines()
+
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        decoded_file = csv_file.read().decode('utf-8-sig').splitlines()
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         reader = csv.DictReader(decoded_file)
         
         codes_to_create = []
@@ -3588,8 +3631,10 @@ def import_member_marks(request, project_id):
 
     try:
         MemberMark.objects.filter(project=project).delete()
-        
-        decoded_file = csv_file.read().decode('utf-8').splitlines()
+
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        decoded_file = csv_file.read().decode('utf-8-sig').splitlines()
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         reader = csv.DictReader(decoded_file)
         
         marks_to_create = []
@@ -3651,7 +3696,9 @@ def import_space_classifications(request, project_id):
         return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
 
     try:
-        decoded_file = csv_file.read().decode('utf-8').splitlines()
+        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
+        decoded_file = csv_file.read().decode('utf-8-sig').splitlines()
+        # ▲▲▲ [수정] 여기까지 ▲▲▲
         reader = csv.DictReader(decoded_file)
         csv_data = list(reader)
 

@@ -538,38 +538,53 @@ function getCurrentViewerState() {
 
 // ▼▼▼ [추가] CSV 파일이 선택되었을 때 서버로 전송하는 함수 ▼▼▼
 async function handleCsvFileSelect(event) {
+    console.log('[DEBUG][handleCsvFileSelect] Function called');
+    console.log('[DEBUG][handleCsvFileSelect] currentProjectId:', currentProjectId);
+    console.log('[DEBUG][handleCsvFileSelect] currentCsvImportUrl:', currentCsvImportUrl);
+
     if (!currentProjectId || !currentCsvImportUrl) {
         showToast("프로젝트가 선택되지 않았거나, 잘못된 접근입니다.", "error");
         return;
     }
     const file = event.target.files[0];
+    console.log('[DEBUG][handleCsvFileSelect] Selected file:', file?.name);
     if (!file) return;
 
     const formData = new FormData();
     formData.append("csv_file", file);
 
     try {
+        console.log('[DEBUG][handleCsvFileSelect] Sending POST request to:', currentCsvImportUrl);
         const response = await fetch(currentCsvImportUrl, {
             method: "POST",
             headers: { "X-CSRFToken": csrftoken },
             body: formData,
         });
+        console.log('[DEBUG][handleCsvFileSelect] Response received, status:', response.status);
         const result = await response.json();
+        console.log('[DEBUG][handleCsvFileSelect] Response data:', result);
+
         if (!response.ok) {
             throw new Error(result.message || "파일 업로드에 실패했습니다.");
         }
         showToast(result.message, "success");
+        console.log('[DEBUG][handleCsvFileSelect] CSV import successful.');
 
         // 현재 활성화된 탭에 따라 올바른 데이터를 다시 로드합니다.
+        console.log('[DEBUG][handleCsvFileSelect] activeTab:', activeTab);
         if (activeTab === "ruleset-management") {
             const activeRulesetContent = document.querySelector(
                 ".ruleset-content.active"
             );
+            console.log('[DEBUG][handleCsvFileSelect] activeRulesetContent:', activeRulesetContent);
             if (activeRulesetContent) {
                 const rulesetId = activeRulesetContent.id;
-                if (rulesetId === "classification-ruleset")
+                console.log('[DEBUG][handleCsvFileSelect] rulesetId:', rulesetId);
+                if (rulesetId === "classification-ruleset") {
+                    console.log('[DEBUG][handleCsvFileSelect] Calling loadClassificationRules()');
                     await loadClassificationRules();
-                else if (rulesetId === "mapping-ruleset")
+                    console.log('[DEBUG][handleCsvFileSelect] loadClassificationRules() completed');
+                } else if (rulesetId === "mapping-ruleset")
                     await loadPropertyMappingRules();
                 else if (rulesetId === "costcode-ruleset")
                     await loadCostCodeRules();
@@ -591,9 +606,11 @@ async function handleCsvFileSelect(event) {
             await loadSpaceClassifications();
         }
     } catch (error) {
+        console.error('[ERROR][handleCsvFileSelect]', error);
         showToast(error.message, "error");
     } finally {
         // 작업 완료 후, 파일 입력과 URL 변수 초기화
+        console.log('[DEBUG][handleCsvFileSelect] Cleanup - resetting file input and URL');
         event.target.value = "";
         currentCsvImportUrl = null;
     }

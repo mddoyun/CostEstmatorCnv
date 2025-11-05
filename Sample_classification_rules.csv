@@ -1,0 +1,3 @@
+﻿﻿﻿id,description,target_tag_name,conditions
+﻿81,조적벽,조적벽,"[{""parameter"": ""BIM.Attributes.Tag"", ""operator"": ""contains"", ""value"": ""#벽돌 #""}, {""parameter"": ""BIM.Attributes.Tag"", ""operator"": ""contains"", ""value"": ""#벽 #""}]"
+﻿82,마감바닥,마감바닥,"[{""parameter"": ""BIM.Attributes.Tag"", ""operator"": ""contains"", ""value"": ""#마감 #""}, {""parameter"": ""BIM.Attributes.Tag"", ""operator"": ""contains"", ""value"": ""#바닥 #""}]"

@@ -138,23 +138,33 @@ async function deleteClassificationRule(ruleId) {
  */
 
 async function loadClassificationRules() {
+    console.log('[DEBUG][loadClassificationRules] Function called');
+    console.log('[DEBUG][loadClassificationRules] currentProjectId:', currentProjectId);
+
     if (!currentProjectId) {
+        console.log('[DEBUG][loadClassificationRules] No project ID, returning early');
         loadedClassificationRules = [];
         renderClassificationRulesetTable(loadedClassificationRules);
         return;
     }
+
+    const url = `/connections/api/rules/classification/${currentProjectId}/`;
+    console.log('[DEBUG][loadClassificationRules] About to fetch from:', url);
+
     try {
         // ▼▼▼ [수정] URL 앞에 '/connections'를 추가합니다. ▼▼▼
-        const response = await fetch(
-            `/connections/api/rules/classification/${currentProjectId}/`
-        );
+        const response = await fetch(url);
+        console.log('[DEBUG][loadClassificationRules] Fetch completed, response.ok:', response.ok, 'status:', response.status);
+
         if (!response.ok) {
             throw new Error('룰셋 데이터를 불러오는데 실패했습니다.');
         }
         loadedClassificationRules = await response.json(); // 불러온 데이터를 전역 변수에 저장
+        console.log('[DEBUG][loadClassificationRules] Loaded rules count:', loadedClassificationRules.length);
         renderClassificationRulesetTable(loadedClassificationRules); // 저장된 데이터로 테이블 렌더링
+        console.log('[DEBUG][loadClassificationRules] Table rendered successfully');
     } catch (error) {
-        console.error('Error loading classification rules:', error);
+        console.error('[ERROR][loadClassificationRules]', error);
         loadedClassificationRules = [];
         renderClassificationRulesetTable(loadedClassificationRules); // 에러 시 빈 테이블 표시
         showToast(error.message, 'error');

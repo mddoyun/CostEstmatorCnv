@@ -744,10 +744,10 @@ window.loadSpecificRuleset = async function loadSpecificRuleset(rulesetType) {
 
     switch (rulesetType) {
         case 'classification-ruleset':
-            loadClassificationRules();
+            await loadClassificationRules();
             break;
         case 'mapping-ruleset':
-            loadPropertyMappingRules();
+            await loadPropertyMappingRules();
             break;
         case 'costcode-ruleset':
             await loadCostCodes(); // Load cost codes first for dropdown
@@ -772,25 +772,25 @@ window.loadSpecificRuleset = async function loadSpecificRuleset(rulesetType) {
                 await new Promise(resolve => setTimeout(resolve, 1500));
             }
 
-            loadCostCodeRules();
+            await loadCostCodeRules();
             break;
         case 'member-mark-assignment-ruleset':
             await loadMemberMarks(); // Load member marks first for dropdown
-            loadMemberMarkAssignmentRules();
+            await loadMemberMarkAssignmentRules();
             break;
         case 'cost-code-assignment-ruleset':
             await loadCostCodes(); // Load cost codes first for dropdown
-            loadCostCodeAssignmentRules();
+            await loadCostCodeAssignmentRules();
             break;
         case 'space-classification-ruleset':
-            loadSpaceClassificationRules();
+            await loadSpaceClassificationRules();
             break;
         case 'space-assignment-ruleset':
-            loadSpaceAssignmentRules();
+            await loadSpaceAssignmentRules();
             break;
         case 'activity-assignment-ruleset':
             await loadActivities(); // 액티비티 목록 먼저 로드하고 기다림
-            loadActivityAssignmentRules();
+            await loadActivityAssignmentRules();
             break;
         default:
             console.error(
