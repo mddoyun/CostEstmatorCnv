@@ -7235,3 +7235,79 @@ def chat_conversation_api(request):
         }, status=500)
 
 # ▲▲▲ [NEW] Chat Conversation API End ▲▲▲
+
+
+# ▼▼▼ [NEW] Home Dashboard API ▼▼▼
+@csrf_exempt
+def home_dashboard_api(request, project_id):
+    """
+    홈 대시보드 데이터 제공
+    - 총 공사비 (상세내역서에서 계산)
+    - 공정 기간 (Activity에서 시작일/종료일 계산)
+    """
+    try:
+        project = Project.objects.get(id=project_id)
+        print(f"[Dashboard API] Loading dashboard data for project: {project.name}")
+
+        # ===== 1. 총 공사비 계산 (CostItem의 total_price 합산) =====
+        cost_items = CostItem.objects.filter(project=project)
+        total_cost = Decimal('0')
+
+        for ci in cost_items:
+            if ci.total_price:
+                total_cost += Decimal(str(ci.total_price))
+
+        print(f"[Dashboard API] Total cost calculated: {total_cost}")
+
+        # ===== 2. 공정 기간 계산 (Activity의 시작일/종료일) =====
+        activities = Activity.objects.filter(project=project)
+
+        start_date = None
+        end_date = None
+        total_days = 0
+
+        if activities.exists():
+            # 모든 Activity의 시작일/종료일 계산
+            for activity in activities:
+                if activity.start_date:
+                    if not start_date or activity.start_date < start_date:
+                        start_date = activity.start_date
+
+                if activity.end_date:
+                    if not end_date or activity.end_date > end_date:
+                        end_date = activity.end_date
+
+            # 총 공기 계산
+            if start_date and end_date:
+                total_days = (end_date - start_date).days + 1  # 시작일 포함
+
+        print(f"[Dashboard API] Schedule: {start_date} ~ {end_date} ({total_days} days)")
+
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'total_cost': float(total_cost),
+                'total_cost_formatted': f"{total_cost:,.0f}" if total_cost > 0 else "-",
+                'schedule': {
+                    'start_date': start_date.strftime('%Y-%m-%d') if start_date else None,
+                    'end_date': end_date.strftime('%Y-%m-%d') if end_date else None,
+                    'total_days': total_days
+                }
+            }
+        })
+
+    except Project.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': '프로젝트를 찾을 수 없습니다.'
+        }, status=404)
+    except Exception as e:
+        print(f"[Dashboard API] Error: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({
+            'success': False,
+            'error': f'오류 발생: {str(e)}'
+        }, status=500)
+
+# ▲▲▲ [NEW] Home Dashboard API End ▲▲▲

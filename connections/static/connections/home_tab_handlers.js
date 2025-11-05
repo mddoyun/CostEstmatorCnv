@@ -199,8 +199,17 @@ function updateHomeCurrentProjectInfo() {
 
         currentProjectName.textContent = projectName;
         currentProjectInfo.style.display = 'block';
+
+        // ▼▼▼ [NEW] 대시보드 표시 및 데이터 로드 ▼▼▼
+        showHomeDashboard();
+        loadHomeDashboardData(currentProjectId);
+        // ▲▲▲ [NEW] 여기까지 ▲▲▲
     } else {
         currentProjectInfo.style.display = 'none';
+
+        // ▼▼▼ [NEW] 대시보드 숨기기 ▼▼▼
+        hideHomeDashboard();
+        // ▲▲▲ [NEW] 여기까지 ▲▲▲
     }
 }
 
@@ -505,6 +514,110 @@ function setupHomeTabListeners() {
     console.log('[DEBUG][setupHomeTabListeners] === COMPLETED setupHomeTabListeners ===');
 }
 
+// ▼▼▼ [NEW] 대시보드 함수들 ▼▼▼
+
+/**
+ * 대시보드 표시
+ */
+function showHomeDashboard() {
+    const dashboard = document.getElementById('home-dashboard');
+    const noProjectMessage = document.getElementById('home-no-project-message');
+
+    if (dashboard) {
+        dashboard.style.display = 'block';
+    }
+    if (noProjectMessage) {
+        noProjectMessage.style.display = 'none';
+    }
+}
+
+/**
+ * 대시보드 숨기기
+ */
+function hideHomeDashboard() {
+    const dashboard = document.getElementById('home-dashboard');
+    const noProjectMessage = document.getElementById('home-no-project-message');
+
+    if (dashboard) {
+        dashboard.style.display = 'none';
+    }
+    if (noProjectMessage) {
+        noProjectMessage.style.display = 'block';
+    }
+}
+
+/**
+ * 대시보드 데이터 로드
+ */
+async function loadHomeDashboardData(projectId) {
+    console.log('[Dashboard] Loading dashboard data for project:', projectId);
+
+    if (!projectId) {
+        console.warn('[Dashboard] No project ID provided');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/connections/api/dashboard/${projectId}/`);
+        const result = await response.json();
+
+        console.log('[Dashboard] Dashboard data loaded:', result);
+
+        if (result.success && result.data) {
+            updateDashboardUI(result.data);
+        } else {
+            console.error('[Dashboard] Failed to load dashboard data:', result.error);
+            showToast('대시보드 데이터를 불러오지 못했습니다.', 'error');
+        }
+    } catch (error) {
+        console.error('[Dashboard] Error loading dashboard data:', error);
+        showToast('대시보드 데이터 로드 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+/**
+ * 대시보드 UI 업데이트
+ */
+function updateDashboardUI(data) {
+    console.log('[Dashboard] Updating dashboard UI with data:', data);
+
+    // 1. 총 공사비 업데이트
+    const totalCostElement = document.getElementById('dashboard-total-cost');
+    if (totalCostElement) {
+        if (data.total_cost > 0) {
+            totalCostElement.textContent = data.total_cost_formatted + '원';
+        } else {
+            totalCostElement.textContent = '데이터 없음';
+            totalCostElement.style.fontSize = '18px';
+        }
+    }
+
+    // 2. 공정 기간 업데이트
+    const startDateElement = document.getElementById('dashboard-start-date');
+    const endDateElement = document.getElementById('dashboard-end-date');
+    const totalDaysElement = document.getElementById('dashboard-total-days');
+
+    if (data.schedule) {
+        if (startDateElement) {
+            startDateElement.textContent = data.schedule.start_date || '-';
+        }
+        if (endDateElement) {
+            endDateElement.textContent = data.schedule.end_date || '-';
+        }
+        if (totalDaysElement) {
+            if (data.schedule.total_days > 0) {
+                totalDaysElement.textContent = data.schedule.total_days.toLocaleString();
+            } else {
+                totalDaysElement.textContent = '-';
+            }
+        }
+    }
+
+    console.log('[Dashboard] Dashboard UI updated successfully');
+}
+
+// ▲▲▲ [NEW] 대시보드 함수들 끝 ▲▲▲
+
 // Export functions to window for global access
 window.loadHomeProjectList = loadHomeProjectList;
 window.updateHomeProjectListSelection = updateHomeProjectListSelection;
@@ -514,3 +627,7 @@ window.handleHomeCreateProject = handleHomeCreateProject;
 window.handleHomeDeleteProject = handleHomeDeleteProject;
 window.setupHomeTabListeners = setupHomeTabListeners;
 window.navigateToTab = navigateToTab;
+window.showHomeDashboard = showHomeDashboard;  // NEW
+window.hideHomeDashboard = hideHomeDashboard;  // NEW
+window.loadHomeDashboardData = loadHomeDashboardData;  // NEW
+window.updateDashboardUI = updateDashboardUI;  // NEW

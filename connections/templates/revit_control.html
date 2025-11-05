@@ -206,7 +206,7 @@
 
             <div class="main-content">
                 <div id="home" class="tab-content active" style="overflow-y: auto; height: 100%;">
-                    <div style="padding: 30px; max-width: 1400px; margin: 0 auto;">
+                    <div style="padding: 30px; max-width: 1800px; margin: 0 auto;">
                         <h1 style="font-size: 32px; margin-bottom: 10px; color: #1976d2; font-weight: bold;">
                             COST ESTIMATOR & SCHEDULER
                         </h1>
@@ -214,83 +214,116 @@
                             BIM & AI 기반 건설원가산출 및 공정계획 시스템
                         </p>
 
-                        <!-- 프로젝트 관리 섹션 -->
-                        <div style="background: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
-                            <h2 style="font-size: 20px; margin: 0 0 15px 0; color: #333;">프로젝트 관리</h2>
+                        <!-- 2-Column 레이아웃 -->
+                        <div style="display: grid; grid-template-columns: 400px 1fr; gap: 30px; align-items: start;">
 
-                            <!-- 프로젝트 생성 -->
-                            <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
-                                <input type="text" id="home-new-project-name" placeholder="새 프로젝트 이름..." style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <button id="home-create-project-btn" style="padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap;">
-                                    ➕ 새 프로젝트
-                                </button>
-                            </div>
+                            <!-- 왼쪽: 프로젝트 관리 영역 -->
+                            <div>
+                                <!-- 프로젝트 관리 섹션 -->
+                                <div style="background: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                    <h2 style="font-size: 20px; margin: 0 0 15px 0; color: #333;">프로젝트 관리</h2>
 
-                            <!-- 프로젝트 관리 버튼 -->
-                            <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
-                                <button id="home-import-project-btn" style="padding: 8px 16px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-                                    📥 프로젝트 가져오기
-                                </button>
-                                <button id="home-export-project-btn" style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;" disabled>
-                                    📤 프로젝트 내보내기
-                                </button>
-                                <button id="home-delete-project-btn" style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-left: auto;" disabled>
-                                    🗑️ 프로젝트 삭제
-                                </button>
-                            </div>
+                                    <!-- 프로젝트 생성 -->
+                                    <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                                        <input type="text" id="home-new-project-name" placeholder="새 프로젝트 이름..." style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">
+                                        <button id="home-create-project-btn" style="width: 100%; padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                                            ➕ 새 프로젝트
+                                        </button>
+                                    </div>
 
-                            <div id="home-project-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; background: white;">
-                                <p style="padding: 20px; text-align: center; color: #999;">프로젝트 목록을 불러오는 중...</p>
-                            </div>
+                                    <!-- 프로젝트 관리 버튼 -->
+                                    <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
+                                        <button id="home-import-project-btn" style="width: 100%; padding: 8px 16px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">
+                                            📥 프로젝트 가져오기
+                                        </button>
+                                        <button id="home-export-project-btn" style="width: 100%; padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;" disabled>
+                                            📤 프로젝트 내보내기
+                                        </button>
+                                        <button id="home-delete-project-btn" style="width: 100%; padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;" disabled>
+                                            🗑️ 프로젝트 삭제
+                                        </button>
+                                    </div>
 
-                            <div id="home-current-project-info" style="margin-top: 15px; padding: 15px; background: #e3f2fd; border-radius: 4px; display: none;">
-                                <strong style="color: #1976d2;">현재 선택된 프로젝트:</strong>
-                                <span id="home-current-project-name" style="color: #333; margin-left: 10px;">없음</span>
-                            </div>
-                        </div>
+                                    <div id="home-project-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                                        <p style="padding: 20px; text-align: center; color: #999;">프로젝트 목록을 불러오는 중...</p>
+                                    </div>
 
-                        <!-- 빠른 작업 시작 섹션 -->
-                        <div style="margin-bottom: 30px;">
-                            <h2 style="font-size: 20px; margin-bottom: 20px; color: #333;">🚀 빠른 작업 시작</h2>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-                                <!-- 상세내역서 카드 -->
-                                <div class="quick-action-card" data-target-tab="detailed-estimation-dd" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                                    <div style="font-size: 48px; margin-bottom: 15px;">🧾</div>
-                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">상세내역서 보기</h3>
-                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">상세견적(DD) 확인 및 관리</p>
-                                </div>
-
-                                <!-- 공정표 카드 -->
-                                <div class="quick-action-card" data-target-tab="gantt-chart" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                                    <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
-                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">공정계획 확인</h3>
-                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">간트차트 및 공정관리</p>
-                                </div>
-
-                                <!-- 시뮬레이션 카드 -->
-                                <div class="quick-action-card" data-target-tab="three-d-viewer" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                                    <div style="font-size: 48px; margin-bottom: 15px;">🧊</div>
-                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">공정시뮬레이션</h3>
-                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">3D 시각화 및 시뮬레이션</p>
-                                </div>
-
-                                <!-- AI 기반 개산견적 카드 -->
-                                <div class="quick-action-card" data-target-tab="schematic-estimation-sd" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); border-radius: 12px; padding: 30px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                                    <div style="font-size: 48px; margin-bottom: 15px;">🧠</div>
-                                    <h3 style="font-size: 18px; margin: 0 0 10px 0; color: white; font-weight: bold;">AI 기반 개산견적</h3>
-                                    <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 14px;">인공지능 기반 개략 공사비 예측</p>
+                                    <div id="home-current-project-info" style="margin-top: 15px; padding: 15px; background: #e3f2fd; border-radius: 4px; display: none;">
+                                        <strong style="color: #1976d2; font-size: 13px;">현재 선택:</strong>
+                                        <div id="home-current-project-name" style="color: #333; margin-top: 5px; font-weight: 500;">없음</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- 작업 가이드 -->
-                        <div style="background: #f5f5f5; border-radius: 8px; padding: 25px;">
-                            <h2 style="font-size: 18px; margin: 0 0 15px 0; color: #333;">📖 작업 가이드</h2>
-                            <ol style="color: #666; line-height: 2; margin: 0; padding-left: 20px;">
-                                <li><strong>관리</strong> 탭에서 수량산출분류, 공사코드, 액티비티 등을 설정하세요.</li>
-                                <li><strong>작업</strong> 탭에서 BIM 데이터를 불러오고 수량산출부재와 산출항목을 생성하세요.</li>
-                                <li><strong>결과</strong> 탭에서 개산견적, 상세견적, 공정계획을 확인하세요.</li>
-                            </ol>
+                            <!-- 오른쪽: 대시보드 영역 -->
+                            <div>
+                                <!-- 프로젝트 대시보드 -->
+                                <div id="home-dashboard" style="display: none;">
+                                    <h2 style="font-size: 24px; margin: 0 0 20px 0; color: #333;">📊 프로젝트 대시보드</h2>
+
+                                    <!-- 대시보드 카드 그리드 -->
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px;">
+
+                                        <!-- 상세내역서 카드 (데이터 표시) -->
+                                        <div class="quick-action-card" data-target-tab="detailed-estimation-dd" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 25px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); position: relative;">
+                                            <div style="font-size: 36px; margin-bottom: 10px;">🧾</div>
+                                            <h3 style="font-size: 16px; margin: 0 0 15px 0; color: white; font-weight: bold;">상세내역서</h3>
+                                            <div id="dashboard-total-cost" style="font-size: 28px; font-weight: bold; color: white; margin-bottom: 5px;">
+                                                -
+                                            </div>
+                                            <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 13px;">총 공사비</p>
+                                        </div>
+
+                                        <!-- 공정계획 카드 (데이터 표시) -->
+                                        <div class="quick-action-card" data-target-tab="gantt-chart" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 12px; padding: 25px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                            <div style="font-size: 36px; margin-bottom: 10px;">📊</div>
+                                            <h3 style="font-size: 16px; margin: 0 0 15px 0; color: white; font-weight: bold;">공정계획</h3>
+                                            <div id="dashboard-schedule-info" style="color: white; margin-bottom: 5px;">
+                                                <div style="font-size: 14px; margin-bottom: 5px; opacity: 0.9;">
+                                                    <span id="dashboard-start-date">-</span> ~ <span id="dashboard-end-date">-</span>
+                                                </div>
+                                                <div style="font-size: 24px; font-weight: bold;">
+                                                    <span id="dashboard-total-days">-</span> <span style="font-size: 16px;">일</span>
+                                                </div>
+                                            </div>
+                                            <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 13px;">총 공기</p>
+                                        </div>
+
+                                        <!-- 공정시뮬레이션 카드 -->
+                                        <div class="quick-action-card" data-target-tab="three-d-viewer" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 12px; padding: 25px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                            <div style="font-size: 36px; margin-bottom: 10px;">🧊</div>
+                                            <h3 style="font-size: 16px; margin: 0 0 10px 0; color: white; font-weight: bold;">공정시뮬레이션</h3>
+                                            <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 13px;">3D 시각화 및 시뮬레이션</p>
+                                        </div>
+
+                                        <!-- AI 기반 개산견적 카드 -->
+                                        <div class="quick-action-card" data-target-tab="schematic-estimation-sd" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); border-radius: 12px; padding: 25px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                            <div style="font-size: 36px; margin-bottom: 10px;">🧠</div>
+                                            <h3 style="font-size: 16px; margin: 0 0 10px 0; color: white; font-weight: bold;">AI 기반 개산견적</h3>
+                                            <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 13px;">인공지능 기반 개략 공사비 예측</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- 작업 가이드 -->
+                                    <div style="background: #f5f5f5; border-radius: 8px; padding: 20px;">
+                                        <h3 style="font-size: 16px; margin: 0 0 12px 0; color: #333;">📖 작업 가이드</h3>
+                                        <ol style="color: #666; line-height: 1.8; margin: 0; padding-left: 20px; font-size: 14px;">
+                                            <li><strong>관리</strong> 탭에서 수량산출분류, 공사코드, 액티비티 등을 설정하세요.</li>
+                                            <li><strong>작업</strong> 탭에서 BIM 데이터를 불러오고 수량산출부재와 산출항목을 생성하세요.</li>
+                                            <li><strong>결과</strong> 탭에서 개산견적, 상세견적, 공정계획을 확인하세요.</li>
+                                        </ol>
+                                    </div>
+                                </div>
+
+                                <!-- 프로젝트 미선택 시 안내 -->
+                                <div id="home-no-project-message" style="text-align: center; padding: 80px 40px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                    <div style="font-size: 64px; margin-bottom: 20px; opacity: 0.3;">📁</div>
+                                    <h3 style="font-size: 20px; color: #666; margin: 0 0 10px 0;">프로젝트를 선택해주세요</h3>
+                                    <p style="font-size: 14px; color: #999; margin: 0;">
+                                        왼쪽에서 프로젝트를 선택하거나 새로 생성하면<br>대시보드가 표시됩니다.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

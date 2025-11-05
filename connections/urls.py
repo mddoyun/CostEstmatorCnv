@@ -170,4 +170,8 @@ urlpatterns = [
     path('api/chat-ai-command/', views.chat_ai_command_api, name='chat_ai_command_api'),
     path('api/chat-conversation/', views.chat_conversation_api, name='chat_conversation_api'),
     # ▲▲▲ [NEW] Chat AI APIs End ▲▲▲
+
+    # ▼▼▼ [NEW] Home Dashboard API ▼▼▼
+    path('api/dashboard/<uuid:project_id>/', views.home_dashboard_api, name='home_dashboard_api'),
+    # ▲▲▲ [NEW] Home Dashboard API End ▲▲▲
 ]
