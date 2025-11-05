@@ -7249,8 +7249,14 @@ def home_dashboard_api(request, project_id):
         project = Project.objects.get(id=project_id)
         print(f"[Dashboard API] Loading dashboard data for project: {project.name}")
 
-        # ===== 1. 총 공사비 계산 (CostItem의 비용 항목별 합산) =====
-        cost_items = CostItem.objects.filter(project=project)
+        # ===== 1. 총 공사비 계산 (상세견적용 CostItem 필터링 후 합산) =====
+        # 집계표 생성과 동일하게: is_active=True이고 cost_code__dd_enabled=True인 항목만 합산
+        cost_items = CostItem.objects.filter(
+            project=project,
+            is_active=True,
+            cost_code__dd_enabled=True  # 상세견적(DD) 활성화 항목만
+        )
+
         material_cost = Decimal('0')
         labor_cost = Decimal('0')
         expense_cost = Decimal('0')
@@ -7266,7 +7272,7 @@ def home_dashboard_api(request, project_id):
             if ci.total_cost_total:
                 total_cost += Decimal(str(ci.total_cost_total))
 
-        print(f"[Dashboard API] Cost breakdown - Material: {material_cost}, Labor: {labor_cost}, Expense: {expense_cost}, Total: {total_cost}")
+        print(f"[Dashboard API] Cost breakdown (DD enabled only) - Material: {material_cost}, Labor: {labor_cost}, Expense: {expense_cost}, Total: {total_cost}")
 
         # ===== 2. 공정 기간 계산 (Activity의 시작일/종료일) =====
         activities = Activity.objects.filter(project=project)
