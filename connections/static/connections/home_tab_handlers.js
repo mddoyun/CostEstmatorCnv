@@ -276,6 +276,11 @@ async function handleHomeCreateProject() {
             setTimeout(() => {
                 loadHomeProjectList();
             }, 100);
+
+            // 관리 데이터 버튼 활성화 (자산 가져오기/내보내기)
+            if (typeof enableManagementDataButtons === 'function') {
+                enableManagementDataButtons();
+            }
         } else {
             showToast('프로젝트 생성 실패: ' + data.message, 'error');
         }
