@@ -197,6 +197,236 @@ When working with properties, verify:
 - Broken property mapping
 - Data integrity violations
 
+### ⚠️ CRITICAL: Gantt Chart and Scheduling Principles
+
+**This section defines the core principles for duration calculation, lag handling, and progress bar rendering in the gantt chart system.**
+
+#### Duration Handling
+
+**RULE: Never ceil() individual durations before aggregation**
+
+```javascript
+// ❌ WRONG: Ceiling before sum
+activityObjects.forEach(ao => {
+    const duration = Math.ceil(ao.duration);  // 0.5 → 1, 0.5 → 1
+    totalDuration += duration;  // Result: 2 (incorrect!)
+});
+
+// ✅ CORRECT: Sum first, then ceil only for date calculations
+let totalDuration = 0;
+activityObjects.forEach(ao => {
+    totalDuration += parseFloat(ao.duration);  // 0.5 + 0.5 = 1.0
+});
+// Store as decimal: task.durationDays = 1.0
+// For date calculations: Math.ceil(totalDuration) = 1
+```
+
+**Key Principle**: Durations are stored as decimals (e.g., 13.57 days) and only rounded up when calculating calendar dates.
+
+#### Offset System
+
+**Offset Definition**: A decimal value (0~1) representing the fractional day position where work starts or ends.
+
+```
+Examples:
+- 0.00 = Start of day (0%)
+- 0.57 = 57% through the day
+- 1.00 = End of day (100%)
+```
+
+**Offset Calculation**:
+```javascript
+const duration = 13.57;  // 13 full days + 0.57 of a day
+const endOffset = duration % 1;  // 0.57
+```
+
+**Critical Rule**: Offsets MUST propagate through dependency chains.
+
+#### Lag and Offset Interaction
+
+**FS (Finish-to-Start) Dependency Logic**:
+
+```javascript
+// Predecessor ends at: predEndDate with predEndOffset
+
+if (lagDays === 0) {
+    // Lag = 0: Start immediately after predecessor
+    if (predEndOffset === 0) {
+        // Predecessor ends cleanly → next working day
+        successorStartDate = addWorkingDays(predEndDate, 0);
+        successorStartOffset = 0;
+    } else {
+        // Predecessor ends mid-day → continue same day
+        successorStartDate = predEndDate;
+        successorStartOffset = predEndOffset;  // ✅ Inherit offset
+    }
+} else if (lagDays > 0) {
+    // Lag > 0: Wait N working days after predecessor
+    const wholeLagDays = Math.floor(lagDays);
+    if (predEndOffset === 0) {
+        // Predecessor ends cleanly → N days later
+        successorStartDate = addWorkingDays(predEndDate, wholeLagDays);
+        successorStartOffset = 0;
+    } else {
+        // Predecessor ends mid-day → N+1 days later at same offset
+        successorStartDate = addWorkingDays(predEndDate, wholeLagDays + 1);
+        successorStartOffset = predEndOffset;  // ✅ Inherit offset
+    }
+}
+```
+
+**Example Scenario**:
+```
+Predecessor: Ends 11/25 at 57% (predEndDate = 11/25, predEndOffset = 0.57)
+
+Lag = 0:
+  → Start: 11/25 at 57% (same day continuation)
+
+Lag = 1:
+  → Start: 11/27 at 57% (1 working day later, preserve offset)
+  → Calculation: addWorkingDays(11/25, 2) = 11/27
+
+Lag = 2:
+  → Start: 11/28 at 57% (2 working days later, preserve offset)
+  → Calculation: addWorkingDays(11/25, 3) = 11/28
+```
+
+**Why +1 for Lag > 0 with offset?**
+- `addWorkingDays(11/25, 1)` returns 11/26 (next working day)
+- But we need "1 working day after 57% of 11/25"
+- The remaining 43% of 11/25 doesn't count as a full working day
+- So we need `addWorkingDays(11/25, 2)` to get 11/27 at 57%
+
+#### Progress Bar Rendering
+
+**Fill Calculation Rules**:
+
+```javascript
+// First Day
+fillStart = startOffset * 100;        // e.g., 57%
+fillPercentage = 100 - fillStart;     // e.g., 43%
+
+// Middle Days
+fillStart = 0;
+fillPercentage = 100;
+
+// Last Day
+// CRITICAL: Account for first day offset
+const effectiveDaysFromStart = startOffset > 0
+    ? workingDaysFromStart - startOffset
+    : workingDaysFromStart;
+
+const remainingDuration = totalDuration - effectiveDaysFromStart;
+fillPercentage = Math.min(100, remainingDuration * 100);
+
+// First and Last Day (duration < 1)
+fillStart = startOffset * 100;
+fillPercentage = totalDuration * 100;
+```
+
+**Work Done Calculation**:
+```
+First day work = 1 - startOffset
+Middle days work = (workingDaysFromStart - 1) × 1.0
+Total work done = (1 - startOffset) + (workingDaysFromStart - 1)
+                = workingDaysFromStart - startOffset
+                = effectiveDaysFromStart
+```
+
+**Example (6.93 days, starts at 57% offset)**:
+```
+Day 1 (11/26): 57%~100% = 0.43 days work
+Days 2-6:      5 × 1.0   = 5.00 days work
+Day 7 (12/4):  0%~50%    = 0.50 days work (but capped at 100% display)
+───────────────────────────────────────
+Total:         0.43 + 5.00 + 0.50 = 5.93 days
+Offset applied: 6.93 - 0.57 = 6.36 days accounting for start offset
+```
+
+#### Working Day Counting
+
+**CRITICAL: Always count working days, never calendar days**
+
+```javascript
+// ❌ WRONG: Calendar days
+const daysFromStart = dayIndex - taskStartDay;  // Includes weekends!
+
+// ✅ CORRECT: Working days only
+let daysFromStart = 0;
+let current = new Date(startDate);
+while (current < date) {
+    if (isWorkingDay(current, taskCalendar)) {
+        daysFromStart++;
+    }
+    current.setDate(current.getDate() + 1);
+}
+```
+
+#### Visual Representation
+
+**CSS Linear Gradient Approach**:
+```javascript
+// Create smooth gradient showing work progress
+const barStyle = `
+    background: linear-gradient(to right,
+        rgba(0,0,0,0.05) 0%,              // Gray before start
+        rgba(0,0,0,0.05) ${fillStart}%,
+        ${barColor} ${fillStart}%,         // Work starts
+        ${barColor} ${fillStart + fillPercentage}%,  // Work ends
+        rgba(0,0,0,0.05) ${fillStart + fillPercentage}%,  // Gray after end
+        rgba(0,0,0,0.05) 100%);
+`;
+```
+
+#### Important Constraints
+
+1. **100% Capping**: A single day can show maximum 100% fill even if remaining work > 1.0 days
+2. **Floating Point Precision**: Use `toFixed(2)` for display, but keep full precision in calculations
+3. **Calendar Awareness**: All date arithmetic must use `addWorkingDays()` which respects ProjectCalendar
+4. **Offset Propagation**: Once a chain starts with an offset, it must propagate through all successors with Lag > 0
+
+#### Common Pitfalls
+
+❌ **Resetting offset on Lag > 0**:
+```javascript
+// WRONG
+successorStartOffset = 0;  // Loses timing information!
+```
+
+❌ **Using calendar days for work calculation**:
+```javascript
+// WRONG
+const daysWorked = dayIndex - startDay;  // Counts weekends!
+```
+
+❌ **Ceiling individual durations**:
+```javascript
+// WRONG
+duration1 = Math.ceil(0.5);  // 1
+duration2 = Math.ceil(0.5);  // 1
+total = duration1 + duration2;  // 2 (should be 1!)
+```
+
+❌ **Ignoring start offset in last day calculation**:
+```javascript
+// WRONG
+remainingDuration = totalDuration - daysFromStart;
+
+// CORRECT
+effectiveDaysFromStart = daysFromStart - startOffset;
+remainingDuration = totalDuration - effectiveDaysFromStart;
+```
+
+#### Reference Implementation
+
+See `connections/static/connections/gantt_chart_handlers.js`:
+- Lines 251-345: Duration aggregation and offset calculation
+- Lines 440-494: Lag and offset propagation logic
+- Lines 915-951: Progress bar rendering with offset handling
+
+For detailed explanation and examples, see:
+- `workings/92_2025-11-07_간트차트_소수점_일수_및_Lag_오프셋_처리.md`
+
 ### Django Apps Structure
 
 1. **aibim_quantity_takeoff_web/** - Main Django project configuration

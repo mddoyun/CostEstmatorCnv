@@ -313,10 +313,10 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
         const activity = activityMap.get(activityId);
         if (!activity) return;
 
-        // ▼▼▼ [수정] 합산된 총 일수를 올림 처리 (2025-11-06) ▼▼▼
-        // 0.5일 + 0.5일 = 1.0일 → ceil(1.0) = 1일
-        const roundedDuration = Math.max(1, Math.ceil(totalDuration));
-        // ▲▲▲ [수정] 여기까지 ▲▲▲
+        // ▼▼▼ [NEW] 올림 제거 - 소수점 그대로 사용 (2025-11-06) ▼▼▼
+        // 최소값은 0.25일 (1/4일)
+        const actualDuration = Math.max(0.25, totalDuration);
+        // ▲▲▲ [NEW] 여기까지 ▲▲▲
 
         // ▼▼▼ [수정] 액티비티별 캘린더 찾기 (없으면 메인 캘린더 사용) ▼▼▼
         let taskCalendar = mainCalendar;
@@ -325,21 +325,24 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
         }
 
         // 기본 start/end 설정 (나중에 calculateTaskDates에서 재계산)
+        // NOTE: addWorkingDays는 정수만 처리하므로 여기서는 임시로 올림
         const defaultStart = new Date(projectStartDate);
-        const defaultEnd = addWorkingDays(defaultStart, roundedDuration, taskCalendar);
+        const tempDuration = Math.ceil(actualDuration);
+        const defaultEnd = addWorkingDays(defaultStart, tempDuration, taskCalendar);
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         tasks.push({
-            id: activityId, // 이제 activityId만 사용 (그룹화됨)
+            id: activityId,
             name: `${activity.code} - ${activity.name}`,
             start: formatDateForGantt(defaultStart),
             end: formatDateForGantt(defaultEnd),
             activityId: activityId,
             activity: activity,
-            durationDays: roundedDuration, // ▼▼▼ [수정] 올림 처리된 일수 사용 ▼▼▼
+            durationDays: actualDuration, // ▼▼▼ [NEW] 소수점 포함 실제 일수 ▼▼▼
             progress: 0,
             custom_class: `activity-${activity.code}`,
             calendar: taskCalendar, // ▼▼▼ [추가] 캘린더 정보 ▼▼▼
+            startOffset: 0, // ▼▼▼ [NEW] 시작 오프셋 (0~1, 하루의 일부) ▼▼▼
         });
     });
     // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -387,7 +390,10 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
         function getEarliestStartDate(activityId, visited = new Set()) {
             if (visited.has(activityId)) {
                 // 순환 참조 방지
-                return new Date(projectStartDate);
+                return {
+                    date: new Date(projectStartDate),
+                    offset: 0
+                };
             }
             visited.add(activityId);
 
@@ -395,15 +401,24 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
             const predecessors = dependencies.filter(dep => dep.successor_activity === activityId);
 
             if (predecessors.length === 0) {
-                // 선행 작업이 없으면 프로젝트 시작일
-                return new Date(projectStartDate);
+                // 선행 작업이 없으면 프로젝트 시작일 (오프셋 0)
+                return {
+                    date: new Date(projectStartDate),
+                    offset: 0
+                };
             }
 
-            // 모든 선행 작업의 종료일 중 가장 늦은 날짜
-            let maxEndDate = new Date(projectStartDate);
+            // 모든 선행 작업의 종료일 중 가장 늦은 날짜 (오프셋 포함)
+            let maxEndDate = {
+                date: new Date(projectStartDate),
+                offset: 0
+            };
 
             predecessors.forEach(dep => {
+                console.log(`[DEBUG][getEarliestStartDate] Processing predecessor:`, dep.predecessor_activity);
                 const predTasks = tasksByActivity.get(dep.predecessor_activity) || [];
+                console.log(`[DEBUG][getEarliestStartDate] Found predTasks:`, predTasks.length);
+
                 if (predTasks.length > 0) {
                     const predTask = predTasks[0];
 
@@ -412,22 +427,85 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
                     if (predTask.activity && predTask.activity.manual_start_date) {
                         // 선행 작업에 수동 시작일이 있으면 사용
                         predStartDate = new Date(predTask.activity.manual_start_date);
+                        console.log(`[DEBUG][getEarliestStartDate] Using manual start date:`, predStartDate);
                     } else {
                         // 없으면 재귀적으로 계산
-                        predStartDate = getEarliestStartDate(dep.predecessor_activity, new Set(visited));
+                        console.log(`[DEBUG][getEarliestStartDate] Recursively calculating for:`, dep.predecessor_activity);
+                        const predResult = getEarliestStartDate(dep.predecessor_activity, new Set(visited));
+                        console.log(`[DEBUG][getEarliestStartDate] Recursive result:`, predResult);
+                        predStartDate = predResult.date || predResult;
                     }
                     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
                     // ▼▼▼ [수정] 선행 작업의 종료일 계산 (작업일 기준) ▼▼▼
                     const predDuration = predTask.durationDays || 1;
                     const predCalendar = predTask.calendar || mainCalendar;
-                    const predEndDate = addWorkingDays(predStartDate, predDuration, predCalendar);
 
-                    // ▼▼▼ [수정] Lag 적용 (작업일 기준, 올림 처리) (2025-11-06) ▼▼▼
-                    const lagDaysRaw = parseFloat(dep.lag_days || 0);
-                    const lagDays = lagDaysRaw >= 0 ? Math.ceil(lagDaysRaw) : Math.floor(lagDaysRaw);
-                    const adjustedDate = addWorkingDays(predEndDate, lagDays, predCalendar);
+                    // 선행 작업의 종료 오프셋 계산
+                    const predEndOffset = predDuration % 1; // 소수점 부분
+
+                    // 종료일 계산
+                    // addWorkingDays는 시작일을 Day 1로 카운트함
+                    // 예: 13.57일 작업 → Math.ceil(13.57) = 14 → 14일째 날을 반환
+                    //     → 그 날의 57% 지점에서 끝남
+                    // 하지만 우리는 Math.floor를 써야 하고, 그 다음 날을 가리켜야 함
+                    // 예: 13.57일 → Math.floor(13.57) = 13 → 13일 후 날짜 = 11/24
+                    //     하지만 실제로는 14일째 날(11/25)의 57% 지점
+                    const predCeiledDays = Math.ceil(predDuration);
+                    const predEndDate = addWorkingDays(predStartDate, predCeiledDays, predCalendar);
                     // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                    // ▼▼▼ [NEW] Lag 적용 로직 완전 재작성 ▼▼▼
+                    const lagDays = parseFloat(dep.lag_days || 0);
+
+                    let successorStartDate;
+                    let successorStartOffset;
+
+                    if (lagDays === 0) {
+                        // Lag = 0: 선행 종료 직후 시작
+                        if (predEndOffset === 0) {
+                            // 선행이 정확히 끝난 경우 → 다음 작업일
+                            successorStartDate = addWorkingDays(predEndDate, 0, predCalendar);
+                            successorStartOffset = 0;
+                        } else {
+                            // 선행이 하루 중간에 끝난 경우 → 같은 날 이어서 시작
+                            successorStartDate = predEndDate;
+                            successorStartOffset = predEndOffset;
+                        }
+                    } else if (lagDays > 0) {
+                        // Lag > 0: N 작업일 후 시작 (오프셋 유지!)
+                        // 예: 선행이 11/25 57% 끝, Lag=1
+                        //     → 1 작업일 후 = 11/26의 57% 시작
+                        const wholeLagDays = Math.floor(lagDays);
+                        if (predEndOffset === 0) {
+                            // 선행이 정확히 끝난 경우 → N 작업일 후, 오프셋 0
+                            successorStartDate = addWorkingDays(predEndDate, wholeLagDays, predCalendar);
+                            successorStartOffset = 0;
+                        } else {
+                            // 선행이 중간에 끝난 경우 → N+1 작업일 후의 같은 오프셋
+                            successorStartDate = addWorkingDays(predEndDate, wholeLagDays + 1, predCalendar);
+                            successorStartOffset = predEndOffset;
+                        }
+                    } else {
+                        // Lag < 0: 음수 lag (선행 종료 전에 시작)
+                        const wholeLagDays = Math.floor(lagDays);
+                        successorStartDate = addWorkingDays(predEndDate, wholeLagDays, predCalendar);
+                        successorStartOffset = 0;
+                    }
+
+                    const adjustedDate = successorStartDate;
+                    // ▲▲▲ [NEW] 여기까지 ▲▲▲
+
+                    // maxEndDate 업데이트 시 오프셋도 함께 전달
+                    if (adjustedDate > maxEndDate.date ||
+                        (adjustedDate.getTime() === maxEndDate.date?.getTime() && successorStartOffset > maxEndDate.offset)) {
+                        maxEndDate = {
+                            date: adjustedDate,
+                            offset: successorStartOffset
+                        };
+                    }
+                    // ▲▲▲ [NEW] 여기까지 ▲▲▲
+                    // ▲▲▲ [SIMPLIFIED] 여기까지 ▲▲▲
 
                     // ▼▼▼ [디버깅] 선행 작업 계산 상세 정보 (2025-11-06) ▼▼▼
                     console.log(`[DEBUG] 의존성 계산:`, {
@@ -435,16 +513,14 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
                         선행시작일: predStartDate.toISOString().split('T')[0],
                         선행일수: predDuration,
                         선행종료일: predEndDate.toISOString().split('T')[0],
-                        Lag원본: lagDaysRaw,
-                        Lag올림: lagDays,
-                        후행시작일: adjustedDate.toISOString().split('T')[0],
+                        선행종료오프셋: predEndOffset.toFixed(2),
+                        Lag원본: dep.lag_days,
+                        Lag값: lagDays,
+                        후행시작일: successorStartDate.toISOString().split('T')[0],
+                        후행시작오프셋: successorStartOffset.toFixed(2),
                         캘린더: predCalendar?.name || '메인'
                     });
                     // ▲▲▲ [디버깅] 여기까지 ▲▲▲
-
-                    if (adjustedDate > maxEndDate) {
-                        maxEndDate = adjustedDate;
-                    }
                 }
             });
 
@@ -456,14 +532,25 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
             try {
                 // ▼▼▼ [추가] 수동 시작일이 설정된 경우 해당 날짜 사용 ▼▼▼
                 let startDate;
+                let startOffset = 0;
                 if (task.activity && task.activity.manual_start_date) {
                     // 수동 시작일이 있으면 해당 날짜를 사용 (의존성 무시)
                     startDate = new Date(task.activity.manual_start_date);
                     console.log(`[Gantt] Activity ${task.activity.code} using manual start date: ${task.activity.manual_start_date}`);
                 } else {
                     // 수동 시작일이 없으면 의존성 기반으로 계산
-                    startDate = getEarliestStartDate(task.activityId);
+                    const result = getEarliestStartDate(task.activityId);
+                    if (result.date) {
+                        // 새로운 형식 (오프셋 포함)
+                        startDate = result.date;
+                        startOffset = result.offset || 0;
+                    } else {
+                        // 이전 형식 (Date 객체만)
+                        startDate = result;
+                        startOffset = 0;
+                    }
                 }
+                task.startOffset = startOffset; // 태스크에 오프셋 저장
                 // ▲▲▲ [추가] 여기까지 ▲▲▲
 
                 // ▼▼▼ [수정] 작업일 기준으로 종료일 계산 ▼▼▼
@@ -756,10 +843,12 @@ function renderGanttChart(tasks, containerId = 'gantt-chart-container') {
         validTasks.forEach((task, index) => {
             const startDate = new Date(task.start);
             const endDate = new Date(task.end);
-            // ▼▼▼ [수정] 간트차트 셀 범위 계산 시 올림 대신 정확한 계산 (2025-11-06) ▼▼▼
-            // 시작일은 내림(floor), 종료일은 올림(ceil)하여 전체 범위 포함
+            // ▼▼▼ [수정] 간트차트 셀 범위 계산 - 시작일과 종료일을 달력상 날짜로 계산 (2025-11-06) ▼▼▼
+            // 달력상 날짜 차이로 계산 (작업일이 아닌 모든 날짜 포함)
             const taskStartDay = Math.floor((startDate - minDate) / (1000 * 60 * 60 * 24));
-            const taskEndDay = taskStartDay + task.durationDays; // 시작일 + 일수 = 종료일
+            const taskEndDay = Math.floor((endDate - minDate) / (1000 * 60 * 60 * 24)) + 1; // 종료일 포함
+
+            console.log(`[DEBUG][Gantt Render] ${task.name}: start=${task.start} (Day ${taskStartDay}), end=${task.end} (Day ${taskEndDay - 1}), span=${taskEndDay - taskStartDay} days`);
             // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             const activity = task.activity || {};
@@ -818,33 +907,111 @@ function renderGanttChart(tasks, containerId = 'gantt-chart-container') {
                         const taskCalendar = task.calendar || mainCalendar;
                         const isWorkDay = isWorkingDay(date, taskCalendar);
 
-                        let barStyle;
-                        if (isWorkDay) {
-                            barStyle = `background: ${barColor}; height: 30px; margin: 5px 0;`;
-                        } else {
-                            barStyle = `background: white; border: 2px solid ${barColor}; height: 26px; margin: 5px 0; box-sizing: border-box;`;
-                        }
+                        // 프로그레스 바 형태로 소수점 표현
+                        // 각 날짜에서 얼마나 채울지 계산 (0% ~ 100%)
+                        let fillPercentage = 100; // 기본값: 전체 칠함
+                        let fillStart = 0; // 채우기 시작 위치 (기본: 0%)
 
                         if (isFirstDay && isLastDay) {
-                            barStyle += ' border-radius: 4px;';
+                            // 첫날이자 마지막날 (duration < 1)
+                            fillStart = (task.startOffset || 0) * 100;
+                            fillPercentage = task.durationDays * 100;
                         } else if (isFirstDay) {
-                            barStyle += ' border-radius: 4px 0 0 4px;';
+                            // 첫날: startOffset부터 시작해서 끝까지
+                            fillStart = (task.startOffset || 0) * 100;
+                            fillPercentage = 100 - fillStart;
                         } else if (isLastDay) {
-                            barStyle += ' border-radius: 0 4px 4px 0;';
+                            // 마지막날: 처음부터 남은 duration만큼 채움
+                            // 예: 시작 11/26 오프셋 0.57, 6.93일 작업
+                            //     → 첫날 0.43일 소진, 남은 6.50일
+                            //     → 12/4에서 0.50만큼 채워짐
+
+                            // CRITICAL: Count working days, not calendar days
+                            let daysFromStart = 0;
+                            let current = new Date(startDate);
+                            const taskCalendar = task.calendar || mainCalendar;
+                            while (current < date) {
+                                if (isWorkingDay(current, taskCalendar)) {
+                                    daysFromStart++;
+                                }
+                                current.setDate(current.getDate() + 1);
+                            }
+
+                            // 첫날 오프셋 고려: 첫날에는 (1 - startOffset)만큼만 작업
+                            const startOffset = task.startOffset || 0;
+                            const effectiveDaysFromStart = startOffset > 0
+                                ? daysFromStart - startOffset  // 첫날 오프셋만큼 차감
+                                : daysFromStart;
+
+                            const remainingDuration = task.durationDays - effectiveDaysFromStart;
+                            fillPercentage = Math.min(100, remainingDuration * 100);  // 100% 초과 방지
+                            fillStart = 0; // 처음부터 시작
+
+                            console.log(`[DEBUG][LastDay] ${task.name} Day ${dayIndex}: workingDays=${daysFromStart}, startOffset=${startOffset.toFixed(2)}, effectiveDays=${effectiveDaysFromStart.toFixed(2)}, remainingDuration=${remainingDuration.toFixed(2)}, fillPercentage=${fillPercentage.toFixed(1)}%`);
+                        }
+                        // 중간날: fillStart=0, fillPercentage=100 (전체)
+
+                        // 라운딩 처리
+                        let borderRadius = '';
+                        if (isFirstDay && isLastDay) {
+                            borderRadius = 'border-radius: 4px;';
+                        } else if (isFirstDay) {
+                            borderRadius = 'border-radius: 4px 0 0 4px;';
+                        } else if (isLastDay) {
+                            borderRadius = 'border-radius: 0 4px 4px 0;';
+                        }
+
+                        // 프로그레스 바 스타일
+                        let barStyle;
+                        if (isWorkDay) {
+                            // 작업일: 실제 색상으로 채움
+                            barStyle = `
+                                background: linear-gradient(to right,
+                                    rgba(0,0,0,0.05) 0%,
+                                    rgba(0,0,0,0.05) ${fillStart}%,
+                                    ${barColor} ${fillStart}%,
+                                    ${barColor} ${fillStart + fillPercentage}%,
+                                    rgba(0,0,0,0.05) ${fillStart + fillPercentage}%,
+                                    rgba(0,0,0,0.05) 100%);
+                                height: 30px;
+                                margin: 5px 0;
+                                ${borderRadius}
+                            `;
+                        } else {
+                            // 휴일: 테두리만 표시
+                            barStyle = `
+                                background: linear-gradient(to right,
+                                    transparent 0%,
+                                    transparent ${fillStart}%,
+                                    white ${fillStart}%,
+                                    white ${fillStart + fillPercentage}%,
+                                    transparent ${fillStart + fillPercentage}%,
+                                    transparent 100%);
+                                border: 2px solid ${barColor};
+                                height: 26px;
+                                margin: 5px 0;
+                                box-sizing: border-box;
+                                ${borderRadius}
+                            `;
                         }
 
                         const middleDay = Math.floor((taskStartDay + taskEndDay) / 2);
                         const showDuration = dayIndex === middleDay && task.durationDays >= 3;
-                        const holidayMark = !isWorkDay ? '<div style="font-size: 10px; color: #999;">휴</div>' : '';
+                        const holidayMark = !isWorkDay ? '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 10px; color: #999; z-index: 10;">휴</div>' : '';
 
-                        cellContent = `<div style="${barStyle}" title="액티비티: ${activity.code} - ${activity.name}
+                        cellContent = `
+                            <div style="${barStyle}"
+                                 title="액티비티: ${activity.code} - ${activity.name}
 총 작업기간: ${task.durationDays}일
 단위수량당 소요일수: ${activity.duration_per_unit || 0}일
+이 날 채움: ${fillStart.toFixed(1)}% ~ ${(fillStart + fillPercentage).toFixed(1)}%
+시작 오프셋: ${(task.startOffset || 0).toFixed(2)}
 ${!isWorkDay ? '※ 캘린더상 휴일' : ''}
 ${activity.responsible_person ? '담당자: ' + activity.responsible_person : ''}">
-                            ${showDuration ? `<span style="color: ${isWorkDay ? 'white' : barColor}; font-size: 11px; font-weight: bold;">${task.durationDays}일</span>` : ''}
-                            ${!showDuration && !isWorkDay ? holidayMark : ''}
-                        </div>`;
+                            </div>
+                            ${holidayMark}
+                            ${showDuration ? `<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: ${isWorkDay ? 'white' : barColor}; font-size: 11px; font-weight: bold; z-index: 10;">${task.durationDays}일</div>` : ''}
+                        `;
                     }
 
                     html += `<td class="gantt-date-cell" data-date="${dateString}" style="${cellStyle}">${cellContent}</td>`;
