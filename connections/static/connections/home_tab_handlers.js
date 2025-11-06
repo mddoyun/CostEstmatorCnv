@@ -683,11 +683,13 @@ function calculateScheduleDatesFromGantt() {
         const activities = [];
         const dependencies = [];
         const activityIdSet = new Set();
+        const activityMap = new Map();
 
         window.loadedActivityObjects.forEach(ao => {
             if (ao.activity && !activityIdSet.has(ao.activity.id)) {
                 activities.push(ao.activity);
                 activityIdSet.add(ao.activity.id);
+                activityMap.set(ao.activity.id, ao.activity);
 
                 // Dependency 추출
                 if (ao.activity.predecessors && Array.isArray(ao.activity.predecessors)) {
@@ -704,10 +706,33 @@ function calculateScheduleDatesFromGantt() {
         });
 
         // 3. 간트차트 핸들러의 generateGanttData 함수 호출 (전역으로 노출되어 있다면)
-        if (typeof window.generateGanttData === 'function') {
+        if (typeof window.generateGanttData === 'function' && typeof window.calculateTaskDates === 'function') {
+            // 프로젝트 시작일 가져오기 (localStorage에서 - 간트차트와 동일한 방식)
+            const savedStartDate = localStorage.getItem(`project_${window.currentProjectId}_start_date`);
+            let projectStartDate;
+            if (savedStartDate) {
+                projectStartDate = new Date(savedStartDate);
+            } else {
+                // 기본값: 오늘
+                projectStartDate = new Date();
+            }
+
+            console.log('[Dashboard] Using project start date:', projectStartDate.toISOString().split('T')[0]);
+
+            // 간트차트 핸들러가 사용하는 전역 변수 설정
+            if (typeof window.setProjectStartDate === 'function') {
+                window.setProjectStartDate(projectStartDate);
+            } else {
+                // setProjectStartDate 함수가 없으면 직접 설정
+                window.projectStartDate = projectStartDate;
+            }
+
             const ganttTasks = window.generateGanttData(costItems, activities, dependencies, window.loadedActivityObjects);
 
             if (ganttTasks && ganttTasks.length > 0) {
+                // calculateTaskDates 호출하여 정확한 날짜 계산
+                window.calculateTaskDates(ganttTasks, dependencies, activityMap);
+
                 const allDates = ganttTasks.flatMap(t => [new Date(t.start), new Date(t.end)]);
                 const minDate = new Date(Math.min(...allDates));
                 const maxDate = new Date(Math.max(...allDates));

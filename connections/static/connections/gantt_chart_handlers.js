@@ -20,6 +20,11 @@ let mainCalendar = null; // 메인 캘린더
 // ▼▼▼ [추가] 3D 뷰어와 공유하기 위해 전역으로 노출 ▼▼▼
 window.ganttData = ganttData;
 window.ganttCostItems = ganttCostItems;
+// 대시보드에서 프로젝트 시작일 설정을 위해 전역으로 노출
+Object.defineProperty(window, 'projectStartDate', {
+    get: () => projectStartDate,
+    set: (value) => { projectStartDate = value; }
+});
 // ▲▲▲ [추가] 여기까지 ▲▲▲
 
 /**
