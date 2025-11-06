@@ -2198,23 +2198,6 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
                 let cellStyle = `text-align: ${col.align || "left"};`;
 
-                // ▼▼▼ [수정] 마지막 그룹핑 레벨이 아닌 그룹 행만 숨김 (2025-11-06) ▼▼▼
-                if (isGroup && level < maxGroupLevel) {
-                    // 중간 레벨 그룹: 구분과 금액 관련 열만 표시
-                    const allowedGroupColumns = [
-                        "name",
-                        "total_cost_total",
-                        "material_cost_total",
-                        "labor_cost_total",
-                        "expense_cost_total"
-                    ];
-                    if (!allowedGroupColumns.includes(col.id)) {
-                        cellContent = "";  // 빈 값으로 설정
-                    }
-                }
-                // 마지막 레벨 그룹 (level === maxGroupLevel)은 모든 컬럼 표시
-                // ▲▲▲ [수정] 여기까지 ▲▲▲
-
                 if (col.id === "name") {
                     const padding = level * 20;
                     const toggleIcon = isGroup
@@ -2285,6 +2268,23 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                 } else if (cellContent === undefined || cellContent === null || cellContent === "") {
                     cellContent = "-";
                 }
+
+                // ▼▼▼ [추가] 중간 레벨 그룹 행의 특정 컬럼 숨김 (2025-11-06) ▼▼▼
+                // 마지막 그룹핑 레벨이 아닌 그룹 행은 name, 금액 컬럼만 표시
+                if (isGroup && level < maxGroupLevel) {
+                    const allowedGroupColumns = [
+                        "name",
+                        "total_cost_total",
+                        "material_cost_total",
+                        "labor_cost_total",
+                        "expense_cost_total",
+                        "unit_price_type_id"  // 단가기준은 표시
+                    ];
+                    if (!allowedGroupColumns.includes(col.id)) {
+                        cellContent = "";  // 다른 컬럼은 빈 값
+                    }
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
 
                 tableHtml += `<td style="${cellStyle}">${cellContent}</td>`;
             });
