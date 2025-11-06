@@ -143,7 +143,6 @@ async function loadQuantityMembers() {
         // 디버깅: 첫 번째 수량산출부재의 데이터 구조 확인
         if (loadedQuantityMembers.length > 0) {
             const firstMember = loadedQuantityMembers[0];
-            });
         }
 
         renderActiveQmView();

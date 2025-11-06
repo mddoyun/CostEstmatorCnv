@@ -8852,9 +8852,6 @@
             // ▼▼▼ [디버깅] 상세 로그 추가 ▼▼▼
 
             completedCostItems.forEach((item, itemIdx) => {
-                    activity_objects_length: item.activity_objects ? item.activity_objects.length : 0
-                });
-
                 // Extract element IDs from activity_objects
                 // ▼▼▼ [수정] quantity_member는 중첩 객체 구조 (quantity_member.id) ▼▼▼
                 if (item.activity_objects && Array.isArray(item.activity_objects)) {
@@ -8877,9 +8874,6 @@
             });
 
             inProgressCostItems.forEach((item, itemIdx) => {
-                    activity_objects_length: item.activity_objects ? item.activity_objects.length : 0
-                });
-
                 // Extract element IDs from activity_objects
                 // ▼▼▼ [수정] quantity_member는 중첩 객체 구조 (quantity_member.id) ▼▼▼
                 if (item.activity_objects && Array.isArray(item.activity_objects)) {

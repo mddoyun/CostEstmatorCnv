@@ -169,8 +169,14 @@
         setupRulesetManagementListeners();
         setupCostCodeManagementListeners();
         setupMemberMarkManagementListeners();
-        setupQuantityMembersListeners();
-        setupCostItemsListeners();
+
+        if (typeof setupQuantityMembersListeners === 'function') {
+            setupQuantityMembersListeners();
+        }
+        if (typeof setupCostItemsListeners === 'function') {
+            setupCostItemsListeners();
+        }
+
         setupDetailedEstimationListeners(); // DD 탭
         setupUnitPriceManagementListeners();
         setupAiModelManagementListeners(); // [신규] AI 탭
