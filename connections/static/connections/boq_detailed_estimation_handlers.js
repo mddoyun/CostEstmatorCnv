@@ -60,14 +60,22 @@ async function loadBoqGroupingFields() {
 
 
     try {
-        const response = await fetch(
-            `/connections/api/boq/grouping-fields/${currentProjectId}/`
-        );
-        if (!response.ok) {
-            throw new Error("그룹핑 필드 목록을 불러오는데 실패했습니다.");
-        }
+        // ▼▼▼ [수정] 코스트아이템과 동일한 방법으로 필드 수집 (2025-11-06) ▼▼▼
+        // generateCIPropertyOptions()를 사용하여 속성 수집
+        const propertyOptionGroups = generateCIPropertyOptions();
 
-        availableBoqFields = await response.json();
+        // 모든 옵션을 평탄화하여 {value, label} 형식으로 변환
+        availableBoqFields = [];
+        propertyOptionGroups.forEach(group => {
+            group.options.forEach(opt => {
+                availableBoqFields.push({
+                    value: opt.value,
+                    label: opt.label
+                });
+            });
+        });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
         console.log(
             `[DEBUG] ${availableBoqFields.length}개의 사용 가능한 BOQ 필드를 수신했습니다.`,
             availableBoqFields
@@ -1827,15 +1835,43 @@ function renderBoqDisplayFieldControls(fields) {
         return;
     }
 
-    let html = "";
-    fields.forEach((field) => {
-        html += `
-            <label style="display: block; margin-bottom: 5px;">
-                <input type="checkbox" class="boq-display-field-cb" value="${field.value}">
-                ${field.label}
-            </label>
-        `;
+    // ▼▼▼ [수정] 코스트아이템과 동일한 그룹핑 방식 사용 (2025-11-06) ▼▼▼
+    // generateCIPropertyOptions()를 재사용하여 동일한 그룹핑 방식 적용
+    const propertyOptionGroups = generateCIPropertyOptions();
+
+    // 현재 선택된 컬럼 (없으면 빈 배열)
+    if (!window.currentBoqDisplayColumns) {
+        window.currentBoqDisplayColumns = [];
+    }
+
+    let html = '';
+
+    // 각 그룹을 섹션으로 렌더링
+    propertyOptionGroups.forEach(group => {
+        if (group.options && group.options.length > 0) {
+            html += '<div class="field-section">';
+            html += `<h4 style="color: ${group.color || '#607d8b'}; margin: 10px 0 5px 0; font-size: 14px;">${group.group}</h4>`;
+
+            group.options.forEach(opt => {
+                const isChecked = window.currentBoqDisplayColumns.includes(opt.value) ? 'checked' : '';
+                html += `
+                    <label class="field-checkbox-label">
+                        <input
+                            type="checkbox"
+                            class="boq-display-field-cb"
+                            value="${opt.value}"
+                            ${isChecked}
+                        >
+                        ${opt.label}
+                    </label>
+                `;
+            });
+
+            html += '</div>';
+        }
     });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
     container.innerHTML = html;
 
     container.querySelectorAll(".boq-display-field-cb").forEach((checkbox) => {
