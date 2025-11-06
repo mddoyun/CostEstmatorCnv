@@ -405,25 +405,37 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                         element_dict["Type"]["Attributes"] = {}
                         type_info = relating_type.get_info()
 
+                        # ▼▼▼ [DEBUG] Type 원본 데이터 확인 ▼▼▼
+                        print(f"[DEBUG] Type {relating_type.id()} raw attributes: {list(type_info.keys())}")
+                        # ▲▲▲ [DEBUG] 여기까지 ▲▲▲
+
                         for attr_name, attr_value in type_info.items():
-                            # 내부 속성 제외
-                            if attr_name in ['type', 'id', 'GlobalId']:
+                            # 내부 속성만 제외 (최소한의 필터링)
+                            if attr_name in ['type', 'id', 'GlobalId', 'WrappedValue']:
+                                print(f"[DEBUG] Skipping internal attribute: {attr_name}")
                                 continue
 
                             # 관계형 속성 제외 (리스트/튜플이면서 대문자 시작)
+                            # Description 같은 단순 값은 통과
                             if isinstance(attr_value, (list, tuple)) and attr_name[0].isupper():
+                                print(f"[DEBUG] Skipping relational attribute: {attr_name} (type: {type(attr_value)})")
                                 continue
 
-                            # Attributes 추가
+                            # Attributes 추가 (None 값도 포함)
                             if hasattr(attr_value, 'is_a'):
                                 # IFC 엔티티 참조
                                 element_dict["Type"]["Attributes"][attr_name] = f"{attr_value.is_a()}: {getattr(attr_value, 'Name', str(attr_value))}"
-                            elif attr_value is not None:
-                                element_dict["Type"]["Attributes"][attr_name] = attr_value
                             else:
-                                element_dict["Type"]["Attributes"][attr_name] = None
+                                # None 포함 모든 값 저장
+                                element_dict["Type"]["Attributes"][attr_name] = attr_value
+
+                            # ▼▼▼ [DEBUG] 각 속성 처리 확인 ▼▼▼
+                            if attr_name == 'Description':
+                                print(f"[DEBUG] ✅ Description found: {attr_value}")
+                            # ▲▲▲ [DEBUG] 여기까지 ▲▲▲
 
                         print(f"[DEBUG] Type {relating_type.id()} Attributes extracted: {list(element_dict['Type']['Attributes'].keys())}")
+                        print(f"[DEBUG] Description in final dict: {'Description' in element_dict['Type']['Attributes']}")
                         # ▲▲▲ [NEW] Type Attributes 추출 끝 ▲▲▲
 
                         # Type의 PropertySets 추출

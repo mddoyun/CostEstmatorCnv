@@ -4069,6 +4069,7 @@ def import_project(request):
         project_fields = project_info.get('fields', {})
         project_name_from_json = project_fields.get('name')
         project_description = project_fields.get('description', '')
+        project_visibility_filters = project_fields.get('visibility_filters', [])  # 추가 (2025-11-06)
 
         if not old_project_pk or not project_name_from_json:
              print("[ERROR][import_project] JSON 내 'Project' 데이터 형식이 잘못되었습니다 (pk 또는 name 누락).")
@@ -4137,15 +4138,25 @@ def import_project(request):
             count, details = target_project.classification_tags.all().delete()
             print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
             print("[DEBUG][import_project]   - 기존 관련 데이터 삭제 완료.")
-            # 기존 프로젝트의 설명도 업데이트 (선택 사항)
+            # 기존 프로젝트의 필드 업데이트 (description, visibility_filters 등)
+            fields_to_update = []
             if target_project.description != project_description:
                 target_project.description = project_description
-                target_project.save(update_fields=['description'])
-                print("[DEBUG][import_project]   - 기존 프로젝트 설명 업데이트 완료.")
+                fields_to_update.append('description')
+            if target_project.visibility_filters != project_visibility_filters:
+                target_project.visibility_filters = project_visibility_filters
+                fields_to_update.append('visibility_filters')
+            if fields_to_update:
+                target_project.save(update_fields=fields_to_update)
+                print(f"[DEBUG][import_project]   - 기존 프로젝트 필드 업데이트 완료: {fields_to_update}")
 
         except Project.DoesNotExist:
             print(f"[DEBUG][import_project]   - 기존 프로젝트 '{project_name_from_json}'을(를) 찾지 못했습니다. 새 프로젝트를 생성합니다.")
-            target_project = Project.objects.create(name=project_name_from_json, description=project_description)
+            target_project = Project.objects.create(
+                name=project_name_from_json,
+                description=project_description,
+                visibility_filters=project_visibility_filters  # 추가 (2025-11-06)
+            )
             created_new_project = True
             print(f"[DEBUG][import_project]   - 새 프로젝트 '{target_project.name}' (ID: {target_project.id}) 생성 완료.")
 
