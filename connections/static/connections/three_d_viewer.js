@@ -8923,9 +8923,6 @@
                             // 분할 객체: splitElementId만 체크 (rawElementId 체크 안 함 - 다른 분할 객체와 구분하기 위해)
                             isInProgress = inProgressElementIds.has(object.userData.splitElementId);
                             isCompleted = completedElementIds.has(object.userData.splitElementId);
-
-                                completedIds: Array.from(completedElementIds)
-                            });
                         } else {
                             // 원본 객체: bimObjectId 또는 rawElementId 체크
                             isInProgress = inProgressElementIds.has(objectId) ||
@@ -8935,9 +8932,6 @@
                             isCompleted = completedElementIds.has(objectId) ||
                                         completedElementIds.has(object.userData.bimObjectId) ||
                                         completedElementIds.has(object.userData.rawElementId);
-
-                                completedIds: Array.from(completedElementIds)
-                            });
                         }
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
