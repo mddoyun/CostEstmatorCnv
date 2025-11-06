@@ -2128,6 +2128,20 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
     });
     tableHtml += `</tr></thead><tbody>`;
 
+    // ▼▼▼ [추가] 최대 그룹핑 레벨 계산 (2025-11-06) ▼▼▼
+    function getMaxGroupLevel(items, currentLevel = 0) {
+        let maxLevel = currentLevel;
+        items.forEach(item => {
+            if (item.children && item.children.length > 0) {
+                const childMaxLevel = getMaxGroupLevel(item.children, currentLevel + 1);
+                maxLevel = Math.max(maxLevel, childMaxLevel);
+            }
+        });
+        return maxLevel;
+    }
+    const maxGroupLevel = getMaxGroupLevel(reportData);
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     function renderRows(items, level = 0) {
         items.forEach((item) => {
             const isGroup = item.children && item.children.length > 0;
@@ -2163,8 +2177,9 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
                 let cellStyle = `text-align: ${col.align || "left"};`;
 
-                // ▼▼▼ [추가] 그룹 행에서는 구분과 금액 관련 열만 표시하고 나머지는 숨김 ▼▼▼
-                if (isGroup) {
+                // ▼▼▼ [수정] 마지막 그룹핑 레벨이 아닌 그룹 행만 숨김 (2025-11-06) ▼▼▼
+                if (isGroup && level < maxGroupLevel) {
+                    // 중간 레벨 그룹: 구분과 금액 관련 열만 표시
                     const allowedGroupColumns = [
                         "name",
                         "total_cost_total",
@@ -2176,7 +2191,8 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                         cellContent = "";  // 빈 값으로 설정
                     }
                 }
-                // ▲▲▲ [추가] 여기까지 ▲▲▲
+                // 마지막 레벨 그룹 (level === maxGroupLevel)은 모든 컬럼 표시
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 if (col.id === "name") {
                     const padding = level * 20;
@@ -2186,10 +2202,9 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                     cellContent = `<span style="padding-left: ${padding}px;">${toggleIcon}${cellContent}</span>`;
                 } else if (col.id === "unit_price_type_id") {
                     if (isGroup) {
-                        // 그룹 행: 하위 항목들의 단가기준을 확인
+                        // ▼▼▼ [수정] 단가기준 "다양함" 로직 개선 (2025-11-06) ▼▼▼
+                        // 모든 고유한 단가기준 값을 수집 (null/"미지정"도 하나의 값으로 취급)
                         const childUnitPriceTypeIds = new Set();
-                        let hasNullValue = false;
-                        let hasNonNullValue = false;
 
                         const collectChildUnitPriceTypeIds = (items) => {
                             items.forEach(child => {
@@ -2199,29 +2214,28 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                                 } else {
                                     // 리프 노드의 단가기준 수집
                                     const typeId = child.unit_price_type_id;
-                                    if (!typeId || typeId === "") {
-                                        hasNullValue = true;
-                                    } else {
-                                        hasNonNullValue = true;
-                                        childUnitPriceTypeIds.add(typeId);
-                                    }
+                                    // null/빈값은 "(미지정)"으로, 실제값은 그대로 추가
+                                    childUnitPriceTypeIds.add(typeId || "(미지정)");
                                 }
                             });
                         };
                         collectChildUnitPriceTypeIds(item.children || []);
 
-                        // null/빈값과 실제값이 섞여있거나, 서로 다른 실제값이 2개 이상이면 "다양함"
-                        if ((hasNullValue && hasNonNullValue) || childUnitPriceTypeIds.size > 1) {
+                        // 서로 다른 값이 2개 이상이면 "다양함"
+                        if (childUnitPriceTypeIds.size > 1) {
                             cellContent = "다양함";
                         } else if (childUnitPriceTypeIds.size === 1) {
-                            const singleTypeId = Array.from(childUnitPriceTypeIds)[0];
-                            const unitPriceType = unitPriceTypes.find(t => t.id === singleTypeId);
-                            cellContent = unitPriceType ? unitPriceType.name : "(미지정)";
-                        } else if (hasNullValue) {
-                            cellContent = "(미지정)";
+                            const singleValue = Array.from(childUnitPriceTypeIds)[0];
+                            if (singleValue === "(미지정)") {
+                                cellContent = "(미지정)";
+                            } else {
+                                const unitPriceType = unitPriceTypes.find(t => t.id === singleValue);
+                                cellContent = unitPriceType ? unitPriceType.name : "(미지정)";
+                            }
                         } else {
                             cellContent = "-";
                         }
+                        // ▲▲▲ [수정] 여기까지 ▲▲▲
                     } else {
                         // 개별 항목: 드롭다운 표시
                         cellContent = `
