@@ -502,6 +502,16 @@ function setupBoqTableInteractions() {
 
                 if (itemIdsToUpdate.length === 0) return;
 
+                // ▼▼▼ [추가] "다양함" 선택 방지 (2025-11-06) ▼▼▼
+                if (newTypeId === "diverse") {
+                    showToast('"다양함"은 선택할 수 없습니다. 실제 단가기준을 선택해주세요.', "warning");
+                    // Revert to previous value
+                    const row = selectElement.closest("tr");
+                    selectElement.value = row.dataset.currentTypeId || "";
+                    return;
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 console.log(
                     `[DEBUG][Event] UnitPriceType changed for ${itemIdsToUpdate.length} items. New Type ID: ${newTypeId}`
                 );
@@ -2241,9 +2251,10 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                             selectedValue = (singleValue === "(미지정)") ? "" : singleValue;
                         }
 
-                        // 그룹도 드롭다운으로 표시 (편집 불가능하게 disabled 처리)
+                        // ▼▼▼ [수정] 그룹도 드롭다운으로 표시하고 변경 가능하게 (2025-11-06) ▼▼▼
+                        // 그룹 행에서 단가기준 변경 시 모든 포함된 산출항목의 단가기준을 변경
                         cellContent = `
-                            <select class="unit-price-type-select" data-item-ids='${itemIds}' disabled>
+                            <select class="unit-price-type-select" data-item-ids='${itemIds}' data-is-group="true">
                                 ${unitPriceOptionsForGroup.replace(
                                     `value="${selectedValue}"`,
                                     `value="${selectedValue}" selected`

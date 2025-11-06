@@ -2754,19 +2754,43 @@ def generate_boq_report_api(request, project_id):
     if not group_by_fields:
         return JsonResponse({'status': 'error', 'message': '하나 이상의 그룹핑 기준을 선택해야 합니다.'}, status=400)
 
+    # ▼▼▼ [수정] Django가 인식 가능한 필드만 .values()에 전달 (2025-11-06) ▼▼▼
+    # Direct Django fields that can be used in .values()
     direct_fields = {'id', 'quantity', 'cost_code_id', 'unit_price_type_id', 'cost_code__name', 'quantity_member_id'}
-    json_fields = set()
+
+    # Additional Django-queryable fields (not custom processed)
+    queryable_fields = {
+        'quantity_member__classification_tag__name',
+        'quantity_member__member_mark__mark',
+        'quantity_member__member_mark__id',
+        'quantity_member__name',
+        # Note: quantity_member__space is NOT queryable (QuantityMember has no space field)
+    }
+
+    # Fields requiring custom get_value_from_path processing
+    custom_processed_fields = set()
+
     all_requested_fields = set(group_by_fields + display_by_fields)
 
     for field in all_requested_fields:
         if '__properties__' in field or '__raw_data__' in field:
-            json_fields.add(field)
-        elif field not in direct_fields:
+            # JSON field access - needs custom processing
+            custom_processed_fields.add(field)
+        elif field in queryable_fields:
+            # Can be queried directly by Django
             direct_fields.add(field)
+        elif field not in direct_fields:
+            # Assume it needs custom processing
+            custom_processed_fields.add(field)
 
     values_to_fetch = list(direct_fields)
-    if any('__properties__' in f for f in json_fields): values_to_fetch.extend(['quantity_member__properties', 'quantity_member__member_mark__properties'])
-    if any('__raw_data__' in f for f in json_fields): values_to_fetch.append('quantity_member__raw_element__raw_data')
+
+    # Always fetch JSON fields for custom processing
+    if any('__properties__' in f for f in custom_processed_fields):
+        values_to_fetch.extend(['quantity_member__properties', 'quantity_member__member_mark__properties'])
+    if any('__raw_data__' in f for f in custom_processed_fields):
+        values_to_fetch.append('quantity_member__raw_element__raw_data')
+    # ▲▲▲ [수정] 여기까지 ▲▲▲
 
     # ▼▼▼ [수정] is_active=True 필터 추가 (분할된 원본 숨김) ▼▼▼
     items_qs = CostItem.objects.filter(project_id=project_id, is_active=True)
