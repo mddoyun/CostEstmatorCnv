@@ -45,6 +45,23 @@ window.convertClientFieldToServerFormat = function convertClientFieldToServerFor
         return `quantity_member__raw_element__raw_data__${attrName}`;
     }
 
+    // BIM.QuantitySet.* → quantity_member__raw_element__raw_data__QuantitySet__*
+    if (clientField.startsWith('BIM.QuantitySet.')) {
+        const qsName = clientField.replace('BIM.QuantitySet.', '');
+        return `quantity_member__raw_element__raw_data__QuantitySet__${qsName}`;
+    }
+
+    // BIM.* (기타 raw_data 하위 속성) → quantity_member__raw_element__raw_data__*
+    if (clientField.startsWith('BIM.')) {
+        const path = clientField.replace('BIM.', '');
+        // 이미 처리된 것들 제외하고 나머지
+        if (!path.startsWith('System.') && !path.startsWith('Parameters.') &&
+            !path.startsWith('TypeParameters.') && !path.startsWith('Attributes.') &&
+            !path.startsWith('QuantitySet.')) {
+            return `quantity_member__raw_element__raw_data__${path}`;
+        }
+    }
+
     // QM.System.* → quantity_member__*
     if (clientField.startsWith('QM.System.')) {
         const fieldName = clientField.replace('QM.System.', '');
@@ -249,16 +266,22 @@ async function generateBoqReport(preserveColumnOrder = false) {
 
     // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
     // ▼▼▼ [추가] 클라이언트 필드를 서버 형식으로 변환 (2025-11-06) ▼▼▼
-    const groupByFields = Array.from(groupBySelects).map(select =>
-        convertClientFieldToServerFormat(select.value)
-    );
+    const clientGroupByFields = Array.from(groupBySelects).map(select => select.value);
+    const groupByFields = clientGroupByFields.map(field => {
+        const converted = convertClientFieldToServerFormat(field);
+        console.log(`[DEBUG] Field conversion: "${field}" → "${converted}"`);
+        return converted;
+    });
 
     const displayByCheckboxes = document.querySelectorAll(
         ".boq-display-field-cb:checked"
     );
-    const displayByFields = Array.from(displayByCheckboxes).map(cb =>
-        convertClientFieldToServerFormat(cb.value)
-    );
+    const clientDisplayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
+    const displayByFields = clientDisplayByFields.map(field => {
+        const converted = convertClientFieldToServerFormat(field);
+        console.log(`[DEBUG] Field conversion: "${field}" → "${converted}"`);
+        return converted;
+    });
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     const rawElementIds = boqFilteredRawElementIds.size > 0
