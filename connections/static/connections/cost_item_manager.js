@@ -1283,6 +1283,20 @@ function renderCiSelectedProperties() {
     const fullBimObject = elementId && window.allRevitData ?
         window.allRevitData.find(item => item.id === elementId) : null;
 
+    // ▼▼▼ [디버깅] BIM 객체 구조 확인 ▼▼▼
+    console.log('[DEBUG][CostItem] fullBimObject:', fullBimObject);
+    if (fullBimObject && fullBimObject.raw_data) {
+        console.log('[DEBUG][CostItem] raw_data keys:', Object.keys(fullBimObject.raw_data));
+        console.log('[DEBUG][CostItem] raw_data sample:', {
+            Name: fullBimObject.raw_data.Name,
+            IfcClass: fullBimObject.raw_data.IfcClass,
+            Parameters: fullBimObject.raw_data.Parameters ? Object.keys(fullBimObject.raw_data.Parameters).slice(0, 5) : null,
+            TypeParameters: fullBimObject.raw_data.TypeParameters ? Object.keys(fullBimObject.raw_data.TypeParameters).slice(0, 5) : null,
+            QuantitySet: fullBimObject.raw_data.QuantitySet ? Object.keys(fullBimObject.raw_data.QuantitySet).slice(0, 5) : null
+        });
+    }
+    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
     if (fullBimObject && fullBimObject.raw_data) {
         const rawData = fullBimObject.raw_data;
 
@@ -1297,13 +1311,31 @@ function renderCiSelectedProperties() {
         allProperties.push({ label: 'BIM.System.classification_tags', value: tagsDisplay });
 
         // BIM 기본 속성 (rawData의 top-level 속성들)
-        const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
+        const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials', 'QuantitySet'];
+
+        // ▼▼▼ [디버깅] Attributes 섹션에 추가될 속성 확인 ▼▼▼
+        const attributeKeys = [];
+        for (const [attr, value] of Object.entries(rawData)) {
+            if (excludedKeys.includes(attr)) continue;
+            if (value === undefined || value === null || value === '') continue;
+            if (typeof value === 'object') continue;
+            attributeKeys.push(attr);
+        }
+        console.log('[DEBUG][CostItem] BIM.Attributes keys:', attributeKeys);
+        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
         for (const [attr, value] of Object.entries(rawData)) {
             if (excludedKeys.includes(attr)) continue;
             if (value === undefined || value === null || value === '') continue;
             if (typeof value === 'object') continue;
 
-            allProperties.push({ label: `BIM.Attributes.${attr}`, value: String(value) });
+            // ▼▼▼ [수정] raw_data의 키가 이미 prefix를 포함하는 경우 처리 ▼▼▼
+            // 예: "Attributes.Name", "QuantitySet.XXX", "PropertySet.XXX" 등
+            const propName = (attr.includes('.'))
+                ? `BIM.${attr}`  // 이미 prefix 있음
+                : `BIM.Attributes.${attr}`;  // prefix 없음
+            allProperties.push({ label: propName, value: String(value) });
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         }
 
         // BIM Parameters

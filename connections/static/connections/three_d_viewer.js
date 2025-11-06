@@ -8657,33 +8657,150 @@
             const startDate = new Date(task.start);
             const endDate = new Date(task.end);
 
+            // Calculate task day span for progress bar rendering
+            const taskStartDay = Math.floor((startDate - minDate) / (1000 * 60 * 60 * 24));
+            const taskEndDay = Math.floor((endDate - minDate) / (1000 * 60 * 60 * 24)) + 1;
+
+            // Task color (same logic as main gantt)
+            const barColor = `hsl(${(taskIndex * 137.5) % 360}, 70%, 60%)`;
+
             html += '<tr style="border-bottom: 1px solid #e0e0e0;">';
             html += `<td style="padding: 8px; background: white; position: sticky; left: 0; z-index: 5; border-right: 2px solid #ddd; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: ${activityColumnWidth}px; min-width: ${activityColumnWidth}px; max-width: ${activityColumnWidth}px;">${task.name || '-'}</td>`;
 
-            dateArray.forEach(date => {
+            dateArray.forEach((date, dayIndex) => {
                 const dateString = date.toISOString().split('T')[0];
-                const isInTaskRange = date >= startDate && date <= endDate;
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                 const isHighlightDate = cutoffDate && dateString === cutoffDate.toISOString().split('T')[0];
+                const isTaskDay = dayIndex >= taskStartDay && dayIndex < taskEndDay;
 
-                let bgColor = isWeekend ? '#fff5f5' : 'white';
-                let content = '';
+                let baseBgColor = isWeekend ? '#fff5f5' : 'white';
+                let cellStyle = `padding: 0; text-align: center; width: ${dateColumnWidth}px; min-width: ${dateColumnWidth}px; max-width: ${dateColumnWidth}px; border-right: 1px solid #ddd; position: relative;`;
 
-                if (isInTaskRange) {
-                    bgColor = '#4caf50'; // Green for task bar
-                    content = '&nbsp;';
-                }
+                if (isTaskDay) {
+                    const isFirstDay = dayIndex === taskStartDay;
+                    const isLastDay = dayIndex === taskEndDay - 1;
 
-                // Highlight date column
-                if (isHighlightDate) {
-                    if (isInTaskRange) {
-                        bgColor = '#ff9800'; // Orange for task on highlight date
+                    // Calculate fill percentage (same logic as main gantt)
+                    let fillPercentage = 100;
+                    let fillStart = 0;
+
+                    if (isFirstDay && isLastDay) {
+                        // Single day task
+                        fillStart = (task.startOffset || 0) * 100;
+                        fillPercentage = task.durationDays * 100;
+                    } else if (isFirstDay) {
+                        // First day
+                        fillStart = (task.startOffset || 0) * 100;
+                        fillPercentage = 100 - fillStart;
+                    } else if (isLastDay) {
+                        // Last day - calculate remaining duration with offset
+                        // CRITICAL: Count working days only (same as main gantt)
+                        let daysFromStart = 0;
+                        let current = new Date(startDate);
+                        const taskCalendar = task.calendar || window.mainCalendar;
+
+                        while (current < date) {
+                            // Only count working days
+                            if (typeof window.isWorkingDay === 'function' && window.isWorkingDay(current, taskCalendar)) {
+                                daysFromStart++;
+                            } else if (typeof window.isWorkingDay !== 'function') {
+                                // Fallback: count all days except weekends
+                                if (!(current.getDay() === 0 || current.getDay() === 6)) {
+                                    daysFromStart++;
+                                }
+                            }
+                            current.setDate(current.getDate() + 1);
+                        }
+
+                        const startOffset = task.startOffset || 0;
+                        const effectiveDaysFromStart = startOffset > 0 ? daysFromStart - startOffset : daysFromStart;
+                        const remainingDuration = task.durationDays - effectiveDaysFromStart;
+                        fillPercentage = Math.min(100, remainingDuration * 100);
+                        fillStart = 0;
+                    }
+
+                    // Check if this is a working day using task's calendar (same as main gantt)
+                    // Note: isWorkingDay function is defined in gantt_chart_handlers.js
+                    const taskCalendar = task.calendar || window.mainCalendar;
+                    const isWorkDay = typeof window.isWorkingDay === 'function'
+                        ? window.isWorkingDay(date, taskCalendar)
+                        : !(date.getDay() === 0 || date.getDay() === 6); // Fallback to weekend check
+
+                    // Create gradient background (same as main gantt)
+                    let barStyle;
+                    if (isWorkDay) {
+                        // Working day: filled with color gradient
+                        barStyle = `
+                            background: linear-gradient(to right,
+                                ${baseBgColor} 0%,
+                                ${baseBgColor} ${fillStart}%,
+                                ${barColor} ${fillStart}%,
+                                ${barColor} ${fillStart + fillPercentage}%,
+                                ${baseBgColor} ${fillStart + fillPercentage}%,
+                                ${baseBgColor} 100%);
+                        `;
+
+                        // Highlight date overlay
+                        if (isHighlightDate) {
+                            barStyle = `
+                                background: linear-gradient(to right,
+                                    rgba(255, 215, 0, 0.3) 0%,
+                                    rgba(255, 215, 0, 0.3) ${fillStart}%,
+                                    ${barColor} ${fillStart}%,
+                                    ${barColor} ${fillStart + fillPercentage}%,
+                                    rgba(255, 215, 0, 0.3) ${fillStart + fillPercentage}%,
+                                    rgba(255, 215, 0, 0.3) 100%);
+                            `;
+                        }
                     } else {
-                        bgColor = '#ffd700'; // Yellow for highlight date
+                        // Holiday/weekend: border only with white background
+                        barStyle = `
+                            background: linear-gradient(to right,
+                                transparent 0%,
+                                transparent ${fillStart}%,
+                                white ${fillStart}%,
+                                white ${fillStart + fillPercentage}%,
+                                transparent ${fillStart + fillPercentage}%,
+                                transparent 100%);
+                            border-top: 2px solid ${barColor};
+                            border-bottom: 2px solid ${barColor};
+                        `;
+
+                        // Add side borders for first/last day
+                        if (isFirstDay) {
+                            barStyle += `border-left: 2px solid ${barColor};`;
+                        }
+                        if (isLastDay) {
+                            barStyle += `border-right: 2px solid ${barColor};`;
+                        }
+
+                        // Highlight date overlay for holidays
+                        if (isHighlightDate) {
+                            barStyle = `
+                                background: rgba(255, 215, 0, 0.3);
+                                border-top: 2px solid ${barColor};
+                                border-bottom: 2px solid ${barColor};
+                            `;
+                            if (isFirstDay) {
+                                barStyle += `border-left: 2px solid ${barColor};`;
+                            }
+                            if (isLastDay) {
+                                barStyle += `border-right: 2px solid ${barColor};`;
+                            }
+                        }
+                    }
+
+                    cellStyle += barStyle;
+                } else {
+                    // Not in task range
+                    if (isHighlightDate) {
+                        cellStyle += `background: #ffd700;`;
+                    } else {
+                        cellStyle += `background: ${baseBgColor};`;
                     }
                 }
 
-                html += `<td class="gantt-date-col" data-date="${dateString}" style="padding: 0; background: ${bgColor}; border-right: 1px solid #ddd; text-align: center; width: ${dateColumnWidth}px; min-width: ${dateColumnWidth}px; max-width: ${dateColumnWidth}px;">${content}</td>`;
+                html += `<td class="gantt-date-col" data-date="${dateString}" style="${cellStyle}">&nbsp;</td>`;
             });
 
             html += '</tr>';

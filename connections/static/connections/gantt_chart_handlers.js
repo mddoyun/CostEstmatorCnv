@@ -241,6 +241,12 @@ async function loadAndRenderGanttChart() {
         // 간트차트 렌더링
         renderGanttChart(ganttData);
 
+        // 간트차트 로드 후 대시보드 업데이트 (홈 탭의 공정계획 카드 업데이트)
+        if (typeof window.loadHomeDashboardData === 'function') {
+            console.log('[Gantt Chart] Triggering dashboard update after gantt load');
+            window.loadHomeDashboardData(currentProjectId);
+        }
+
     } catch (error) {
         console.error('Error loading gantt chart:', error);
         showToast(error.message, 'error');
@@ -665,9 +671,11 @@ function renderGanttChart(tasks, containerId = 'gantt-chart-container') {
         const maxDate = new Date(Math.max(...allDates));
         const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
 
-        // 전역 변수에 저장
+        // 전역 변수에 저장 (대시보드에서도 접근 가능하도록 window에 노출)
         ganttMinDate = minDate;
         ganttMaxDate = maxDate;
+        window.ganttMinDate = minDate;
+        window.ganttMaxDate = maxDate;
 
         // 요일 한글 변환
         const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
@@ -1760,6 +1768,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // navigation.js에서 탭 전환 시 간트차트 로드하도록 전역 함수 제공
 window.loadGanttChart = loadAndRenderGanttChart;
+// 시뮬레이션 탭에서 캘린더 기반 작업일 체크를 위해 전역 노출
+window.isWorkingDay = isWorkingDay;
+// mainCalendar를 전역으로 노출 (시뮬레이션 탭에서 접근 가능하도록)
+Object.defineProperty(window, 'mainCalendar', {
+    get: () => mainCalendar,
+    set: (value) => { mainCalendar = value; }
+});
 
 /**
  * 내역집계표 렌더링

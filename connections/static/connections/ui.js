@@ -3511,14 +3511,21 @@ function generateBIMPropertyOptions() {
                     instanceParams.add(k);
                 });
             }
+            // ▼▼▼ [추가] QuantitySet 객체 내부 속성 수집 (2025-11-06) ▼▼▼
+            if (raw.QuantitySet && typeof raw.QuantitySet === 'object') {
+                Object.keys(raw.QuantitySet).forEach((k) => {
+                    quantitySetProps.add(`QuantitySet.${k}`);
+                });
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
             // raw_data의 모든 top-level 키 수집
             Object.keys(raw).forEach((k) => {
-                // Parameters, TypeParameters는 이미 처리했으므로 제외
-                if (k === 'Parameters' || k === 'TypeParameters') {
+                // Parameters, TypeParameters, QuantitySet는 이미 처리했으므로 제외
+                if (k === 'Parameters' || k === 'TypeParameters' || k === 'QuantitySet') {
                     return;
                 }
 
-                // QuantitySet.* 형태의 속성
+                // QuantitySet.* 형태의 속성 (키 이름이 QuantitySet.XXX인 경우)
                 if (k.startsWith('QuantitySet.')) {
                     quantitySetProps.add(k);
                 }
