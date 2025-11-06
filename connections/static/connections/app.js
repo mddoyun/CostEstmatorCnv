@@ -695,7 +695,7 @@ async function runBatchAutoUpdate() {
 
         // ========== 3단계: 수량산출부재 - 속성 룰셋 일괄 적용 ==========
         showToast("3/13: 수량산출부재에 속성 룰셋을 적용합니다...", "info");
-        await applyPropertyRulesToAllQm();
+        await applyPropertyRulesToAllQm(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 3;
             progressStatus.textContent = `3/${TOTAL_STEPS} 완료`;
@@ -765,7 +765,7 @@ async function runBatchAutoUpdate() {
 
         // ========== 10단계: 코스트아이템 - 액티비티 룰셋 적용 ==========
         showToast("10/13: 코스트아이템에 액티비티 룰셋을 적용합니다...", "info");
-        await applyCiActivityRules();
+        await applyCiActivityRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 10;
             progressStatus.textContent = `10/${TOTAL_STEPS} 완료`;
@@ -775,7 +775,7 @@ async function runBatchAutoUpdate() {
 
         // ========== 11단계: 액티비티 객체 - 자동 생성(액티비티코드 기준) ==========
         showToast("11/13: 액티비티 객체를 자동 생성합니다...", "info");
-        await createActivityObjectsAuto();
+        await createActivityObjectsAuto(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 11;
             progressStatus.textContent = `11/${TOTAL_STEPS} 완료`;
@@ -785,7 +785,7 @@ async function runBatchAutoUpdate() {
 
         // ========== 12단계: 액티비티 객체 - 자동 수량계산 ==========
         showToast("12/13: 액티비티 객체의 자동 수량계산을 실행합니다...", "info");
-        await recalculateAllAoQuantities();
+        await recalculateAllAoQuantities(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
             progressBar.value = 12;
             progressStatus.textContent = `12/${TOTAL_STEPS} 완료`;

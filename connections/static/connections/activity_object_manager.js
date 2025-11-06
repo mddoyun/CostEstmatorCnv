@@ -174,13 +174,13 @@ window.loadActivityObjects = loadActivityObjects;
 // 자동 생성 (액티비티코드 기준)
 // =====================================================================
 
-async function createActivityObjectsAuto() {
+async function createActivityObjectsAuto(skipConfirmation = false) {
     if (!currentProjectId) {
         showToast('먼저 프로젝트를 선택하세요.', 'error');
         return;
     }
 
-    if (!confirm('CostItem에 할당된 Activity를 기준으로 ActivityObject를 자동 생성하시겠습니까?')) {
+    if (!skipConfirmation && !confirm('CostItem에 할당된 Activity를 기준으로 ActivityObject를 자동 생성하시겠습니까?')) {
         return;
     }
 
@@ -1961,13 +1961,13 @@ function initAoSplitBar() {
  * - 수동 직접입력: 값 유지
  * - 수동 산식입력: 산식 재평가
  */
-async function recalculateAllAoQuantities() {
+async function recalculateAllAoQuantities(skipConfirmation = false) {
     if (!currentProjectId) {
         showToast('먼저 프로젝트를 선택하세요.', 'error');
         return;
     }
 
-    if (!confirm('모든 액티비티 객체의 수량을 재계산하시겠습니까?\n(수동 직접입력 값은 유지되고, 산식은 재평가됩니다.)')) {
+    if (!skipConfirmation && !confirm('모든 액티비티 객체의 수량을 재계산하시겠습니까?\n(수동 직접입력 값은 유지되고, 산식은 재평가됩니다.)')) {
         return;
     }
 

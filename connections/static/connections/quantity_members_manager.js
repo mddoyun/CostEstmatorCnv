@@ -2572,13 +2572,13 @@ function initQmSplitBar() {
 /**
  * 모든 수량산출부재에 속성 매핑 룰셋을 일괄 적용합니다.
  */
-async function applyPropertyRulesToAllQm() {
+async function applyPropertyRulesToAllQm(skipConfirmation = false) {
     if (!currentProjectId) {
         showToast('프로젝트를 먼저 선택하세요.', 'warning');
         return;
     }
 
-    if (!confirm('모든 수량산출부재에 속성 매핑 룰셋을 적용하시겠습니까?\n\n기존 속성 값이 룰셋 계산 결과로 덮어씌워질 수 있습니다.')) {
+    if (!skipConfirmation && !confirm('모든 수량산출부재에 속성 매핑 룰셋을 적용하시겠습니까?\n\n기존 속성 값이 룰셋 계산 결과로 덮어씌워질 수 있습니다.')) {
         return;
     }
 

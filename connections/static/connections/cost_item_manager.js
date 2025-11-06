@@ -2648,7 +2648,7 @@ function renderCiActivitiesList() {
 /**
  * 액티비티 룰셋 적용
  */
-async function applyCiActivityRules() {
+async function applyCiActivityRules(skipConfirmation = false) {
 
     if (!currentProjectId) {
         showToast('프로젝트를 먼저 선택하세요.', 'error');
@@ -2660,7 +2660,7 @@ async function applyCiActivityRules() {
         return;
     }
 
-    if (!confirm('액티비티 할당 룰셋을 적용하시겠습니까?')) {
+    if (!skipConfirmation && !confirm('액티비티 할당 룰셋을 적용하시겠습니까?')) {
         return;
     }
 
