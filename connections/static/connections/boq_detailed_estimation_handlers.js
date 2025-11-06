@@ -58,20 +58,24 @@ async function loadBoqGroupingFields() {
         return;
     }
 
-
     try {
-        const response = await fetch(
-            `/connections/api/boq/grouping-fields/${currentProjectId}/`
-        );
-        if (!response.ok) {
-            throw new Error("그룹핑 필드 목록을 불러오는데 실패했습니다.");
-        }
+        // ▼▼▼ [수정] 서버 API 대신 generateCIPropertyOptions() 사용 ▼▼▼
+        // 코스트아이템 필드 선택과 동일한 속성 리스트 사용
+        const propertyOptionGroups = generateCIPropertyOptions();
 
-        availableBoqFields = await response.json();
+        // 그룹화된 옵션을 평탄화하여 {value, label} 형식으로 변환
+        availableBoqFields = [];
+        propertyOptionGroups.forEach(group => {
+            if (group.options && Array.isArray(group.options)) {
+                availableBoqFields.push(...group.options);
+            }
+        });
+
         console.log(
-            `[DEBUG] ${availableBoqFields.length}개의 사용 가능한 BOQ 필드를 수신했습니다.`,
+            `[DEBUG] ${availableBoqFields.length}개의 사용 가능한 BOQ 필드를 생성했습니다 (코스트아이템 필드선택과 동일).`,
             availableBoqFields
         );
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         renderBoqDisplayFieldControls(availableBoqFields);
 
@@ -2042,6 +2046,9 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                     if (isGroup) {
                         // 그룹 행: 하위 항목들의 단가기준을 확인
                         const childUnitPriceTypeIds = new Set();
+                        let hasNullValue = false;
+                        let hasNonNullValue = false;
+
                         const collectChildUnitPriceTypeIds = (items) => {
                             items.forEach(child => {
                                 if (child.children && child.children.length > 0) {
@@ -2049,19 +2056,27 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                                     collectChildUnitPriceTypeIds(child.children);
                                 } else {
                                     // 리프 노드의 단가기준 수집
-                                    childUnitPriceTypeIds.add(child.unit_price_type_id || "");
+                                    const typeId = child.unit_price_type_id;
+                                    if (!typeId || typeId === "") {
+                                        hasNullValue = true;
+                                    } else {
+                                        hasNonNullValue = true;
+                                        childUnitPriceTypeIds.add(typeId);
+                                    }
                                 }
                             });
                         };
                         collectChildUnitPriceTypeIds(item.children || []);
 
-                        // 하위 항목들이 서로 다른 단가기준을 가지면 "다양함" 표시
-                        if (childUnitPriceTypeIds.size > 1) {
+                        // null/빈값과 실제값이 섞여있거나, 서로 다른 실제값이 2개 이상이면 "다양함"
+                        if ((hasNullValue && hasNonNullValue) || childUnitPriceTypeIds.size > 1) {
                             cellContent = "다양함";
                         } else if (childUnitPriceTypeIds.size === 1) {
                             const singleTypeId = Array.from(childUnitPriceTypeIds)[0];
                             const unitPriceType = unitPriceTypes.find(t => t.id === singleTypeId);
                             cellContent = unitPriceType ? unitPriceType.name : "(미지정)";
+                        } else if (hasNullValue) {
+                            cellContent = "(미지정)";
                         } else {
                             cellContent = "-";
                         }
