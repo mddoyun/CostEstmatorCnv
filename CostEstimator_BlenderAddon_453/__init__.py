@@ -391,14 +391,43 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                             prop_key = f"{prop_set.Name}__{quantity.Name}"
                                             element_dict["QuantitySet"][prop_key] = prop_value
 
-            # ▼▼▼ Type 정보 추출 ▼▼▼
+            # ▼▼▼ Type 정보 추출 (확장: Attributes 포함) ▼▼▼
             if hasattr(element, 'IsTypedBy') and element.IsTypedBy:
                 type_definition = element.IsTypedBy[0]
                 if type_definition and type_definition.is_a("IfcRelDefinesByType"):
                     relating_type = type_definition.RelatingType
                     if relating_type:
+                        # 기본 Type 정보
                         element_dict["Type"]["Name"] = relating_type.Name
                         element_dict["Type"]["IfcClass"] = relating_type.is_a()
+
+                        # ▼▼▼ [NEW] Type Attributes 추출 ▼▼▼
+                        element_dict["Type"]["Attributes"] = {}
+                        type_info = relating_type.get_info()
+
+                        for attr_name, attr_value in type_info.items():
+                            # 내부 속성 제외
+                            if attr_name in ['type', 'id', 'GlobalId']:
+                                continue
+
+                            # 관계형 속성 제외 (리스트/튜플이면서 대문자 시작)
+                            if isinstance(attr_value, (list, tuple)) and attr_name[0].isupper():
+                                continue
+
+                            # Attributes 추가
+                            if hasattr(attr_value, 'is_a'):
+                                # IFC 엔티티 참조
+                                element_dict["Type"]["Attributes"][attr_name] = f"{attr_value.is_a()}: {getattr(attr_value, 'Name', str(attr_value))}"
+                            elif attr_value is not None:
+                                element_dict["Type"]["Attributes"][attr_name] = attr_value
+                            else:
+                                element_dict["Type"]["Attributes"][attr_name] = None
+
+                        print(f"[DEBUG] Type {relating_type.id()} Attributes extracted: {list(element_dict['Type']['Attributes'].keys())}")
+                        # ▲▲▲ [NEW] Type Attributes 추출 끝 ▲▲▲
+
+                        # Type의 PropertySets 추출
+                        element_dict["Type"]["PropertySet"] = {}
                         if hasattr(relating_type, 'HasPropertySets') and relating_type.HasPropertySets:
                             for prop_set in relating_type.HasPropertySets:
                                 if prop_set and prop_set.is_a("IfcPropertySet"):
@@ -406,7 +435,7 @@ def serialize_ifc_elements_to_string_list(ifc_file):
                                         for prop in prop_set.HasProperties:
                                             if prop.is_a("IfcPropertySingleValue"):
                                                 prop_key = f"{prop_set.Name}__{prop.Name}"
-                                                element_dict["Type"][prop_key] = prop.NominalValue.wrappedValue if prop.NominalValue else None
+                                                element_dict["Type"]["PropertySet"][prop_key] = prop.NominalValue.wrappedValue if prop.NominalValue else None
 
             # ▼▼▼ Spatial Container 정보 추출 ▼▼▼
             if hasattr(element, 'ContainedInStructure') and element.ContainedInStructure:
