@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/projects/', views.get_all_projects, name='get_all_projects'),
     path('create-project/', views.create_project, name='create_project'),
     path('delete-project/<uuid:project_id>/', views.delete_project, name='delete_project'),
+    path('rename-project/<uuid:project_id>/', views.rename_project, name='rename_project'),
     path('export-tags/<uuid:project_id>/', views.export_tags, name='export_tags'),
     path('import-tags/<uuid:project_id>/', views.import_tags, name='import_tags'),
 
@@ -119,6 +120,10 @@ urlpatterns = [
     # --- 프로젝트 가져오기/내보내기 ---
     path('export-project/<uuid:project_id>/', views.export_project, name='export_project'),
     path('import-project/', views.import_project, name='import_project'),
+
+    # --- 관리 데이터 가져오기/내보내기 ---
+    path('export-management-data/<uuid:project_id>/', views.export_management_data, name='export_management_data'),
+    path('import-management-data/<uuid:project_id>/', views.import_management_data, name='import_management_data'),
 
     # --- 단가 관리 API ---
     path('api/unit-price-types/<uuid:project_id>/', views.unit_price_types_api, name='unit_price_types_api'),

@@ -169,6 +169,14 @@
                     <button class="sub-nav-button" data-tab="ai-model-manager">
                         🧠 AI 모델 관리
                     </button>
+                    <!-- 관리 데이터 내보내기/가져오기 버튼 -->
+                    <button id="export-management-data-btn" class="sub-nav-button" style="background: #007bff; color: white; margin-left: auto;" disabled>
+                        📤 자산 내보내기
+                    </button>
+                    <button id="import-management-data-btn" class="sub-nav-button" style="background: #28a745; color: white;" disabled>
+                        📥 자산 가져오기
+                    </button>
+                    <input type="file" id="management-data-file-input" accept=".json" style="display: none;">
                 </nav>
                 <nav id="secondary-nav-takeoff" class="secondary-nav">
                     <button class="sub-nav-button" data-tab="data-management">
@@ -239,6 +247,9 @@
                                         <button id="home-export-project-btn" style="width: 100%; padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;" disabled>
                                             📤 프로젝트 내보내기
                                         </button>
+                                        <button id="home-rename-project-btn" style="width: 100%; padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;" disabled>
+                                            ✏️ 프로젝트 이름 변경
+                                        </button>
                                         <button id="home-delete-project-btn" style="width: 100%; padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;" disabled>
                                             🗑️ 프로젝트 삭제
                                         </button>
@@ -274,7 +285,7 @@
                                             <!-- 비용 내역 표 -->
                                             <table id="dashboard-cost-table" style="width: 100%; border-collapse: collapse; background: rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden;">
                                                 <thead>
-                                                    <tr style="background: rgba(0,0,0,0.2);">
+                                                    <tr style="background: rgba(0,0,0,0.5);">
                                                         <th style="padding: 12px; text-align: left; color: white; font-weight: bold; font-size: 14px; border-bottom: 2px solid rgba(255,255,255,0.3);">항목</th>
                                                         <th style="padding: 12px; text-align: right; color: white; font-weight: bold; font-size: 14px; border-bottom: 2px solid rgba(255,255,255,0.3);">금액</th>
                                                     </tr>

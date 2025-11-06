@@ -1,5 +1,26 @@
 // --- 리스너 설정 헬퍼 함수들 (기존 함수들 포함) ---
 
+function setupManagementDataListeners() {
+    const exportBtn = document.getElementById('export-management-data-btn');
+    const importBtn = document.getElementById('import-management-data-btn');
+    const fileInput = document.getElementById('management-data-file-input');
+
+    if (exportBtn) {
+        exportBtn.addEventListener('click', handleExportManagementData);
+        console.log('[DEBUG] Export management data button listener attached');
+    }
+
+    if (importBtn && fileInput) {
+        importBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', handleImportManagementData);
+        console.log('[DEBUG] Import management data button and file input listeners attached');
+    }
+
+    console.log('[DEBUG] Management data listeners setup complete.');
+}
+
 function setupSpaceManagementListeners() {
     document
         .getElementById("add-root-space-btn")

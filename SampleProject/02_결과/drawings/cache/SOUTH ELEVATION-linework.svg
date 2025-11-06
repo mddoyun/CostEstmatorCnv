@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:ifc="http://www.ifcopenshell.org/ns" width="500mm" height="500mm" viewBox="0 0 500 500">
+    <defs>
+        <marker id="arrowend" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7"/>
+        </marker>
+        <marker id="arrowstart" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+          <polygon points="10 0, 0 3.5, 10 7"/>
+        </marker>
+    </defs>
+    <g ifc:name="Elevation SOUTH ELEVATION" class="section" ifc:plane="[[1.000000,0.000000,0.000000,0.000000],[0.000000,1.000000,0.000000,0.000000],[0.000000,0.000000,1.000000,0.000000],[0.000000,0.000000,0.000000,1.000000]]" ifc:matrix3="[[10.000000,0.000000,139.868448],[0.000000,10.000000,252.499994],[0.000000,0.000000,1.000000]]">
+        
+    <g class="projection"/><g class="projection"/><g class="projection"><path d="M88.0737,252.5 L138.391,252.5 L395.371,252.5 L476.096,252.5 L476.096,271.05 L88.0737,271.05 Z" style="" ifc:pointInside="319.847,264.867" class="IfcGeographicElement material-null projection"/></g><g class="projection"><path d="M252.927,251.5 L269.927,251.5 L269.927,256.5 L252.927,256.5 Z" style="" ifc:pointInside="264.26,254.833" class="IfcGeographicElement material-null projection"/></g><g class="projection"/><g class="projection"><path d="M329.927,256.5 L329.927,251.5 L346.927,251.5 L346.927,256.5 Z" style="" ifc:pointInside="335.594,253.167" class="IfcGeographicElement material-null projection"/></g><g class="projection"><path d="M254.912,241.35 L254.912,241.15 L256.112,241.15 L256.112,241.35 Z" style="fill: hsl(61,50%, 50%)" ifc:pointInside="255.312,241.217"/><path d="M248.112,251.249 L248.112,231.75 L256.612,231.75 L256.612,251.249 L256.612,251.25 L248.112,251.25 Z M256.112,241.35 L256.113,241.35 L256.112,241.35 L256.112,241.15 L256.113,241.15 L256.112,241.15 L256.112,241.149 L256.112,241.15 L254.912,241.15 L254.912,241.149 L254.912,241.15 L254.911,241.15 L254.912,241.15 L254.912,241.35 L254.911,241.35 L254.912,241.35 L254.912,241.351 L254.912,241.35 L256.112,241.35 L256.112,241.351 Z" style="" ifc:pointInside="250.378,241.45" class="IfcGeographicElement material-null projection"/></g><g class="projection"><path d="M395.372,250 L395.372,255 L393.273,255 L393.272,255 L393.272,250 L393.273,250 Z" style="" ifc:pointInside="394.672,253.333" class="IfcGeographicElement material-null projection"/></g><g class="projection"/><g class="projection"/><g class="projection"><path d="M257.927,230.5 L257.927,176.5 L258.927,176.5 L258.927,230.5 Z" style="" ifc:pointInside="258.26,194.5" class="IfcGeographicElement material-null projection"/></g><g class="projection"/><g class="projection"><path d="M258.927,176.5 L341.927,176.5 L341.927,230.5 L258.927,230.5 Z" style="" ifc:pointInside="314.26,212.5" class="IfcGeographicElement material-null projection"/></g><g class="projection"/><g class="projection"/>
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        <g id="product-3c525c9f-9147-4060-9c19-aedd37fa2a9a-body" class="IfcGeographicElement material-null cut" ifc:name="&#51648;&#54805;" ifc:guid="0yKboVaKT0O9mPhjqt_YgQ">
+            <path d="M476.096,271.05 L88.0737,271.05 L88.0737,252.5 L476.096,252.5 L476.096,271.05"/>
+        </g>
+        <g id="product-4ad4a988-2d2e-4104-869a-59f9075acb41-body" class="IfcGeographicElement material-null cut" ifc:name="&#45824;&#51648;&#44221;&#44228;&#49440;" ifc:guid="1ArAc8BIv118QQMVa7Mij1">
+            <path d="M393.272,255 L139.868,255 L138.39,255 L138.39,250 L139.868,250 L393.272,250 L395.372,250 L395.372,255 L393.272,255 L393.272,250"/>
+        </g>
+        
+        
+        </g>
+</svg>

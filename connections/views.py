@@ -136,6 +136,66 @@ def delete_project(request, project_id):
     print("[ERROR][delete_project] Invalid request method")
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
 
+def rename_project(request, project_id):
+    """
+    프로젝트 이름을 변경하는 API
+    """
+    print(f"[DEBUG][rename_project] Received request to rename project ID: {project_id}")
+    if request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            new_name = data.get('name', '').strip()
+
+            if not new_name:
+                print(f"[ERROR][rename_project] Empty project name provided")
+                return JsonResponse({
+                    'status': 'error',
+                    'message': '프로젝트 이름을 입력하세요.'
+                }, status=400)
+
+            # 같은 이름의 프로젝트가 이미 있는지 확인
+            if Project.objects.filter(name=new_name).exclude(id=project_id).exists():
+                print(f"[ERROR][rename_project] Project name '{new_name}' already exists")
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'"{new_name}" 이름의 프로젝트가 이미 존재합니다.'
+                }, status=409)
+
+            project = Project.objects.get(id=project_id)
+            old_name = project.name
+            project.name = new_name
+            project.save()
+
+            print(f"[DEBUG][rename_project] Project renamed from '{old_name}' to '{new_name}' (ID: {project_id})")
+            return JsonResponse({
+                'status': 'success',
+                'message': f'프로젝트 이름이 "{old_name}"에서 "{new_name}"(으)로 변경되었습니다.',
+                'project': {
+                    'id': str(project.id),
+                    'name': project.name
+                }
+            })
+        except Project.DoesNotExist:
+            print(f"[ERROR][rename_project] Project with ID {project_id} not found")
+            return JsonResponse({
+                'status': 'error',
+                'message': '프로젝트를 찾을 수 없습니다.'
+            }, status=404)
+        except json.JSONDecodeError:
+            print(f"[ERROR][rename_project] Invalid JSON in request body")
+            return JsonResponse({
+                'status': 'error',
+                'message': '잘못된 요청 형식입니다.'
+            }, status=400)
+        except Exception as e:
+            print(f"[ERROR][rename_project] Error renaming project: {e}")
+            return JsonResponse({
+                'status': 'error',
+                'message': f'프로젝트 이름 변경 중 오류가 발생했습니다: {str(e)}'
+            }, status=500)
+    print(f"[ERROR][rename_project] Invalid request method: {request.method}")
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
+
 def trigger_revit_data_fetch(request, project_id):
     # 디버깅: 데이터 가져오기 명령 트리거
     print(f"[DEBUG][trigger_revit_data_fetch] Triggering data fetch for project ID: {project_id}")
@@ -4022,6 +4082,398 @@ def export_project(request, project_id):
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 
+def export_management_data(request, project_id):
+    """
+    프로젝트의 관리 데이터만 내보냅니다 (BIM 데이터 제외).
+    포함: 분류태그, 코드, 룰셋, AI모델, 캘린더, 액티비티, 단가 등
+    제외: RawElement, SplitElement, QuantityMember, CostItem, ActivityObject
+    """
+    print(f"\n[DEBUG][export_management_data] --- 관리 데이터 내보내기 시작 (Project ID: {project_id}) ---")
+    try:
+        project = Project.objects.get(id=project_id)
+        print(f"[DEBUG][export_management_data] 프로젝트 '{project.name}' 확인됨.")
+
+        # 관리 데이터만 직렬화 (BIM 원본 데이터 및 파생 데이터 제외)
+        models_to_serialize = {
+            'Project': Project.objects.filter(id=project_id),
+            # 기본 마스터 데이터
+            'QuantityClassificationTag': QuantityClassificationTag.objects.filter(project=project),
+            'CostCode': CostCode.objects.filter(project=project),
+            'MemberMark': MemberMark.objects.filter(project=project),
+            'UnitPriceType': UnitPriceType.objects.filter(project=project),
+            'UnitPrice': UnitPrice.objects.filter(project=project),
+            'AIModel': AIModel.objects.filter(project=project),
+            'SpaceClassification': SpaceClassification.objects.filter(project=project),
+            # 룰셋들
+            'ClassificationRule': ClassificationRule.objects.filter(project=project),
+            'PropertyMappingRule': PropertyMappingRule.objects.filter(project=project),
+            'CostCodeRule': CostCodeRule.objects.filter(project=project),
+            'MemberMarkAssignmentRule': MemberMarkAssignmentRule.objects.filter(project=project),
+            'CostCodeAssignmentRule': CostCodeAssignmentRule.objects.filter(project=project),
+            'SpaceClassificationRule': SpaceClassificationRule.objects.filter(project=project),
+            'SpaceAssignmentRule': SpaceAssignmentRule.objects.filter(project=project),
+            'ActivityAssignmentRule': ActivityAssignmentRule.objects.filter(project=project),
+            # 공정 관련
+            'Activity': Activity.objects.filter(project=project),
+            'ActivityDependency': ActivityDependency.objects.filter(project=project),
+            'WorkCalendar': WorkCalendar.objects.filter(project=project),
+        }
+        print(f"[DEBUG][export_management_data] 직렬화 대상 모델 목록 정의 완료.")
+
+        export_data = {}
+
+        # 각 모델 데이터 직렬화
+        print("[DEBUG][export_management_data] 모델 데이터 직렬화 시작...")
+        for name, qs in models_to_serialize.items():
+            count = qs.count()
+            print(f"[DEBUG][export_management_data]   - '{name}' 모델 직렬화 중... ({count}개 항목)")
+            if count > 0:
+                export_data[name] = serializers.serialize('python', qs)
+            else:
+                export_data[name] = []
+            print(f"[DEBUG][export_management_data]   - '{name}' 모델 직렬화 완료.")
+        print("[DEBUG][export_management_data] 모델 데이터 직렬화 완료.")
+
+        # ManyToMany 관계 데이터 추출 (SpaceClassification.mapped_elements는 제외 - RawElement 참조)
+        print("[DEBUG][export_management_data] ManyToMany 관계 데이터 추출 중...")
+        # SpaceClassification은 포함하지만 mapped_elements는 제외 (BIM 데이터 참조)
+        print("[DEBUG][export_management_data] ManyToMany 관계 데이터 추출 완료.")
+
+        # JSON 응답 생성
+        print("[DEBUG][export_management_data] JSON 데이터 생성 중...")
+        json_output = json.dumps(export_data, indent=2, cls=serializers.json.DjangoJSONEncoder)
+        print("[DEBUG][export_management_data] JSON 데이터 생성 완료.")
+
+        # 파일명 생성
+        print("[DEBUG][export_management_data] 파일명 생성 중...")
+        base_filename = f"{project.name}_management_{datetime.date.today()}.json"
+        name_part, ext_part = os.path.splitext(base_filename)
+        safe_name_part = "".join(c if c.isalnum() or c in ['-', '_'] else '_' for c in name_part)
+        safe_filename = safe_name_part + ext_part
+        print(f"[DEBUG][export_management_data] 생성된 안전한 파일명: {safe_filename}")
+
+        # HttpResponse 생성 (다운로드 강제)
+        response = HttpResponse(
+            json_output,
+            content_type='application/octet-stream'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
+
+        print(f"[DEBUG][export_management_data] --- 관리 데이터 내보내기 완료: {safe_filename} ---")
+        return response
+
+    except Project.DoesNotExist:
+        print(f"[ERROR][export_management_data] 내보낼 프로젝트를 찾을 수 없습니다 (ID: {project_id}).")
+        return JsonResponse({'status': 'error', 'message': 'Project not found.'}, status=404)
+    except Exception as e:
+        print(f"[ERROR][export_management_data] 관리 데이터 내보내기 중 예외 발생: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+@transaction.atomic
+def import_management_data(request, project_id):
+    """프로젝트의 관리 데이터만 가져옵니다 (BIM 데이터 제외)."""
+    print(f"\n[DEBUG][import_management_data] --- 관리 데이터 가져오기 시작 (프로젝트 ID: {project_id}) ---")
+
+    if not request.FILES.get('management_file'):
+        print("[ERROR][import_management_data] 관리 데이터 파일이 누락되었습니다.")
+        return JsonResponse({'status': 'error', 'message': '관리 데이터 파일이 필요합니다.'}, status=400)
+
+    try:
+        # 프로젝트 확인
+        try:
+            project = Project.objects.get(id=project_id)
+            print(f"[DEBUG][import_management_data] 대상 프로젝트: '{project.name}' (ID: {project.id})")
+        except Project.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '프로젝트를 찾을 수 없습니다.'}, status=404)
+
+        # JSON 파일 로드
+        management_file = request.FILES['management_file']
+        try:
+            import_data = json.load(management_file)
+        except json.JSONDecodeError as e:
+            print(f"[ERROR][import_management_data] JSON 파일 파싱 오류: {e}")
+            return JsonResponse({'status': 'error', 'message': f'JSON 파일 형식이 올바르지 않습니다: {e}'}, status=400)
+
+        print(f"[DEBUG][import_management_data] JSON 파일 로드 완료. 파일명: {management_file.name}")
+
+        # 기존 관리 데이터 삭제
+        print("[DEBUG][import_management_data] 기존 관리 데이터 삭제 시작...")
+
+        # 룰셋 삭제 (순서 중요: 참조 관계 고려)
+        print("[DEBUG][import_management_data]   - ActivityAssignmentRule 삭제 중...")
+        ActivityAssignmentRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - SpaceAssignmentRule 삭제 중...")
+        SpaceAssignmentRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - SpaceClassificationRule 삭제 중...")
+        SpaceClassificationRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - CostCodeAssignmentRule 삭제 중...")
+        CostCodeAssignmentRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - MemberMarkAssignmentRule 삭제 중...")
+        MemberMarkAssignmentRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - CostCodeRule 삭제 중...")
+        CostCodeRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - PropertyMappingRule 삭제 중...")
+        PropertyMappingRule.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - ClassificationRule 삭제 중...")
+        ClassificationRule.objects.filter(project=project).delete()
+
+        # 액티비티 관련 삭제
+        print("[DEBUG][import_management_data]   - ActivityDependency 삭제 중...")
+        ActivityDependency.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - Activity 삭제 중...")
+        Activity.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - WorkCalendar 삭제 중...")
+        WorkCalendar.objects.filter(project=project).delete()
+
+        # 기타 관리 데이터 삭제
+        print("[DEBUG][import_management_data]   - AIModel 삭제 중...")
+        AIModel.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - UnitPrice 삭제 중...")
+        UnitPrice.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - UnitPriceType 삭제 중...")
+        UnitPriceType.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - SpaceClassification 삭제 중...")
+        SpaceClassification.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - MemberMark 삭제 중...")
+        MemberMark.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - CostCode 삭제 중...")
+        CostCode.objects.filter(project=project).delete()
+        print("[DEBUG][import_management_data]   - QuantityClassificationTag 삭제 중...")
+        QuantityClassificationTag.objects.filter(project=project).delete()
+
+        print("[DEBUG][import_management_data] 기존 데이터 삭제 완료")
+
+        # PK 매핑 딕셔너리
+        pk_map = {}
+
+        # 모델 가져오기 순서 (의존성 고려)
+        model_import_order = [
+            'QuantityClassificationTag',
+            'CostCode',
+            'MemberMark',
+            'UnitPriceType',
+            'AIModel',
+            'SpaceClassification',
+            'UnitPrice',
+            # 룰셋들
+            'ClassificationRule',
+            'PropertyMappingRule',
+            'CostCodeRule',
+            'MemberMarkAssignmentRule',
+            'CostCodeAssignmentRule',
+            'SpaceClassificationRule',
+            'SpaceAssignmentRule',
+            # 액티비티 관련
+            'WorkCalendar',
+            'Activity',
+            'ActivityDependency',
+            'ActivityAssignmentRule'
+        ]
+
+        # 모델별 Foreign Key 필드 정의
+        fk_fields_map = {
+            'QuantityClassificationTag': ['project'],
+            'CostCode': ['project'],
+            'MemberMark': ['project'],
+            'UnitPriceType': ['project'],
+            'AIModel': ['project'],
+            'SpaceClassification': ['project', 'parent', 'source_element'],
+            'UnitPrice': ['project', 'cost_code', 'unit_price_type'],
+            'ClassificationRule': ['project', 'target_tag'],
+            'PropertyMappingRule': ['project', 'target_tag'],
+            'CostCodeRule': ['project', 'target_cost_code'],
+            'MemberMarkAssignmentRule': ['project'],
+            'CostCodeAssignmentRule': ['project'],
+            'SpaceClassificationRule': ['project'],
+            'SpaceAssignmentRule': ['project'],
+            'WorkCalendar': ['project'],
+            'Activity': ['project', 'calendar'],
+            'ActivityDependency': ['project', 'predecessor_activity', 'successor_activity'],
+            'ActivityAssignmentRule': ['project', 'target_activity'],
+        }
+
+        # 모델별 ManyToMany 필드 정의
+        m2m_fields_map = {
+            'SpaceClassification': ['mapped_elements'],
+        }
+
+        # 각 모델 데이터 처리
+        m2m_data_to_process = {name: [] for name in model_import_order}
+        space_parent_data = {}
+
+        for model_name in model_import_order:
+            print(f"\n[DEBUG][import_management_data]   === '{model_name}' 모델 데이터 처리 시작 ===")
+            model_data_list = import_data.get(model_name, [])
+            total_count = len(model_data_list)
+            created_count = 0
+            skipped_count = 0
+
+            if not model_data_list:
+                print(f"[DEBUG][import_management_data]     - 데이터 없음.")
+                continue
+
+            ModelClass = globals()[model_name]
+            objects_to_create = []
+
+            for idx, data in enumerate(model_data_list):
+                old_pk = data.get('pk')
+                fields = data.get('fields', {}).copy()
+
+                if old_pk is None or not fields:
+                    print(f"[WARN][import_management_data]     - 항목 {idx+1}/{total_count}: pk 또는 fields 누락, 건너뜁니다.")
+                    skipped_count += 1
+                    continue
+
+                old_pk_str = str(old_pk)
+
+                # 프로젝트 ForeignKey 설정
+                fields['project'] = project
+
+                # 다른 ForeignKey 필드 처리
+                fk_fields = fk_fields_map.get(model_name, [])
+                skip_creation = False
+                for fk_field in fk_fields:
+                    if fk_field == 'project': continue
+                    old_fk_value = fields.get(fk_field)
+                    if old_fk_value is not None:
+                        old_fk_value_str = str(old_fk_value)
+                        new_fk_obj = pk_map.get(old_fk_value_str)
+                        if new_fk_obj:
+                            fields[fk_field] = new_fk_obj
+                        elif fk_field == 'parent' and model_name == 'SpaceClassification':
+                            space_parent_data[old_pk_str] = old_fk_value_str
+                            fields[fk_field] = None
+                        elif fk_field == 'source_element' and model_name == 'SpaceClassification':
+                            # source_element는 RawElement를 참조하므로 관리 데이터만 가져올 때는 null 처리
+                            print(f"[INFO][import_management_data]     - SpaceClassification(old_pk={old_pk_str})의 source_element는 BIM 데이터 참조이므로 null 처리.")
+                            fields[fk_field] = None
+                        elif fk_field == 'unit_price_type' and model_name == 'UnitPrice' and not new_fk_obj:
+                            print(f"[INFO][import_management_data]     - UnitPrice(old_pk={old_pk_str})의 unit_price_type(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
+                            fields[fk_field] = None
+                        elif not new_fk_obj:
+                            print(f"[ERROR][import_management_data]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): 필수 ForeignKey '{fk_field}'(old_pk={old_fk_value_str})의 새 객체를 찾을 수 없어 건너뜁니다.")
+                            skip_creation = True
+                            skipped_count += 1
+                            break
+
+                if skip_creation: continue
+
+                # ManyToMany 필드 데이터 분리
+                m2m_fields_data = {}
+                m2m_field_names = m2m_fields_map.get(model_name, [])
+                for m2m_field in m2m_field_names:
+                    if m2m_field in fields:
+                        m2m_value = fields.pop(m2m_field)
+                        if isinstance(m2m_value, list):
+                            m2m_fields_data[m2m_field] = [str(pk) for pk in m2m_value]
+                        else:
+                            print(f"[WARN][import_management_data]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): M2M 필드 '{m2m_field}'의 값이 리스트가 아닙니다. 무시.")
+
+                # AIModel h5_file_content 처리 (Base64 디코딩)
+                if model_name == 'AIModel' and 'h5_file_content' in fields:
+                    encoded_content = fields['h5_file_content']
+                    print(f"[DEBUG][import_management_data]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): AIModel h5_file_content 처리 시도...")
+                    if encoded_content and isinstance(encoded_content, str):
+                        try:
+                            fields['h5_file_content'] = base64.b64decode(encoded_content)
+                            print(f"[DEBUG][import_management_data]       > Base64 디코딩 성공 (Bytes: {len(fields['h5_file_content'])})")
+                        except (TypeError, base64.binascii.Error) as e:
+                            print(f"[ERROR][import_management_data]       > Base64 디코딩 실패: {e}. None으로 설정합니다.")
+                            fields['h5_file_content'] = None
+                    elif not encoded_content:
+                        fields['h5_file_content'] = None
+                        print(f"[DEBUG][import_management_data]       > h5_file_content가 비어있어 None으로 설정.")
+                    else:
+                        print(f"[DEBUG][import_management_data]       > h5_file_content가 문자열이 아님 (타입: {type(encoded_content)}). None으로 설정.")
+                        fields['h5_file_content'] = None
+
+                # 객체 생성
+                try:
+                    new_obj = ModelClass(**fields)
+                    objects_to_create.append(new_obj)
+
+                    # M2M 데이터 임시 저장
+                    if m2m_fields_data:
+                        m2m_data_to_process[model_name].append({
+                            'old_pk': old_pk_str,
+                            'new_obj': new_obj,
+                            'm2m_data': m2m_fields_data
+                        })
+
+                except Exception as e:
+                    print(f"[ERROR][import_management_data]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): 객체 생성 실패: {e}")
+                    skipped_count += 1
+                    continue
+
+            # bulk_create로 한 번에 생성
+            if objects_to_create:
+                created_objects = ModelClass.objects.bulk_create(objects_to_create)
+                created_count = len(created_objects)
+                print(f"[DEBUG][import_management_data]     - {created_count}개 항목 bulk_create 완료.")
+
+                # PK 매핑 업데이트
+                for idx, data in enumerate(model_data_list[:created_count]):
+                    old_pk_str = str(data.get('pk'))
+                    new_obj = created_objects[idx]
+                    pk_map[old_pk_str] = new_obj
+                    print(f"[DEBUG][import_management_data]       > pk_map['{old_pk_str}'] = {model_name}(id={new_obj.id})")
+
+            print(f"[DEBUG][import_management_data]   === '{model_name}' 처리 완료: 생성 {created_count}개, 건너뜀 {skipped_count}개 ===")
+
+        # SpaceClassification parent 관계 설정
+        if space_parent_data:
+            print(f"\n[DEBUG][import_management_data] SpaceClassification parent 관계 설정 중... (총 {len(space_parent_data)}개)")
+            for new_pk_str, old_parent_pk_str in space_parent_data.items():
+                space_obj = pk_map.get(new_pk_str)
+                parent_obj = pk_map.get(old_parent_pk_str)
+                if space_obj and parent_obj:
+                    space_obj.parent = parent_obj
+                    space_obj.save()
+                    print(f"[DEBUG][import_management_data]   - SpaceClassification(id={space_obj.id}).parent = SpaceClassification(id={parent_obj.id})")
+                else:
+                    print(f"[WARN][import_management_data]   - parent 관계 설정 실패: space_obj={space_obj}, parent_obj={parent_obj}")
+
+        # ManyToMany 관계 설정
+        print(f"\n[DEBUG][import_management_data] ManyToMany 관계 설정 중...")
+        for model_name in model_import_order:
+            m2m_list = m2m_data_to_process.get(model_name, [])
+            if not m2m_list:
+                continue
+
+            print(f"[DEBUG][import_management_data]   === '{model_name}' M2M 처리 시작 (총 {len(m2m_list)}개) ===")
+            for item in m2m_list:
+                new_obj = item['new_obj']
+                m2m_data = item['m2m_data']
+                old_pk = item['old_pk']
+
+                for m2m_field_name, old_m2m_pks in m2m_data.items():
+                    m2m_manager = getattr(new_obj, m2m_field_name)
+                    new_m2m_objs = [pk_map.get(pk_str) for pk_str in old_m2m_pks if pk_map.get(pk_str)]
+
+                    if new_m2m_objs:
+                        m2m_manager.set(new_m2m_objs)
+                        print(f"[DEBUG][import_management_data]     - {model_name}(old_pk={old_pk}).{m2m_field_name}: {len(new_m2m_objs)}개 설정")
+                    else:
+                        print(f"[WARN][import_management_data]     - {model_name}(old_pk={old_pk}).{m2m_field_name}: 매핑 가능한 객체 없음")
+
+        print(f"\n[DEBUG][import_management_data] --- 관리 데이터 가져오기 완료 ---")
+        return JsonResponse({
+            'status': 'success',
+            'message': f'프로젝트 "{project.name}"의 관리 데이터를 성공적으로 가져왔습니다.',
+            'project_id': str(project.id)
+        })
+
+    except Exception as e:
+        print(f"[ERROR][import_management_data] 예외 발생: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
 @require_http_methods(["POST"])
 @transaction.atomic
 def import_project(request):
@@ -4216,7 +4668,7 @@ def import_project(request):
             'AIModel': ['project'],
             'RawElement': ['project'],
             'SplitElement': ['project', 'parent_element'],  # 추가
-            'ElementClassificationAssignment': ['raw_element', 'tag'],  # 추가
+            'ElementClassificationAssignment': ['raw_element', 'classification_tag', 'assigned_by_rule'],  # 수정: FK 필드 추가
             'SpaceClassification': ['project', 'parent', 'source_element'],
             'UnitPrice': ['project', 'cost_code', 'unit_price_type'],
             'ClassificationRule': ['project', 'target_tag'],
@@ -4240,6 +4692,7 @@ def import_project(request):
             'RawElement': ['classification_tags'],
             'SpaceClassification': ['mapped_elements'],
             'QuantityMember': ['cost_codes', 'space_classifications'],
+            'CostItem': ['activities'],  # 추가
         }
 
         # 각 모델 데이터 처리
@@ -4272,8 +4725,9 @@ def import_project(request):
 
                 old_pk_str = str(old_pk) # pk_map 조회 및 저장을 위해 문자열로 변환
 
-                # 프로젝트 ForeignKey 설정 (항상 필요)
-                fields['project'] = target_project
+                # 프로젝트 ForeignKey 설정 (project 필드가 없는 모델은 건너뜀)
+                if model_name not in ['ElementClassificationAssignment']:
+                    fields['project'] = target_project
 
                 # 다른 ForeignKey 필드 처리
                 fk_fields = fk_fields_map.get(model_name, [])
@@ -4308,6 +4762,10 @@ def import_project(request):
                         elif model_name == 'ActivityObject' and fk_field in ['activity', 'cost_item'] and not new_fk_obj:
                             # ActivityObject의 nullable FK 처리
                             print(f"[INFO][import_project]     - ActivityObject(old_pk={old_pk_str})의 '{fk_field}'(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
+                            fields[fk_field] = None
+                        elif model_name == 'ElementClassificationAssignment' and fk_field == 'assigned_by_rule' and not new_fk_obj:
+                            # ElementClassificationAssignment의 nullable FK 처리
+                            print(f"[INFO][import_project]     - ElementClassificationAssignment(old_pk={old_pk_str})의 'assigned_by_rule'(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
                             fields[fk_field] = None
                         elif not new_fk_obj: # 다른 필수 ForeignKey 를 못 찾으면 오류 처리
                             print(f"[ERROR][import_project]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): 필수 ForeignKey '{fk_field}'(old_pk={old_fk_value_str})의 새 객체를 찾을 수 없어 건너뛰니다.")

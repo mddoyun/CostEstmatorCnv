@@ -163,6 +163,7 @@
             ?.addEventListener("change", handleCsvFileSelect);
 
         // --- 각 탭별 UI 요소 리스너 설정 (헬퍼 함수 호출) ---
+        setupManagementDataListeners(); // 관리 데이터 내보내기/가져오기
         setupDataManagementListeners();
         window.setupTagManagementListeners();
         setupSpaceManagementListeners();

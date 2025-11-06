@@ -151,6 +151,11 @@ function selectHomeProject(projectId) {
     updateHomeProjectListSelection(projectId);
     updateHomeCurrentProjectInfo();
     enableHomeProjectButtons();
+
+    // 관리 데이터 버튼 상태 업데이트
+    if (typeof enableManagementDataButtons === 'function') {
+        enableManagementDataButtons();
+    }
 }
 
 /**
@@ -218,11 +223,15 @@ function updateHomeCurrentProjectInfo() {
  */
 function enableHomeProjectButtons() {
     const exportBtn = document.getElementById('home-export-project-btn');
+    const renameBtn = document.getElementById('home-rename-project-btn');
     const deleteBtn = document.getElementById('home-delete-project-btn');
     const hasProject = currentProjectId != null && currentProjectId !== '';
 
     if (exportBtn) {
         exportBtn.disabled = !hasProject;
+    }
+    if (renameBtn) {
+        renameBtn.disabled = !hasProject;
     }
     if (deleteBtn) {
         deleteBtn.disabled = !hasProject;
@@ -420,10 +429,14 @@ function navigateToTab(tabId) {
  * 홈 탭의 "프로젝트 가져오기" 버튼 핸들러
  */
 function handleHomeImportProject() {
-    console.log('[DEBUG][handleHomeImportProject] Import project button clicked');
+    console.log('[DEBUG][handleHomeImportProject] ===== BUTTON CLICKED =====');
     const importInput = document.getElementById('project-import-input');
+    console.log('[DEBUG][handleHomeImportProject] importInput element:', importInput);
+
     if (importInput) {
+        console.log('[DEBUG][handleHomeImportProject] Triggering file input click...');
         importInput.click();
+        console.log('[DEBUG][handleHomeImportProject] File input click triggered');
     } else {
         console.error('[ERROR][handleHomeImportProject] Project import input not found');
         showToast('프로젝트 가져오기 기능을 찾을 수 없습니다.', 'error');
@@ -449,6 +462,72 @@ function handleHomeExportProject() {
 }
 
 /**
+ * 홈 탭의 "프로젝트 이름 변경" 버튼 핸들러
+ */
+async function handleHomeRenameProject() {
+    console.log('[DEBUG][handleHomeRenameProject] Rename project button clicked');
+
+    if (!currentProjectId) {
+        showToast('이름을 변경할 프로젝트를 먼저 선택하세요.', 'error');
+        return;
+    }
+
+    const projectSelector = document.getElementById('project-selector');
+    const selectedOption = projectSelector?.options[projectSelector.selectedIndex];
+    const currentName = selectedOption?.text || '';
+
+    const newName = prompt(`새 프로젝트 이름을 입력하세요:`, currentName);
+
+    if (!newName) {
+        console.log('[DEBUG][handleHomeRenameProject] Rename cancelled or empty name');
+        return;
+    }
+
+    if (newName === currentName) {
+        showToast('프로젝트 이름이 변경되지 않았습니다.', 'info');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/connections/rename-project/${currentProjectId}/`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken,
+            },
+            body: JSON.stringify({ name: newName }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || '프로젝트 이름 변경에 실패했습니다.');
+        }
+
+        showToast(result.message, 'success');
+        console.log(`[DEBUG][handleHomeRenameProject] Project renamed: ${currentName} -> ${newName}`);
+
+        // 프로젝트 셀렉터 옵션 업데이트
+        if (selectedOption) {
+            selectedOption.text = newName;
+        }
+
+        // 홈 탭 프로젝트 정보 업데이트
+        if (typeof updateHomeCurrentProjectInfo === 'function') {
+            updateHomeCurrentProjectInfo();
+        }
+
+        // 홈 탭 프로젝트 목록 새로고침
+        if (typeof loadHomeProjectList === 'function') {
+            loadHomeProjectList();
+        }
+    } catch (error) {
+        console.error('[ERROR][handleHomeRenameProject] Error renaming project:', error);
+        showToast(`오류: ${error.message}`, 'error');
+    }
+}
+
+/**
  * 홈 탭 이벤트 리스너 설정
  */
 function setupHomeTabListeners() {
@@ -459,12 +538,14 @@ function setupHomeTabListeners() {
     const createBtn = document.getElementById('home-create-project-btn');
     const importBtn = document.getElementById('home-import-project-btn');
     const exportBtn = document.getElementById('home-export-project-btn');
+    const renameBtn = document.getElementById('home-rename-project-btn');
     const deleteBtn = document.getElementById('home-delete-project-btn');
     const nameInput = document.getElementById('home-new-project-name');
 
     console.log('[DEBUG][setupHomeTabListeners] Create button found:', !!createBtn);
     console.log('[DEBUG][setupHomeTabListeners] Import button found:', !!importBtn);
     console.log('[DEBUG][setupHomeTabListeners] Export button found:', !!exportBtn);
+    console.log('[DEBUG][setupHomeTabListeners] Rename button found:', !!renameBtn);
     console.log('[DEBUG][setupHomeTabListeners] Delete button found:', !!deleteBtn);
 
     if (createBtn) {
@@ -487,6 +568,10 @@ function setupHomeTabListeners() {
     if (exportBtn) {
         exportBtn.addEventListener('click', handleHomeExportProject);
         console.log('[DEBUG][setupHomeTabListeners] Export button listener attached');
+    }
+    if (renameBtn) {
+        renameBtn.addEventListener('click', handleHomeRenameProject);
+        console.log('[DEBUG][setupHomeTabListeners] Rename button listener attached');
     }
     if (deleteBtn) {
         deleteBtn.addEventListener('click', handleHomeDeleteProject);

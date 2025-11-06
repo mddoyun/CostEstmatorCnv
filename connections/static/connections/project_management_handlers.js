@@ -12,6 +12,13 @@ function handleProjectChange(e) {
 
     // --- 상태 초기화 ---
     allRevitData = []; // BIM 데이터 초기화
+
+    // 3D 뷰포트 초기화 (장면 클리어)
+    if (typeof window.clearScene === 'function') {
+        console.log('[DEBUG][handleProjectChange] Clearing 3D viewport scene...');
+        window.clearScene();
+    }
+
     // 각 뷰어 상태 초기화
     Object.keys(viewerStates).forEach((context) => {
         const state = viewerStates[context];
@@ -240,7 +247,14 @@ function exportCurrentProject() {
 }
 
 async function handleProjectImport(event) {
+    console.log('[DEBUG][handleProjectImport] ===== FUNCTION CALLED =====');
+    console.log('[DEBUG][handleProjectImport] event:', event);
+    console.log('[DEBUG][handleProjectImport] event.target:', event.target);
+    console.log('[DEBUG][handleProjectImport] event.target.files:', event.target.files);
+
     const file = event.target.files[0];
+    console.log('[DEBUG][handleProjectImport] file:', file);
+
     if (!file) {
         console.log('[DEBUG][handleProjectImport] File selection cancelled.'); // 디버깅
         return;
@@ -287,6 +301,188 @@ async function handleProjectImport(event) {
         showToast(`오류: ${error.message}`, 'error', 7000); // 에러 메시지 상세 표시 및 시간 늘림
     } finally {
         // 성공/실패 여부와 관계없이 파일 입력 초기화
+        event.target.value = '';
+    }
+}
+
+/**
+ * 관리 데이터 버튼 활성화/비활성화
+ */
+function enableManagementDataButtons() {
+    const exportBtn = document.getElementById('export-management-data-btn');
+    const importBtn = document.getElementById('import-management-data-btn');
+    const hasProject = currentProjectId != null && currentProjectId !== '';
+
+    if (exportBtn) {
+        exportBtn.disabled = !hasProject;
+    }
+    if (importBtn) {
+        importBtn.disabled = !hasProject;
+    }
+
+    console.log(`[DEBUG][enableManagementDataButtons] Buttons ${hasProject ? 'enabled' : 'disabled'}`);
+}
+
+/**
+ * 관리 데이터 내보내기 (BIM 데이터 제외, 설정/룰셋만)
+ */
+async function handleExportManagementData() {
+    if (!currentProjectId) {
+        showToast('내보낼 프로젝트를 먼저 선택하세요.', 'error');
+        return;
+    }
+
+    console.log(`[DEBUG][handleExportManagementData] Starting export for project: ${currentProjectId}`);
+    showToast('관리 데이터를 내보내는 중...', 'info');
+
+    try {
+        const response = await fetch(`/connections/export-management-data/${currentProjectId}/`, {
+            method: 'GET',
+            headers: { 'X-CSRFToken': csrftoken },
+        });
+
+        if (!response.ok) {
+            const result = await response.json();
+            throw new Error(result.message || '관리 데이터 내보내기에 실패했습니다.');
+        }
+
+        // JSON 파일 다운로드
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        // 파일명: Content-Disposition 헤더에서 가져오거나 기본값 사용
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'ManagementData.json';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            if (filenameMatch && filenameMatch[1]) {
+                filename = filenameMatch[1].replace(/['"]/g, '');
+            }
+        } else {
+            // Content-Disposition이 없으면 타임스탬프로 파일명 생성
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+            filename = `ManagementData_${dateStr}.json`;
+        }
+        a.download = filename;
+
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showToast('관리 데이터를 성공적으로 내보냈습니다.', 'success');
+        console.log('[DEBUG][handleExportManagementData] Export successful.');
+    } catch (error) {
+        console.error('[ERROR][handleExportManagementData] Error during export:', error);
+        showToast(`오류: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * 관리 데이터 가져오기 (BIM 데이터 제외, 설정/룰셋만)
+ */
+async function handleImportManagementData(event) {
+    if (!currentProjectId) {
+        showToast('데이터를 가져올 프로젝트를 먼저 선택하세요.', 'error');
+        event.target.value = ''; // 파일 입력 초기화
+        return;
+    }
+
+    const file = event.target.files[0];
+    if (!file) {
+        console.log('[DEBUG][handleImportManagementData] File selection cancelled.');
+        return;
+    }
+
+    // 확인 대화상자
+    const confirmed = confirm(
+        `현재 프로젝트의 모든 관리 데이터(룰셋, 코드, 설정 등)가 삭제되고 새 데이터로 대체됩니다.\n\n계속하시겠습니까?`
+    );
+    if (!confirmed) {
+        console.log('[DEBUG][handleImportManagementData] User cancelled import.');
+        event.target.value = '';
+        return;
+    }
+
+    console.log(`[DEBUG][handleImportManagementData] File selected: ${file.name}. Starting upload...`);
+    showToast('관리 데이터를 업로드하고 있습니다...', 'info', 10000);
+
+    const formData = new FormData();
+    formData.append('management_file', file);
+
+    try {
+        const response = await fetch(`/connections/import-management-data/${currentProjectId}/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrftoken },
+            body: formData,
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(
+                result.message || `관리 데이터 가져오기에 실패했습니다. Status: ${response.status}`
+            );
+        }
+
+        showToast(result.message, 'success');
+        console.log('[DEBUG][handleImportManagementData] Import successful. Reloading management data...');
+
+        // 성공 시 모든 관리 데이터 다시 로드 (페이지 새로고침 없이)
+        setTimeout(() => {
+            // 1. WebSocket으로 태그 다시 로드
+            if (frontendSocket && frontendSocket.readyState === WebSocket.OPEN) {
+                frontendSocket.send(JSON.stringify({
+                    type: 'get_tags',
+                    payload: { project_id: currentProjectId }
+                }));
+                console.log('[DEBUG][handleImportManagementData] Requested tags via WebSocket.');
+            }
+
+            // 2. 각 관리 데이터 로드 함수 호출
+            if (typeof loadCostCodes === 'function') {
+                loadCostCodes();
+                console.log('[DEBUG][handleImportManagementData] Cost codes reloaded.');
+            }
+            if (typeof loadMemberMarks === 'function') {
+                loadMemberMarks();
+                console.log('[DEBUG][handleImportManagementData] Member marks reloaded.');
+            }
+            if (typeof loadSpaceClassifications === 'function') {
+                loadSpaceClassifications();
+                console.log('[DEBUG][handleImportManagementData] Space classifications reloaded.');
+            }
+            if (typeof loadUnitPriceTypes === 'function') {
+                loadUnitPriceTypes();
+                console.log('[DEBUG][handleImportManagementData] Unit price types reloaded.');
+            }
+            if (typeof loadActivities === 'function') {
+                loadActivities();
+                console.log('[DEBUG][handleImportManagementData] Activities reloaded.');
+            }
+
+            // 3. 룰셋 데이터 다시 로드 (활성화된 룰셋만)
+            const activeRulesetBtn = document.querySelector('.ruleset-nav-button.active');
+            if (activeRulesetBtn && typeof loadSpecificRuleset === 'function') {
+                const rulesetType = activeRulesetBtn.dataset.ruleset;
+                loadSpecificRuleset(rulesetType);
+                console.log(`[DEBUG][handleImportManagementData] Ruleset '${rulesetType}' reloaded.`);
+            }
+
+            // 4. 현재 활성 탭 UI 업데이트
+            if (typeof loadDataForActiveTab === 'function') {
+                loadDataForActiveTab();
+                console.log('[DEBUG][handleImportManagementData] Current tab data reloaded.');
+            }
+
+            console.log('[DEBUG][handleImportManagementData] All management data reload completed.');
+        }, 500);
+    } catch (error) {
+        console.error('[ERROR][handleImportManagementData] Error during import:', error);
+        showToast(`오류: ${error.message}`, 'error', 7000);
+    } finally {
         event.target.value = '';
     }
 }

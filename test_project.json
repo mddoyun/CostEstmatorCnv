@@ -1,0 +1,39 @@
+{
+  "Project": [
+    {
+      "model": "connections.project",
+      "pk": "11111111-1111-1111-1111-111111111111",
+      "fields": {
+        "name": "ImportTest",
+        "description": "Test import project",
+        "visibility_filters": [],
+        "created_at": "2025-11-06T05:00:00.000Z"
+      }
+    }
+  ],
+  "QuantityClassificationTag": [],
+  "CostCode": [],
+  "MemberMark": [],
+  "UnitPriceType": [],
+  "AIModel": [],
+  "RawElement": [],
+  "SplitElement": [],
+  "ElementClassificationAssignment": [],
+  "SpaceClassification": [],
+  "UnitPrice": [],
+  "ClassificationRule": [],
+  "PropertyMappingRule": [],
+  "CostCodeRule": [],
+  "MemberMarkAssignmentRule": [],
+  "CostCodeAssignmentRule": [],
+  "SpaceClassificationRule": [],
+  "SpaceAssignmentRule": [],
+  "QuantityMember": [],
+  "CostItem": [],
+  "WorkCalendar": [],
+  "Activity": [],
+  "ActivityDependency": [],
+  "ActivityObject": [],
+  "ActivityAssignmentRule": [],
+  "m2m_relations": {}
+}

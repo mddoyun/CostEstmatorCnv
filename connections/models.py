@@ -498,7 +498,7 @@ class ActivityObject(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activity_objects')
 
     # 연관 관계
-    cost_item = models.ForeignKey('CostItem', on_delete=models.CASCADE, related_name='activity_objects', help_text="연관된 산출항목")
+    cost_item = models.ForeignKey('CostItem', on_delete=models.CASCADE, related_name='activity_objects', null=True, blank=True, help_text="연관된 산출항목")
     activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name='activity_objects', help_text="연관된 액티비티 코드")
 
     # 일정 정보
