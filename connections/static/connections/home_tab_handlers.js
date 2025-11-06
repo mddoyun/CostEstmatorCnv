@@ -752,7 +752,7 @@ function calculateScheduleDatesFromGantt() {
         console.log('[Dashboard] Gantt data generation not available, using simple calculation');
 
         const activityDurationMap = new Map();
-        const activityMap = new Map();
+        // activityMap은 이미 위에서 선언됨 (line 686)
 
         window.loadedActivityObjects.forEach(ao => {
             if (!ao.activity || !ao.actual_duration) return;
