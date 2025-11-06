@@ -249,7 +249,7 @@ async function loadAndRenderGanttChart() {
         // 간트차트 로드 후 대시보드 업데이트 (홈 탭의 공정계획 카드 업데이트)
         if (typeof window.loadHomeDashboardData === 'function') {
             console.log('[Gantt Chart] Triggering dashboard update after gantt load');
-            window.loadHomeDashboardData(currentProjectId);
+            window.loadHomeDashboardData(currentProjectId, true); // skipGanttLoad=true (무한 루프 방지)
         }
 
     } catch (error) {
@@ -1783,6 +1783,7 @@ Object.defineProperty(window, 'mainCalendar', {
 // 대시보드에서 간트차트 날짜 계산 로직 재사용을 위해 전역 노출
 window.generateGanttData = generateGanttData;
 window.calculateTaskDates = calculateTaskDates;
+window.loadProjectCalendars = loadProjectCalendars;
 
 /**
  * 내역집계표 렌더링

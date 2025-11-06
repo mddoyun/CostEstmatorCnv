@@ -578,19 +578,46 @@ function hideHomeDashboard() {
     }
 }
 
+// 대시보드 로드 중 플래그 (간트차트와의 무한 루프 방지)
+let dashboardLoading = false;
+
 /**
  * 대시보드 데이터 로드
  * 간트 차트와 동일한 방식으로 공정 기간 계산
  */
-async function loadHomeDashboardData(projectId) {
-    console.log('[Dashboard] Loading dashboard data for project:', projectId);
+async function loadHomeDashboardData(projectId, skipGanttLoad = false) {
+    console.log('[Dashboard] Loading dashboard data for project:', projectId, 'skipGanttLoad:', skipGanttLoad);
 
     if (!projectId) {
         console.warn('[Dashboard] No project ID provided');
         return;
     }
 
+    // 이미 로딩 중이고 skipGanttLoad가 아니면 중복 실행 방지
+    // skipGanttLoad=true인 경우는 간트차트 완료 후 호출이므로 실행해야 함
+    if (dashboardLoading && !skipGanttLoad) {
+        console.log('[Dashboard] Already loading (and not from gantt), skipping duplicate call');
+        return;
+    }
+
+    dashboardLoading = true;
+
     try {
+        // 0. 간트차트가 아직 로드되지 않았으면 먼저 로드 (정확한 날짜 계산을 위해)
+        if (!skipGanttLoad && (!window.ganttMinDate || !window.ganttMaxDate)) {
+            console.log('[Dashboard] Gantt dates not available, loading gantt chart first for accurate calculation...');
+            // 간트차트 로드 함수를 먼저 호출하여 정확한 날짜 계산
+            if (typeof window.loadGanttChart === 'function') {
+                await window.loadGanttChart();
+                console.log('[Dashboard] Gantt chart loaded, now ganttMinDate and ganttMaxDate are available');
+                // 간트차트 로드가 완료되면 대시보드도 다시 호출되므로 여기서는 종료
+                dashboardLoading = false;
+                return;
+            }
+        } else if (skipGanttLoad) {
+            console.log('[Dashboard] Called from gantt chart completion, proceeding with dashboard update');
+        }
+
         // 1. ActivityObjects를 먼저 로드 (공정 기간 계산에 필요)
         if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
             console.log('[Dashboard] Loading activity objects first...');
@@ -610,7 +637,7 @@ async function loadHomeDashboardData(projectId) {
 
         if (result.success && result.data) {
             // 3. 공정 기간은 간트 차트와 동일한 방식으로 프론트엔드에서 계산
-            const scheduleData = calculateScheduleDatesFromGantt();
+            const scheduleData = await calculateScheduleDatesFromGantt();
 
             // 기존 data에 계산된 schedule 데이터를 덮어쓰기
             result.data.schedule = scheduleData;
@@ -623,6 +650,8 @@ async function loadHomeDashboardData(projectId) {
     } catch (error) {
         console.error('[Dashboard] Error loading dashboard data:', error);
         showToast('대시보드 데이터 로드 중 오류가 발생했습니다.', 'error');
+    } finally {
+        dashboardLoading = false;
     }
 }
 
@@ -630,7 +659,7 @@ async function loadHomeDashboardData(projectId) {
  * 간트 차트와 동일한 방식으로 공정 기간 계산
  * 간트 차트 탭의 "프로젝트 기간" 표시 로직 재사용
  */
-function calculateScheduleDatesFromGantt() {
+async function calculateScheduleDatesFromGantt() {
     console.log('[Dashboard] Calculating schedule dates from gantt chart logic...');
 
     // window.ganttMinDate, ganttMaxDate가 있으면 사용 (간트 차트 이미 렌더링됨)
@@ -707,6 +736,13 @@ function calculateScheduleDatesFromGantt() {
 
         // 3. 간트차트 핸들러의 generateGanttData 함수 호출 (전역으로 노출되어 있다면)
         if (typeof window.generateGanttData === 'function' && typeof window.calculateTaskDates === 'function') {
+            // ▼▼▼ [추가] 작업 캘린더 로드 (간트차트와 동일하게) ▼▼▼
+            if (typeof window.loadProjectCalendars === 'function') {
+                console.log('[Dashboard] Loading project calendars before gantt calculation');
+                await window.loadProjectCalendars(window.currentProjectId);
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             // 프로젝트 시작일 가져오기 (localStorage에서 - 간트차트와 동일한 방식)
             const savedStartDate = localStorage.getItem(`project_${window.currentProjectId}_start_date`);
             let projectStartDate;
@@ -860,14 +896,24 @@ function updateDashboardUI(data) {
     // 2. 공정 기간 업데이트 (프로젝트 기간 형식)
     if (data.schedule) {
         const scheduleDatesElement = document.getElementById('dashboard-schedule-dates');
+        console.log('[Dashboard] scheduleDatesElement found:', !!scheduleDatesElement);
         if (scheduleDatesElement) {
+            console.log('[Dashboard] Schedule data:', data.schedule);
             if (data.schedule.start_date_formatted && data.schedule.end_date_formatted && data.schedule.total_days > 0) {
                 // 형식: "2025. 1. 1. ~ 2025. 12. 31. (365일)"
-                scheduleDatesElement.textContent = `${data.schedule.start_date_formatted} ~ ${data.schedule.end_date_formatted} (${data.schedule.total_days}일)`;
+                const scheduleText = `${data.schedule.start_date_formatted} ~ ${data.schedule.end_date_formatted} (${data.schedule.total_days}일)`;
+                console.log('[Dashboard] Setting schedule text:', scheduleText);
+                scheduleDatesElement.textContent = scheduleText;
+                console.log('[Dashboard] Schedule text after update:', scheduleDatesElement.textContent);
             } else {
+                console.log('[Dashboard] Schedule data incomplete, showing 데이터 없음');
                 scheduleDatesElement.textContent = '데이터 없음';
             }
+        } else {
+            console.error('[Dashboard] dashboard-schedule-dates element not found!');
         }
+    } else {
+        console.log('[Dashboard] No schedule data in response');
     }
 
     console.log('[Dashboard] Dashboard UI updated successfully');
