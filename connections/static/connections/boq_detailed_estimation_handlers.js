@@ -2231,7 +2231,7 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                         const itemIdsList = JSON.parse(itemIds);
 
                         itemIdsList.forEach(costItemId => {
-                            const costItem = window.loadedDdCostItems.find(ci => ci.id === costItemId);
+                            const costItem = loadedDdCostItems.find(ci => ci.id === costItemId);
                             if (costItem) {
                                 const typeId = costItem.unit_price_type_id;
                                 // null/빈값은 "(미지정)"으로, 실제값은 그대로 추가
@@ -2239,13 +2239,19 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                             }
                         });
 
+                        // ▼▼▼ [디버깅] 단가기준 다양성 확인 (2025-11-06) ▼▼▼
+                        console.log(`[DEBUG][Unit Price] Group row has ${itemIdsList.length} items, ${childUnitPriceTypeIds.size} unique unit price types:`, Array.from(childUnitPriceTypeIds));
+                        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
                         let selectedValue = "";
                         // 서로 다른 값이 2개 이상이면 "다양함"
                         if (childUnitPriceTypeIds.size > 1) {
                             selectedValue = "diverse";
+                            console.log(`[DEBUG][Unit Price] Setting selectedValue to "diverse"`);
                         } else if (childUnitPriceTypeIds.size === 1) {
                             const singleValue = Array.from(childUnitPriceTypeIds)[0];
                             selectedValue = (singleValue === "(미지정)") ? "" : singleValue;
+                            console.log(`[DEBUG][Unit Price] Setting selectedValue to "${selectedValue}" (single value: ${singleValue})`);
                         }
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
