@@ -647,8 +647,8 @@ function calculateScheduleDatesFromGantt() {
         };
     }
 
-    // 간트 차트가 아직 렌더링 안됐으면 loadedActivityObjects에서 직접 계산
-    // (간트 차트 handlers의 buildGanttTasks 로직 간소화 버전)
+    // 간트 차트가 아직 렌더링 안됐으면 간트차트 로직을 직접 실행하여 계산
+    // 간트차트 handlers의 정확한 날짜 계산 로직 재사용
     if (!window.loadedActivityObjects || window.loadedActivityObjects.length === 0) {
         console.log('[Dashboard] No activity objects available');
         return {
@@ -658,73 +658,145 @@ function calculateScheduleDatesFromGantt() {
         };
     }
 
-    console.log('[Dashboard] Calculating from activity objects:', window.loadedActivityObjects.length);
+    console.log('[Dashboard] Calculating from activity objects using gantt logic:', window.loadedActivityObjects.length);
 
-    // ActivityObject에서 actual_duration 합산하여 Activity별 duration 계산
-    const activityDurationMap = new Map();
-    const activityMap = new Map();
+    // 간트차트와 동일한 방식으로 데이터 준비
+    try {
+        // 1. CostItem별로 ActivityObject 그룹핑
+        const costItemMap = new Map();
+        window.loadedActivityObjects.forEach(ao => {
+            if (!ao.cost_item || !ao.activity) return;
 
-    window.loadedActivityObjects.forEach(ao => {
-        if (!ao.activity || !ao.actual_duration) return;
+            const ciId = ao.cost_item.id;
+            if (!costItemMap.has(ciId)) {
+                costItemMap.set(ciId, {
+                    ...ao.cost_item,
+                    activityObjects: []
+                });
+            }
+            costItemMap.get(ciId).activityObjects.push(ao);
+        });
 
-        const activityId = ao.activity.id;
-        const duration = parseFloat(ao.actual_duration) || 0;
+        const costItems = Array.from(costItemMap.values());
 
-        if (!activityMap.has(activityId)) {
-            activityMap.set(activityId, ao.activity);
+        // 2. Activity와 Dependency 데이터 추출
+        const activities = [];
+        const dependencies = [];
+        const activityIdSet = new Set();
+
+        window.loadedActivityObjects.forEach(ao => {
+            if (ao.activity && !activityIdSet.has(ao.activity.id)) {
+                activities.push(ao.activity);
+                activityIdSet.add(ao.activity.id);
+
+                // Dependency 추출
+                if (ao.activity.predecessors && Array.isArray(ao.activity.predecessors)) {
+                    ao.activity.predecessors.forEach(pred => {
+                        dependencies.push({
+                            predecessor_id: pred.id,
+                            successor_id: ao.activity.id,
+                            lag: pred.lag || 0,
+                            lag_type: pred.lag_type || 'days'
+                        });
+                    });
+                }
+            }
+        });
+
+        // 3. 간트차트 핸들러의 generateGanttData 함수 호출 (전역으로 노출되어 있다면)
+        if (typeof window.generateGanttData === 'function') {
+            const ganttTasks = window.generateGanttData(costItems, activities, dependencies, window.loadedActivityObjects);
+
+            if (ganttTasks && ganttTasks.length > 0) {
+                const allDates = ganttTasks.flatMap(t => [new Date(t.start), new Date(t.end)]);
+                const minDate = new Date(Math.min(...allDates));
+                const maxDate = new Date(Math.max(...allDates));
+                const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
+
+                console.log('[Dashboard] Calculated dates using gantt logic:', minDate, maxDate, totalDays);
+
+                return {
+                    start_date_formatted: minDate.toLocaleDateString('ko-KR'),
+                    end_date_formatted: maxDate.toLocaleDateString('ko-KR'),
+                    total_days: totalDays
+                };
+            }
         }
 
-        const currentDuration = activityDurationMap.get(activityId) || 0;
-        activityDurationMap.set(activityId, currentDuration + duration);
-    });
+        // generateGanttData가 없거나 실패한 경우 간단한 계산으로 폴백
+        console.log('[Dashboard] Gantt data generation not available, using simple calculation');
 
-    if (activityDurationMap.size === 0) {
-        console.log('[Dashboard] No valid activity durations');
+        const activityDurationMap = new Map();
+        const activityMap = new Map();
+
+        window.loadedActivityObjects.forEach(ao => {
+            if (!ao.activity || !ao.actual_duration) return;
+
+            const activityId = ao.activity.id;
+            const duration = parseFloat(ao.actual_duration) || 0;
+
+            if (!activityMap.has(activityId)) {
+                activityMap.set(activityId, ao.activity);
+            }
+
+            const currentDuration = activityDurationMap.get(activityId) || 0;
+            activityDurationMap.set(activityId, currentDuration + duration);
+        });
+
+        if (activityDurationMap.size === 0) {
+            console.log('[Dashboard] No valid activity durations');
+            return {
+                start_date_formatted: null,
+                end_date_formatted: null,
+                total_days: 0
+            };
+        }
+
+        // 프로젝트 시작일 가져오기 (localStorage에서)
+        const savedStartDate = localStorage.getItem(`project_${window.currentProjectId}_start_date`);
+        const projectStartDate = savedStartDate ? new Date(savedStartDate) : new Date();
+        const allDates = [];
+
+        activityDurationMap.forEach((totalDuration, activityId) => {
+            const activity = activityMap.get(activityId);
+            if (!activity) return;
+
+            const startDate = activity.manual_start_date ? new Date(activity.manual_start_date) : new Date(projectStartDate);
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + Math.ceil(totalDuration));
+
+            allDates.push(startDate);
+            allDates.push(endDate);
+        });
+
+        if (allDates.length === 0) {
+            console.log('[Dashboard] No valid dates calculated');
+            return {
+                start_date_formatted: null,
+                end_date_formatted: null,
+                total_days: 0
+            };
+        }
+
+        const minDate = new Date(Math.min(...allDates));
+        const maxDate = new Date(Math.max(...allDates));
+        const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
+
+        console.log('[Dashboard] Calculated dates (fallback):', minDate, maxDate, totalDays);
+
+        return {
+            start_date_formatted: minDate.toLocaleDateString('ko-KR'),
+            end_date_formatted: maxDate.toLocaleDateString('ko-KR'),
+            total_days: totalDays
+        };
+    } catch (error) {
+        console.error('[Dashboard] Error calculating schedule dates:', error);
         return {
             start_date_formatted: null,
             end_date_formatted: null,
             total_days: 0
         };
     }
-
-    // 프로젝트 시작일 기준으로 task start/end 계산 (간단 버전)
-    const projectStartDate = new Date(); // 임시: 오늘 날짜 기준
-    const allDates = [];
-
-    activityDurationMap.forEach((totalDuration, activityId) => {
-        const activity = activityMap.get(activityId);
-        if (!activity) return;
-
-        // 수동 시작일이 있으면 사용
-        const startDate = activity.manual_start_date ? new Date(activity.manual_start_date) : new Date(projectStartDate);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + Math.ceil(totalDuration));
-
-        allDates.push(startDate);
-        allDates.push(endDate);
-    });
-
-    if (allDates.length === 0) {
-        console.log('[Dashboard] No valid dates calculated');
-        return {
-            start_date_formatted: null,
-            end_date_formatted: null,
-            total_days: 0
-        };
-    }
-
-    const minDate = new Date(Math.min(...allDates));
-    const maxDate = new Date(Math.max(...allDates));
-    // 간트 차트와 동일한 계산 방식 (Math.ceil만 사용, +1 안함)
-    const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
-
-    console.log('[Dashboard] Calculated dates:', minDate, maxDate, totalDays);
-
-    return {
-        start_date_formatted: minDate.toLocaleDateString('ko-KR'),
-        end_date_formatted: maxDate.toLocaleDateString('ko-KR'),
-        total_days: totalDays
-    };
 }
 
 /**

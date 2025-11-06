@@ -1775,6 +1775,9 @@ Object.defineProperty(window, 'mainCalendar', {
     get: () => mainCalendar,
     set: (value) => { mainCalendar = value; }
 });
+// 대시보드에서 간트차트 날짜 계산 로직 재사용을 위해 전역 노출
+window.generateGanttData = generateGanttData;
+window.calculateTaskDates = calculateTaskDates;
 
 /**
  * 내역집계표 렌더링
