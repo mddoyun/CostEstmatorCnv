@@ -138,33 +138,25 @@ async function deleteClassificationRule(ruleId) {
  */
 
 async function loadClassificationRules() {
-    console.log('[DEBUG][loadClassificationRules] Function called');
-    console.log('[DEBUG][loadClassificationRules] currentProjectId:', currentProjectId);
 
     if (!currentProjectId) {
-        console.log('[DEBUG][loadClassificationRules] No project ID, returning early');
         loadedClassificationRules = [];
         renderClassificationRulesetTable(loadedClassificationRules);
         return;
     }
 
     const url = `/connections/api/rules/classification/${currentProjectId}/`;
-    console.log('[DEBUG][loadClassificationRules] About to fetch from:', url);
 
     try {
         // ▼▼▼ [수정] URL 앞에 '/connections'를 추가합니다. ▼▼▼
         const response = await fetch(url);
-        console.log('[DEBUG][loadClassificationRules] Fetch completed, response.ok:', response.ok, 'status:', response.status);
 
         if (!response.ok) {
             throw new Error('룰셋 데이터를 불러오는데 실패했습니다.');
         }
         loadedClassificationRules = await response.json(); // 불러온 데이터를 전역 변수에 저장
-        console.log('[DEBUG][loadClassificationRules] Loaded rules count:', loadedClassificationRules.length);
         renderClassificationRulesetTable(loadedClassificationRules); // 저장된 데이터로 테이블 렌더링
-        console.log('[DEBUG][loadClassificationRules] Table rendered successfully');
     } catch (error) {
-        console.error('[ERROR][loadClassificationRules]', error);
         loadedClassificationRules = [];
         renderClassificationRulesetTable(loadedClassificationRules); // 에러 시 빈 테이블 표시
         showToast(error.message, 'error');
@@ -187,7 +179,6 @@ async function applyClassificationRules(skipConfirmation = false) {
         return;
     }
 
-    console.log("[DEBUG] '룰셋 일괄적용' 시작. 서버에 API 요청을 보냅니다.");
     showToast('룰셋을 적용하고 있습니다... 잠시만 기다려주세요.', 'info', 5000);
 
     try {
@@ -230,7 +221,6 @@ async function applyClassificationRules(skipConfirmation = false) {
             showToast('웹소켓 연결 오류. 페이지를 새로고침해주세요.', 'error');
         }
     } catch (error) {
-        console.error('[ERROR] 룰셋 적용 중 오류 발생:', error);
         showToast(error.message, 'error');
     }
 }

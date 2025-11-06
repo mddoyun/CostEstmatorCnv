@@ -1931,42 +1931,28 @@ function renderQmPropertiesTable(editingMemberId = null) {
 
         // BIM 원본 속성 - BIM원본데이터 탭의 renderBimPropertiesTable과 완전히 동일하게 표시
         // split_element_id를 우선적으로 확인하고, 없으면 raw_element_id 사용
-        console.log('[DEBUG] renderQmPropertiesTable - member data:', {
-            id: member.id,
-            name: member.name,
-            raw_element_id: member.raw_element_id,
-            split_element_id: member.split_element_id,
-            has_raw_element_object: !!member.raw_element
-        });
 
         const elementId = member.split_element_id || member.raw_element_id;
         const fullBimObject = elementId && allRevitData ?
             allRevitData.find(item => item.id === elementId) : null;
 
-        console.log('[DEBUG] renderQmPropertiesTable - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
-        console.log('[DEBUG] allRevitData available:', !!allRevitData, 'count:', allRevitData ? allRevitData.length : 0);
 
         if (elementId && allRevitData) {
             // 디버깅: allRevitData에서 실제 ID 목록 출력
             const allIds = allRevitData.map(item => item.id).slice(0, 5);  // 처음 5개만
-            console.log('[DEBUG] Sample of allRevitData IDs:', allIds);
-            console.log('[DEBUG] Looking for elementId:', elementId, 'Type:', typeof elementId);
         }
 
         if (!fullBimObject) {
-            console.warn('[WARN] Could not find BIM object for elementId:', elementId);
             if (elementId && allRevitData) {
                 // 유사한 ID가 있는지 확인
                 const similarIds = allRevitData.filter(item =>
                     item.id && item.id.toString().includes(elementId.substring(0, 8))
                 );
-                console.warn('[WARN] Similar IDs found:', similarIds.length, similarIds.slice(0, 3).map(item => item.id));
             }
         }
 
         if (fullBimObject && fullBimObject.raw_data) {
             const rawData = fullBimObject.raw_data;
-            console.log('[DEBUG] Rendering BIM properties for element:', fullBimObject.id, 'with raw_data keys:', Object.keys(rawData));
 
             // System Properties (Cost Estimator 관리 속성)
             html += '<div class="property-section">';
@@ -1976,7 +1962,6 @@ function renderQmPropertiesTable(editingMemberId = null) {
             const idDisplayName = getDisplayFieldName('id');
             const uniqueIdDisplayName = getDisplayFieldName('element_unique_id');
             const volumeDisplayName = getDisplayFieldName('geometry_volume');
-            console.log('[DEBUG] BIM.System display names:', {idDisplayName, uniqueIdDisplayName, volumeDisplayName});
 
             html += `<tr><td class="prop-name">${idDisplayName}</td><td class="prop-value">${fullBimObject.id || 'N/A'}</td></tr>`;
             html += `<tr><td class="prop-name">${uniqueIdDisplayName}</td><td class="prop-value">${fullBimObject.element_unique_id || 'N/A'}</td></tr>`;
@@ -2110,10 +2095,6 @@ function renderQmPropertiesTable(editingMemberId = null) {
  * @param {String|null} editingItemId - 현재 편집 중인 항목의 ID
  */
 function renderCostItemsTable(items, editingItemId = null) {
-    console.log('[DEBUG][renderCostItemsTable] ===== 테이블 렌더링 시작 =====');
-    console.log('[DEBUG][renderCostItemsTable] items count:', items.length);
-    console.log('[DEBUG][renderCostItemsTable] window.ciGroupingLevels:', window.ciGroupingLevels);
-    console.log('[DEBUG][renderCostItemsTable] Sample items (first 2):');
     items.slice(0, 2).forEach((item, idx) => {
         console.log(`  [${idx}]:`, {
             id: item.id,
@@ -2134,7 +2115,6 @@ function renderCostItemsTable(items, editingItemId = null) {
     let dataToRender = items;
     if (window.isCiFilterToSelectionActive && window.ciFilteredIds && window.ciFilteredIds.size > 0) {
         dataToRender = items.filter(ci => window.ciFilteredIds.has(ci.id));
-        console.log('[DEBUG][renderCostItemsTable] Filtered by selection, dataToRender count:', dataToRender.length);
     }
 
     // [핵심 수정] 복합적인 필드 이름에 대한 값을 찾는 로직
@@ -2302,14 +2282,12 @@ function renderCostItemsTable(items, editingItemId = null) {
     // 그렇지 않으면 DOM에서 읽어옴
     if (window.ciGroupingLevels && window.ciGroupingLevels.length > 0) {
         currentCiGroupByFields = window.ciGroupingLevels;
-        console.log('[DEBUG][renderCostItemsTable] Using ciGroupingLevels:', currentCiGroupByFields);
     } else {
         currentCiGroupByFields = Array.from(
             document.querySelectorAll('#ci-grouping-controls .group-by-select')
         )
             .map((s) => s.value)
             .filter(Boolean);
-        console.log('[DEBUG][renderCostItemsTable] Using DOM grouping controls:', currentCiGroupByFields);
     }
 
     // window.currentCiColumns를 사용하거나, 없으면 기본값 사용
@@ -2506,7 +2484,6 @@ function renderCostCodeRulesetTable(rules, editId = null) {
     // 공사코드 옵션 생성 (loadedCostCodes가 비어있으면 경고)
     let costCodeOptions = '';
     if (!loadedCostCodes || loadedCostCodes.length === 0) {
-        console.warn('[WARN] loadedCostCodes is empty. Please load cost codes first.');
         costCodeOptions = '<option value="">공사코드를 먼저 로드하세요</option>';
     } else {
         costCodeOptions = loadedCostCodes
@@ -3419,7 +3396,6 @@ function renderConditionRowForQM(condition, index) {
         try {
             propertyOptions = window.getAllQmFieldsForConditionBuilder();
         } catch (error) {
-            console.warn('[WARN] Failed to get dynamic QM fields:', error);
             // 폴백: 기본 옵션 사용
             propertyOptions = [
                 { group: 'QuantityMember 속성', options: [
@@ -4083,7 +4059,6 @@ function setupConditionBuilderListeners() {
 
             if (isQuantityCalcRule) {
                 // CostItem 속성 기반 조건 빌더 (수량산출룰셋)
-                console.log('[DEBUG][setupConditionBuilderListeners] Adding new CI condition row');
                 newConditionHtml = renderConditionRowForCI({}, newIndex);
             } else if (isCostCodeRule || isMemberMarkRule || isSpaceAssignmentRule) {
                 // QuantityMember 속성 기반 조건 빌더
@@ -4182,8 +4157,6 @@ function renderBoqTable(
     console.log(
         `[DEBUG][Render] renderBoqTable called for container #${targetContainerId}.`
     );
-    console.log(`[DEBUG][renderBoqTable] Received reportData:`, reportData);
-    console.log(`[DEBUG][renderBoqTable] Received unitPriceTypes:`, unitPriceTypes);
 
     if (!container) {
         console.error(
@@ -4199,7 +4172,6 @@ function renderBoqTable(
     if (!reportData || reportData.length === 0) {
         container.innerHTML =
             '<p style="padding: 20px;">집계할 데이터가 없습니다.</p>';
-        console.log('[DEBUG][Render] No report data to render.');
         return;
     }
 
@@ -4277,15 +4249,11 @@ function renderBoqTable(
         let rowTds = '';
         let rowHasMissingPrice = node.has_missing_price;
 
-        console.log(`[DEBUG][renderBoqTable] Node level: ${node.level}, Name: ${node.name}, UnitPriceTypeId: ${node.unit_price_type_id}`);
         if (node.level === 0) {
-            console.log(`[DEBUG][renderBoqTable] Available UnitPriceTypes:`, unitPriceTypes);
         }
 
         // ▼▼▼ [DEBUG] 첫 번째 노드의 display_values 확인 ▼▼▼
         if (nodeCount === 0) {
-            console.log(`[DEBUG][renderBoqTable] First node display_values:`, node.display_values);
-            console.log(`[DEBUG][renderBoqTable] display_values keys:`, Object.keys(node.display_values));
         }
         nodeCount++;
         // ▲▲▲ [DEBUG] 여기까지 ▲▲▲
@@ -4361,7 +4329,6 @@ function renderBoqTable(
 
                         // ▼▼▼ [DEBUG] 값을 못 찾는 경우 로그 출력 ▼▼▼
                         if (nodeCount === 1 && !displayValue && column.isDynamic) {
-                            console.log(`[DEBUG][renderBoqTable] Looking for '${displayKey}' in display_values: ${node.display_values[displayKey] === undefined ? 'UNDEFINED' : 'EMPTY STRING'}`);
                         }
                         // ▲▲▲ [DEBUG] 여기까지 ▲▲▲
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -4448,7 +4415,6 @@ function renderBoqTable(
                     select.value = currentTypeId;
                 }
             });
-        console.log('[DEBUG][Render] Dropdown values set for DD BOQ table.');
     }
 
     // ▼▼▼ [추가] SortableJS를 초기화하여 컬럼 순서 변경을 활성화합니다. ▼▼▼
@@ -4714,7 +4680,6 @@ function renderBoqBimObjectCostSummary(selectedCostItemId) {
         header.textContent = 'BIM 객체 비용 요약';
         container.innerHTML =
             '<p style="padding: 10px;">선택된 항목과 연관된 BIM 객체가 없습니다.</p>';
-        console.log('[DEBUG][UI] No linked BIM object found.'); // 디버깅
         return;
     }
 
@@ -4741,7 +4706,6 @@ function renderBoqBimObjectCostSummary(selectedCostItemId) {
     ); // 디버깅
 
     // --- 상세 로깅: 비용 합산 전 데이터 확인 ---
-    // console.log('[DEBUG][UI] Data used for BIM object cost summary:', JSON.stringify(relatedCostItems, null, 2)); // 필요 시 주석 해제
 
     if (relatedCostItems.length === 0) {
         container.innerHTML =
@@ -4821,7 +4785,6 @@ function renderBoqBimObjectCostSummary(selectedCostItemId) {
         </table>`;
 
     container.innerHTML = tableHtml;
-    console.log('[DEBUG][UI] BIM object cost summary table rendered.'); // 디버깅
 }
 // ▲▲▲ [신규] 여기까지 입니다 ▲▲▲
 
@@ -4870,7 +4833,6 @@ function renderBoqItemProperties(itemId) {
         memberContainer.innerHTML = '<p>항목 정보를 찾을 수 없습니다.</p>';
         markContainer.innerHTML = '';
         rawContainer.innerHTML = '';
-        console.warn(`[WARN][UI] CostItem data not found for ID: ${itemId}`); // 디버깅
         return;
     }
 
@@ -5611,7 +5573,6 @@ function renderSpaceAssignmentRulesetTable(rules, editId = null) {
 }
 
 function renderCostCodeListForUnitPrice(costCodes) {
-    console.log('[DEBUG][Render] renderCostCodeListForUnitPrice - Start');
     const container = document.getElementById('unit-price-cost-code-list');
     const searchInput = document.getElementById('unit-price-cost-code-search');
     const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
@@ -5640,7 +5601,6 @@ function renderCostCodeListForUnitPrice(costCodes) {
         container.innerHTML = `<p style="padding: 10px;">${
             searchTerm ? '검색 결과가 없습니다.' : '표시할 공사코드가 없습니다.'
         }</p>`;
-        console.log('[DEBUG][Render] No cost codes to display.');
         return;
     }
 
@@ -5750,12 +5710,10 @@ function renderUnitPriceTypesTable(types, editId = null) {
     if (!hasRows) {
         tableHtml +=
             '<tr><td colspan="3" style="text-align: center; padding: 15px;">정의된 단가 구분이 없습니다. "새 구분 추가" 버튼으로 시작하세요.</td></tr>';
-        console.log('[DEBUG][Render] No unit price types to display.');
     }
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
-    console.log('[DEBUG][Render] renderUnitPriceTypesTable - End');
 }
 function renderUnitPricesTable(prices, editId = null) {
     console.log(
@@ -5893,7 +5851,6 @@ function renderUnitPricesTable(prices, editId = null) {
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
-    console.log('[DEBUG][Render] renderUnitPricesTable - End');
 }
 /**
  * 상세견적(DD) 탭의 UI 요소들(패널 토글 버튼, 상세 정보 탭)에 이벤트 리스너를 설정합니다.
@@ -5943,10 +5900,8 @@ function initializeBoqUI() {
                 );
             });
             leftToggleBtn.dataset.listenerAttached = 'true'; // 리스너 추가됨 표시
-            console.log('[DEBUG] Left panel toggle listener attached.');
         }
     } else {
-        console.warn('[WARN] Left toggle button or BOQ container not found.');
     }
 
     // --- 2. 하단 패널 접기/펴기 기능 ---
@@ -5964,7 +5919,6 @@ function initializeBoqUI() {
                 );
             });
             bottomToggleBtn.dataset.listenerAttached = 'true';
-            console.log('[DEBUG] Bottom panel toggle listener attached.');
         }
     } else {
         console.warn(
@@ -5989,7 +5943,6 @@ function initializeBoqUI() {
                 }
 
                 const targetTab = clickedButton.dataset.tab; // 클릭된 탭의 data-tab 값 (예: "boq-member-prop")
-                console.log(`[DEBUG] Detail tab clicked: ${targetTab}`);
 
                 // 모든 탭 버튼과 컨텐츠에서 'active' 클래스 제거 (현재 패널 내에서만)
                 boqDetailsPanel
@@ -6016,7 +5969,6 @@ function initializeBoqUI() {
                 }
             });
             tabsContainer.dataset.listenerAttached = 'true'; // 탭 컨테이너에 리스너 추가됨 표시
-            console.log('[DEBUG] Detail panel tab click listener attached.');
         } else if (!tabsContainer) {
             console.warn(
                 '[WARN] Detail panel tabs container not found within #boq-item-details-panel.'
@@ -6028,7 +5980,6 @@ function initializeBoqUI() {
         );
     }
 
-    console.log('[DEBUG] Detailed Estimation (DD) UI initialization complete.');
 }
 // ▼▼▼ [추가] ui.js 파일 맨 아래에 아래 함수들을 모두 추가 ▼▼▼
 
@@ -6117,7 +6068,6 @@ function renderAiModelsTable(models) {
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
-    console.log('[DEBUG][Render] AI Models table rendered successfully.'); // 디버깅
 }
 
 /**
@@ -6229,7 +6179,6 @@ function renderFeatureSelectionLists(headers) {
     const inputListDiv = document.getElementById('input-feature-list');
     const outputListDiv = document.getElementById('output-feature-list');
     if (!inputListDiv || !outputListDiv) {
-        console.error('[ERROR][Render] Feature list containers not found.');
         return;
     }
     inputListDiv.innerHTML = ''; // 초기화
@@ -6357,7 +6306,6 @@ function renderSdInputFields(inputFeatures) {
     if (!Array.isArray(inputFeatures) || inputFeatures.length === 0) {
         container.innerHTML =
             '<p>선택된 모델에 필요한 입력 정보가 없습니다.</p>';
-        console.warn('[WARN][Render] No input features provided for SD model.'); // 디버깅
         return;
     }
 
@@ -6520,10 +6468,8 @@ function renderSdResultsTable(predictions) {
  * @param {Object} predictions - 예측 결과 객체
  */
 function renderSdPredictionChart(predictions) {
-    console.log('[DEBUG][Render] Rendering SD prediction chart.');
     const canvas = document.getElementById('sd-prediction-chart');
     if (!canvas) {
-        console.warn('[WARN][Render] SD prediction chart canvas #sd-prediction-chart not found.');
         return;
     }
     const ctx = canvas.getContext('2d');
@@ -6540,7 +6486,6 @@ function renderSdPredictionChart(predictions) {
         Object.keys(predictions).length > 0;
 
     if (!hasPredictionData) {
-        console.log('[DEBUG][Render] No SD prediction data. Cleaning up chart canvas.');
         if (sdPredictionChartInstance) {
             sdPredictionChartInstance.destroy();
             sdPredictionChartInstance = null;
@@ -6550,7 +6495,6 @@ function renderSdPredictionChart(predictions) {
     }
 
     if (sdPredictionChartInstance) {
-        console.log('[DEBUG][Render] Destroying previous SD prediction chart instance.');
         sdPredictionChartInstance.destroy();
         sdPredictionChartInstance = null;
     }
@@ -6714,7 +6658,6 @@ function renderSdPredictionChart(predictions) {
         globalMaxY = 1;
     }
 
-    console.log('[DEBUG][Render] SD chart datasets:', datasets);
 
     try {
         sdPredictionChartInstance = new Chart(ctx, {
@@ -6798,9 +6741,7 @@ function renderSdPredictionChart(predictions) {
                 },
             },
         });
-        console.log('[DEBUG][Render] SD prediction chart rendered successfully.');
     } catch (error) {
-        console.error('[ERROR][Render] Failed to render SD chart:', error);
         showToast('Failed to render SD prediction chart.', 'error');
     }
 }
@@ -6873,7 +6814,6 @@ function renderSdCostItemsTable(items) {
 
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
-    console.log('[DEBUG][Render] SD Cost Items table rendered successfully.'); // 디버깅
 }
 
 // ▲▲▲ [추가] 여기까지 ▲▲▲
@@ -6931,7 +6871,6 @@ function initializeSdUI() {
     // currentSdBoqColumns = []; // 컬럼 상태는 generateSdBoqReport에서 관리
     // sdBoqColumnAliases = {};
 
-    console.log('[DEBUG][initializeSdUI] SD UI elements reset.'); // 디버깅
 }
 // ▲▲▲ [교체] 여기까지 ▲▲▲
 
@@ -7164,7 +7103,6 @@ function renderSdItemProperties(itemId) {
         if (memberContainer) memberContainer.innerHTML = initialMsg;
         if (markContainer) markContainer.innerHTML = initialMsg;
         if (rawContainer) rawContainer.innerHTML = initialMsg;
-        console.log('[DEBUG][Render] Cleared SD details panel.');
         return;
     }
 
@@ -7256,10 +7194,6 @@ function renderSdItemProperties(itemId) {
  * 필드 선택 탭의 키값과 정확히 일치하도록 구성
  */
 window.getAllCiFieldsForConditionBuilder = function() {
-    console.log('[DEBUG][getAllCiFieldsForConditionBuilder] Starting field collection...');
-    console.log('[DEBUG] allRevitData length:', allRevitData.length);
-    console.log('[DEBUG] loadedQuantityMembers length:', loadedQuantityMembers?.length || 0);
-    console.log('[DEBUG] loadedCostCodes length:', loadedCostCodes?.length || 0);
 
     const groups = [];
 
@@ -7443,9 +7377,7 @@ window.getAllCiFieldsForConditionBuilder = function() {
         });
     }
 
-    console.log('[DEBUG][getAllCiFieldsForConditionBuilder] Returning', groups.length, 'groups');
     groups.forEach((g, idx) => {
-        console.log(`[DEBUG]   Group ${idx}: ${g.group}, ${g.options.length} options`);
     });
 
     return groups;
@@ -7515,9 +7447,7 @@ function renderConditionRowForCI(condition, index) {
     if (typeof window.getAllCiFieldsForConditionBuilder === 'function') {
         try {
             propertyOptions = window.getAllCiFieldsForConditionBuilder();
-            console.log('[DEBUG] CI fields for condition builder:', propertyOptions);
         } catch (error) {
-            console.warn('[WARN] Failed to get dynamic CI fields:', error);
             // 폴백: 기본 옵션 사용
             propertyOptions = [
                 { group: 'CostItem 속성 (CI)', options: [
@@ -7527,7 +7457,6 @@ function renderConditionRowForCI(condition, index) {
             ];
         }
     } else {
-        console.warn('[WARN] getAllCiFieldsForConditionBuilder function not found');
         // 폴백: 기본 옵션 사용
         propertyOptions = [
             { group: 'CostItem 속성 (CI)', options: [

@@ -15,7 +15,6 @@ let allAoFields = [];
 // =====================================================================
 
 function setupAoListeners() {
-    console.log('[DEBUG] Setting up Activity Object listeners...');
 
     // 수동 생성 버튼
     document
@@ -137,7 +136,6 @@ function setupAoListeners() {
     // 스플릿바 초기화
     initAoSplitBar();
 
-    console.log('[DEBUG] Activity Object listeners setup complete.');
 }
 
 // =====================================================================
@@ -364,7 +362,6 @@ function populateAoFieldSelection(activityObjects) {
 
     // 전역 변수에 저장
     allAoFields = allFields;
-    console.log('[DEBUG][populateAoFieldSelection] allAoFields initialized with', allAoFields.length, 'fields');
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     renderAoFieldCheckboxes();
@@ -526,7 +523,6 @@ function renderActivityObjectsTable(activityObjects) {
         // Clear selection state
         selectedAoIds.clear();
 
-        console.log('[DEBUG][renderActivityObjectsTable] Cleared property panel and selection state due to empty array');
 
         // 테이블 헤더는 표시하되 빈 메시지 표시 (다른 탭들과 일관성 유지)
         const table = document.createElement('table');
@@ -579,7 +575,6 @@ function renderActivityObjectsTable(activityObjects) {
     let filteredObjects = activityObjects;
     if (window.isAoFilterToSelectionActive && window.aoFilteredIds && window.aoFilteredIds.size > 0) {
         filteredObjects = activityObjects.filter(ao => window.aoFilteredIds.has(ao.id));
-        console.log(`[DEBUG][AO] Applying selection filter: ${filteredObjects.length}/${activityObjects.length} objects`);
     }
 
     // 그룹핑 적용
@@ -796,7 +791,6 @@ function createAoRow(ao, selectedFields) {
     deleteBtn.style.padding = '4px 8px';
     deleteBtn.style.marginLeft = '4px';
     deleteBtn.addEventListener('click', (e) => {
-        console.log('[DEBUG][renderActivityObjectsTable] Delete button clicked for AO:', ao.id);
         e.stopPropagation(); // 행 클릭 이벤트 방지
         deleteActivityObject(ao.id);
     });
@@ -1145,7 +1139,6 @@ function applyAoColumnFilters(activityObjects) {
 }
 
 function clearAoSelectionFilter() {
-    console.log('[DEBUG][AO] Clearing selection filter');
 
     // 필터 비활성화
     window.isAoFilterToSelectionActive = false;
@@ -1191,13 +1184,10 @@ function renderAoPropertiesPanel() {
     }
 
     // ▼▼▼ [디버깅] 데이터 구조 확인 (2025-11-05) ▼▼▼
-    console.log('[DEBUG][renderAoPropertiesPanel] Selected AO:', ao);
-    console.log('[DEBUG][renderAoPropertiesPanel] allAoFields length:', allAoFields?.length);
     // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
     // ▼▼▼ [수정] allAoFields가 비어있으면 초기화 (2025-11-05) ▼▼▼
     if (!allAoFields || allAoFields.length === 0) {
-        console.log('[DEBUG][renderAoPropertiesPanel] allAoFields is empty, populating...');
         populateAoFieldSelection([ao]);
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -1318,7 +1308,6 @@ function showManualAoQuantityInputModal() {
     }
 
     const selectedItems = window.loadedActivityObjects.filter(item => selectedActivityObjects.includes(item.id));
-    console.log('[DEBUG][showManualAoQuantityInputModal] Selected items:', selectedItems);
 
     // 이전에 저장된 quantity_expression 확인
     let previousExpression = null;
@@ -1336,7 +1325,6 @@ function showManualAoQuantityInputModal() {
             previousMode = 'formula';
             previousFormula = previousExpression.formula || '';
         }
-        console.log('[DEBUG][showManualAoQuantityInputModal] Previous expression:', previousExpression);
     }
 
     // 모달 HTML 생성
@@ -1510,7 +1498,6 @@ function showManualAoQuantityInputModal() {
                     return;
                 }
 
-                console.log(`[DEBUG][Manual AO Quantity] Direct mode: ${directValue}`);
 
                 for (const item of selectedItems) {
                     const updateData = {
@@ -1537,7 +1524,6 @@ function showManualAoQuantityInputModal() {
                         updatedCount++;
                     } else {
                         const errorText = await saveResponse.text();
-                        console.warn('[WARN] Failed to save item:', item.id, errorText);
                     }
                 }
             } else {
@@ -1549,12 +1535,9 @@ function showManualAoQuantityInputModal() {
                     return;
                 }
 
-                console.log(`[DEBUG][Manual AO Quantity] Formula mode: ${formula}`);
 
                 for (const item of selectedItems) {
                     const aoContext = buildAoContext(item);
-                    console.log('[DEBUG][Manual AO Quantity] Context keys:', Object.keys(aoContext));
-                    console.log('[DEBUG][Manual AO Quantity] Context BIM keys:', Object.keys(aoContext).filter(k => k.startsWith('BIM.')));
                     const calculatedQuantity = evaluateQuantityFormula(formula, aoContext);
 
                     if (calculatedQuantity !== null && !isNaN(calculatedQuantity)) {
@@ -1582,10 +1565,8 @@ function showManualAoQuantityInputModal() {
                             updatedCount++;
                         } else {
                             const errorText = await saveResponse.text();
-                            console.warn('[WARN] Failed to save item:', item.id, errorText);
                         }
                     } else {
-                        console.warn('[WARN] Formula evaluation failed for item:', aoContext['Activity.code']);
                     }
                 }
             }
@@ -1596,7 +1577,6 @@ function showManualAoQuantityInputModal() {
             modal.remove();
 
         } catch (error) {
-            console.error('[ERROR][Manual AO Quantity Input]', error);
             showToast('수량 입력 중 오류가 발생했습니다.', 'error');
         }
     });
@@ -1610,7 +1590,6 @@ function showManualAoQuantityInputModal() {
 }
 
 async function clearManualInput(aoId) {
-    console.log('[DEBUG][clearManualInput] Called with aoId:', aoId);
 
     if (!aoId) {
         showToast('액티비티 객체 ID가 없습니다.', 'error');
@@ -1630,8 +1609,6 @@ async function clearManualInput(aoId) {
         const ciQuantity = ao.cost_item?.quantity || 0;
         const autoQuantity = durationPerUnit * ciQuantity;
 
-        console.log('[DEBUG][clearManualInput] Calculated auto quantity:', autoQuantity);
-        console.log('[DEBUG][clearManualInput] From: duration_per_unit =', durationPerUnit, ', ci_quantity =', ciQuantity);
 
         // 자동 계산 모드로 변경하는 데이터
         const updateData = {
@@ -1642,7 +1619,6 @@ async function clearManualInput(aoId) {
             quantity_expression: {}
         };
 
-        console.log('[DEBUG][clearManualInput] Update data:', updateData);
 
         // API 요청
         const response = await fetch(`/connections/api/activity-objects/${currentProjectId}/${aoId}/`, {
@@ -1656,13 +1632,11 @@ async function clearManualInput(aoId) {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[ERROR][clearManualInput] Failed to update:', response.status, errorText);
             showToast('수동입력 해제 실패: ' + response.status, 'error');
             return;
         }
 
         const updatedAo = await response.json();
-        console.log('[DEBUG][clearManualInput] Updated AO:', updatedAo);
 
         // 전역 데이터 업데이트
         const index = window.loadedActivityObjects.findIndex(item => item.id === aoId);
@@ -1674,10 +1648,8 @@ async function clearManualInput(aoId) {
         await loadActivityObjects();
 
         showToast('수동입력이 해제되었습니다.', 'success');
-        console.log('[DEBUG][clearManualInput] Manual input cleared successfully');
 
     } catch (error) {
-        console.error('[ERROR][clearManualInput] Exception:', error);
         showToast('수동입력 해제 중 오류 발생', 'error');
     }
 }
@@ -1687,16 +1659,12 @@ async function clearManualInput(aoId) {
 // =====================================================================
 
 async function deleteActivityObject(aoId) {
-    console.log('[DEBUG][deleteActivityObject] Called with aoId:', aoId);
-    console.log('[DEBUG][deleteActivityObject] Current loadedActivityObjects count:', window.loadedActivityObjects?.length);
 
     if (!confirm('이 액티비티 객체를 삭제하시겠습니까?')) {
-        console.log('[DEBUG][deleteActivityObject] User cancelled deletion');
         return;
     }
 
     try {
-        console.log('[DEBUG][deleteActivityObject] Sending DELETE request...');
         const response = await fetch(
             `/connections/api/activity-objects/${currentProjectId}/${aoId}/`,
             {
@@ -1707,18 +1675,13 @@ async function deleteActivityObject(aoId) {
             }
         );
 
-        console.log('[DEBUG][deleteActivityObject] Response status:', response.status);
         const result = await response.json();
-        console.log('[DEBUG][deleteActivityObject] Response result:', result);
 
         if (!response.ok) throw new Error(result.message || '삭제에 실패했습니다.');
 
         showToast(result.message, 'success');
-        console.log('[DEBUG][deleteActivityObject] Reloading activity objects...');
         await loadActivityObjects();
-        console.log('[DEBUG][deleteActivityObject] Reload complete');
     } catch (error) {
-        console.error('[ERROR][deleteActivityObject] Error deleting activity object:', error);
         showToast(error.message, 'error');
     }
 }
@@ -1787,7 +1750,6 @@ function selectAoInClient() {
 
 // 3D 뷰포트에서 선택한 객체를 테이블에서 선택
 function getAoSelectionFrom3DViewer() {
-    console.log('[DEBUG][AO] Getting selection from 3D viewer');
 
     if (typeof window.getSelectedObjectsFrom3DViewer !== 'function') {
         showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
@@ -1800,7 +1762,6 @@ function getAoSelectionFrom3DViewer() {
         return;
     }
 
-    console.log(`[DEBUG][AO] Found ${selected3DObjects.length} selected objects in 3D viewer`);
 
     // 3D에서 선택된 객체의 BIM ID 수집
     const selectedBimIds = new Set();
@@ -1811,10 +1772,6 @@ function getAoSelectionFrom3DViewer() {
         }
     });
 
-    console.log(`[DEBUG][AO] Selected BIM IDs:`, Array.from(selectedBimIds));
-    console.log(`[DEBUG][AO] window.loadedQuantityMembers:`, window.loadedQuantityMembers?.length || 'undefined');
-    console.log(`[DEBUG][AO] window.loadedCostItems:`, window.loadedCostItems?.length || 'undefined');
-    console.log(`[DEBUG][AO] window.loadedActivityObjects:`, window.loadedActivityObjects?.length || 'undefined');
 
     // 기존 선택 및 필터 초기화
     selectedAoIds.clear();
@@ -1828,14 +1785,11 @@ function getAoSelectionFrom3DViewer() {
             const elementId = qm.split_element_id || qm.raw_element_id;
             if (elementId && selectedBimIds.has(elementId)) {
                 qmIds.add(qm.id);
-                console.log(`[DEBUG][AO] Matched QM: ${qm.id}, element: ${elementId}`);
             }
         });
     } else {
-        console.warn('[WARN][AO] loadedQuantityMembers가 비어있습니다. 수량산출부재 탭을 먼저 로드하세요.');
     }
 
-    console.log(`[DEBUG][AO] Matched QM IDs:`, Array.from(qmIds));
 
     // QuantityMember ID → CostItem ID 매핑
     const ciIds = new Set();
@@ -1858,21 +1812,17 @@ function getAoSelectionFrom3DViewer() {
             }
         });
     } else {
-        console.warn('[WARN][AO] loadedCostItems가 비어있습니다. 산출항목 탭을 먼저 로드하세요.');
     }
 
-    console.log(`[DEBUG][AO] Matched CI IDs:`, Array.from(ciIds));
 
     // CostItem ID → ActivityObject 매핑
     window.loadedActivityObjects.forEach(ao => {
         if (ao.cost_item && ao.cost_item.id && ciIds.has(ao.cost_item.id)) {
             selectedAoIds.add(ao.id);
             window.aoFilteredIds.add(ao.id);
-            console.log(`[DEBUG][AO] Matched AO: ${ao.id}, CI: ${ao.cost_item.id}`);
         }
     });
 
-    console.log(`[DEBUG][AO] Selected ${selectedAoIds.size} activity objects from 3D viewer`);
 
     // 데이터가 없을 경우 경고
     if (!window.loadedQuantityMembers || window.loadedQuantityMembers.length === 0 ||
@@ -1905,8 +1855,6 @@ function getAoSelectionFrom3DViewer() {
 
 // 테이블에서 선택한 객체를 3D 뷰포트에서 선택
 function selectAoIn3DViewer() {
-    console.log('[DEBUG][AO] Selecting objects in 3D viewer');
-    console.log('[DEBUG][AO] selectedAoIds:', Array.from(selectedAoIds));
 
     if (selectedAoIds.size === 0) {
         showToast('테이블에서 먼저 항목을 선택하세요.', 'warning');
@@ -1921,7 +1869,6 @@ function selectAoIn3DViewer() {
     // 선택된 ActivityObject들의 raw_element_id를 수집
     const bimIdsToSelect = [];
     const selectedAOs = window.loadedActivityObjects.filter(ao => selectedAoIds.has(ao.id));
-    console.log('[DEBUG][AO] Found matching AOs:', selectedAOs.length);
 
     selectedAOs.forEach(ao => {
         if (ao.quantity_member && ao.quantity_member.id) {
@@ -1929,7 +1876,6 @@ function selectAoIn3DViewer() {
             const qm = window.loadedQuantityMembers?.find(q => q.id === ao.quantity_member.id);
             if (qm) {
                 const elementId = qm.split_element_id || qm.raw_element_id;
-                console.log('[DEBUG][AO] AO:', ao.id, 'QM:', qm.id, 'raw_element_id:', qm.raw_element_id, 'split_element_id:', qm.split_element_id, 'using:', elementId);
                 if (elementId) {
                     bimIdsToSelect.push(elementId);
                 }
@@ -1937,14 +1883,12 @@ function selectAoIn3DViewer() {
         }
     });
 
-    console.log('[DEBUG][AO] BIM IDs to select:', bimIdsToSelect);
 
     if (bimIdsToSelect.length === 0) {
         showToast('선택한 액티비티 객체에 연결된 BIM 요소가 없습니다.', 'warning');
         return;
     }
 
-    console.log(`[DEBUG][AO] Calling window.selectObjectsIn3DViewer with ${bimIdsToSelect.length} IDs`);
     window.selectObjectsIn3DViewer(bimIdsToSelect);
 
     showToast(`3D 뷰포트에서 ${bimIdsToSelect.length}개 객체를 선택했습니다.`, 'success');
@@ -2040,7 +1984,6 @@ async function recalculateAllAoQuantities() {
 
                 if (ao.is_manual && !ao.manual_formula) {
                     // 케이스 2: 수동 직접입력 - 값 유지
-                    console.log(`[DEBUG][Auto Calc] Skipping AO ${ao.id} (manual direct input)`);
                     skippedCount++;
                     continue;
 
@@ -2048,10 +1991,8 @@ async function recalculateAllAoQuantities() {
                     // 케이스 3: 수동 산식입력 - 산식 재평가
                     const aoContext = buildActivityObjectContext(ao);
                     newQuantity = evaluateQuantityFormula(ao.manual_formula, aoContext);
-                    console.log(`[DEBUG][Auto Calc] Evaluating formula for AO ${ao.id}: ${ao.manual_formula} = ${newQuantity}`);
 
                     if (newQuantity === null || isNaN(newQuantity)) {
-                        console.warn(`[WARN][Auto Calc] Formula evaluation failed for AO ${ao.id}`);
                         errorCount++;
                         continue;
                     }
@@ -2061,7 +2002,6 @@ async function recalculateAllAoQuantities() {
                     const durationPerUnit = ao.activity?.duration_per_unit || 0;
                     const ciQuantity = ao.cost_item?.quantity || 0;
                     newQuantity = durationPerUnit * ciQuantity;
-                    console.log(`[DEBUG][Auto Calc] Auto calculating for AO ${ao.id}: ${durationPerUnit} * ${ciQuantity} = ${newQuantity}`);
                 }
 
                 // 서버에 저장
@@ -2083,12 +2023,10 @@ async function recalculateAllAoQuantities() {
                     updatedCount++;
                 } else {
                     const errorText = await saveResponse.text();
-                    console.warn(`[WARN][Auto Calc] Failed to save AO ${ao.id}:`, errorText);
                     errorCount++;
                 }
 
             } catch (itemError) {
-                console.error(`[ERROR][Auto Calc] Error processing AO ${ao.id}:`, itemError);
                 errorCount++;
             }
         }
@@ -2103,7 +2041,6 @@ async function recalculateAllAoQuantities() {
         showToast(message, updatedCount > 0 ? 'success' : 'info');
 
     } catch (error) {
-        console.error('[ERROR][Auto Calc]', error);
         showToast('수량 재계산 중 오류가 발생했습니다.', 'error');
     }
 }
@@ -2123,7 +2060,6 @@ async function resetManualAoInput() {
         return;
     }
 
-    console.log(`[DEBUG][resetManualAoInput] Resetting ${selectedIds.length} items`);
 
     try {
         let successCount = 0;
@@ -2162,7 +2098,6 @@ async function resetManualAoInput() {
                 successCount++;
             } else {
                 const errorText = await response.text();
-                console.warn(`[WARN][resetManualAoInput] Failed to reset AO ${aoId}:`, errorText);
                 errorCount++;
             }
         }
@@ -2175,7 +2110,6 @@ async function resetManualAoInput() {
         showToast(message, successCount > 0 ? 'success' : 'error');
 
     } catch (error) {
-        console.error('[ERROR][resetManualAoInput]', error);
         showToast('수동입력 해제 중 오류가 발생했습니다.', 'error');
     }
 }
@@ -2296,7 +2230,6 @@ function evaluateQuantityFormula(formula, context) {
         const templatePattern = /\{([^}]+)\}/g;
         const matches = [...formula.matchAll(templatePattern)];
 
-        console.log('[DEBUG][evaluateQuantityFormula] Original formula:', formula);
 
         for (const match of matches) {
             const fullMatch = match[0]; // {property_name}
@@ -2346,7 +2279,6 @@ function evaluateQuantityFormula(formula, context) {
                 value = context[contextKey];
             }
 
-            console.log(`[DEBUG][evaluateQuantityFormula] Property: ${propertyPath} -> Context Key: ${contextKey}`);
 
             if (value !== undefined && value !== null) {
                 // 숫자로 변환 시도
@@ -2354,24 +2286,19 @@ function evaluateQuantityFormula(formula, context) {
                 if (!isNaN(numValue)) {
                     evaluatedFormula = evaluatedFormula.replace(fullMatch, numValue);
                 } else {
-                    console.warn(`[WARN][evaluateQuantityFormula] Non-numeric value for ${propertyPath}: ${value}`);
                     evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
                 }
             } else {
-                console.warn(`[WARN][evaluateQuantityFormula] Missing value for ${propertyPath}`);
                 evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
             }
         }
 
-        console.log('[DEBUG][evaluateQuantityFormula] Evaluated formula:', evaluatedFormula);
 
         // 수식 계산
         const result = eval(evaluatedFormula);
-        console.log('[DEBUG][evaluateQuantityFormula] Result:', result);
 
         return result;
     } catch (error) {
-        console.error('[ERROR][evaluateQuantityFormula]', error);
         return null;
     }
 }
@@ -2385,9 +2312,6 @@ function evaluateQuantityFormula(formula, context) {
 function buildAoContext(ao) {
     const context = {};
 
-    console.log('[DEBUG][buildAoContext] Input AO:', ao);
-    console.log('[DEBUG][buildAoContext] ao.cost_item:', ao.cost_item);
-    console.log('[DEBUG][buildAoContext] window.loadedCostItems length:', window.loadedCostItems?.length);
 
     // 1. AO 자체 속성
     context['id'] = ao.id;
@@ -2411,12 +2335,9 @@ function buildAoContext(ao) {
 
     // 3. CostItem 속성 (상속)
     if (ao.cost_item) {
-        console.log('[DEBUG][buildAoContext] Looking for cost_item:', ao.cost_item);
         // ao.cost_item이 객체인 경우 id를 추출, 문자열인 경우 그대로 사용
         const costItemId = typeof ao.cost_item === 'object' ? ao.cost_item.id : ao.cost_item;
-        console.log('[DEBUG][buildAoContext] Cost item ID:', costItemId);
         const ci = window.loadedCostItems?.find(c => c.id === costItemId);
-        console.log('[DEBUG][buildAoContext] Found CI:', ci);
         if (ci) {
             context['cost_item_id'] = ci.id;
             context['cost_item_quantity'] = ci.quantity || 0;
@@ -2562,7 +2483,6 @@ function buildAoContext(ao) {
         }
     }
 
-    console.log('[DEBUG][buildAoContext] Built context for AO:', ao.id);
     return context;
 }
 // ▲▲▲ [추가] 여기까지 ▲▲▲
@@ -2609,7 +2529,6 @@ async function updateAllAoFormulas() {
                     quantity_expression: ao.quantity_expression
                 };
 
-                console.log('[DEBUG][updateAllAoFormulas] Payload:', payload);
 
                 const response = await fetch(
                     `/connections/api/activity-objects/${currentProjectId}/${ao.id}/`,

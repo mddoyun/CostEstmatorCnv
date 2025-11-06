@@ -106,15 +106,11 @@ function setupQuantityMembersListeners() {
         .getElementById('qm-deselect-all-fields-btn')
         ?.addEventListener('click', deselectAllQmFields);
     const qmRenderTableBtn = document.getElementById('qm-render-table-btn');
-    console.log('[DEBUG] qm-render-table-btn element:', qmRenderTableBtn);
     if (qmRenderTableBtn) {
         qmRenderTableBtn.addEventListener('click', () => {
-            console.log('[DEBUG] qm-render-table-btn clicked! Applying field selection to table...');
             updateQmColumnsFromCheckboxes(true); // 선택된 필드로 테이블 렌더링
         });
-        console.log('[DEBUG] qm-render-table-btn click listener attached');
     } else {
-        console.error('[ERROR] qm-render-table-btn element not found!');
     }
     // 필드 체크박스 변경 이벤트 (동적으로 생성되므로 이벤트 위임 사용)
     document
@@ -124,7 +120,6 @@ function setupQuantityMembersListeners() {
     // 스플릿바 초기화
     initQmSplitBar();
 
-    console.log('[DEBUG] Quantity Members listeners setup complete.');
 }
 
 async function loadQuantityMembers() {
@@ -148,13 +143,6 @@ async function loadQuantityMembers() {
         // 디버깅: 첫 번째 수량산출부재의 데이터 구조 확인
         if (loadedQuantityMembers.length > 0) {
             const firstMember = loadedQuantityMembers[0];
-            console.log('[DEBUG] First QuantityMember structure:', {
-                id: firstMember.id,
-                name: firstMember.name,
-                raw_element_id: firstMember.raw_element_id,
-                split_element_id: firstMember.split_element_id,
-                has_raw_element_object: !!firstMember.raw_element,
-                raw_element_keys: firstMember.raw_element ? Object.keys(firstMember.raw_element) : null
             });
         }
 
@@ -192,7 +180,6 @@ async function createManualQuantityMember() {
 }
 
 async function createAutoQuantityMembers(skipConfirmation = false) {
-    console.log('[DEBUG] createAutoQuantityMembers called. currentProjectId:', currentProjectId);
 
     if (!currentProjectId) {
         showToast('먼저 프로젝트를 선택하세요.', 'error');
@@ -205,11 +192,9 @@ async function createAutoQuantityMembers(skipConfirmation = false) {
             '정말로 모든 수량산출부재를 자동으로 다시 생성하시겠습니까?\n이 작업은 기존에 있던 모든 수량산출부재를 삭제하고, 현재의 수량산출분류를 기준으로 새로 생성합니다.'
         )
     ) {
-        console.log('[DEBUG] User cancelled auto-create confirmation');
         return;
     }
 
-    console.log('[DEBUG] Sending auto-create request to:', `/connections/api/quantity-members/auto-create/${currentProjectId}/`);
     showToast('수량산출부재를 자동으로 생성하고 있습니다...', 'info', 5000);
 
     try {
@@ -220,9 +205,7 @@ async function createAutoQuantityMembers(skipConfirmation = false) {
                 headers: { 'X-CSRFToken': csrftoken },
             }
         );
-        console.log('[DEBUG] Auto-create response status:', response.status);
         const result = await response.json();
-        console.log('[DEBUG] Auto-create result:', result);
 
         if (!response.ok) throw new Error(result.message);
 
@@ -1351,7 +1334,6 @@ function selectQmInClient() {
 
 // 3D 뷰포트에서 선택한 객체를 테이블에서 선택
 function getQmSelectionFrom3DViewer() {
-    console.log('[DEBUG][QM] Getting selection from 3D viewer');
 
     if (typeof window.getSelectedObjectsFrom3DViewer !== 'function') {
         showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
@@ -1364,7 +1346,6 @@ function getQmSelectionFrom3DViewer() {
         return;
     }
 
-    console.log(`[DEBUG][QM] Found ${selected3DObjects.length} selected objects in 3D viewer`);
 
     // 3D에서 선택된 객체의 BIM ID 수집
     const selectedBimIds = new Set();
@@ -1389,7 +1370,6 @@ function getQmSelectionFrom3DViewer() {
         }
     });
 
-    console.log(`[DEBUG][QM] Selected ${selectedQmIds.size} quantity members from 3D viewer`);
 
     // 필터 활성화 및 버튼 표시 (사이드바 버튼과 테이블 하단 버튼 모두)
     window.isQmFilterToSelectionActive = true;
@@ -1401,7 +1381,6 @@ function getQmSelectionFrom3DViewer() {
     }
     if (clearBtnFooter) {
         clearBtnFooter.style.display = 'inline-block';
-        console.log('[DEBUG][QM] Footer clear filter button displayed');
     }
 
     // 테이블 다시 렌더링 (필터링 적용됨)
@@ -1428,8 +1407,6 @@ function filterQmTableBySelection() {
 
 // 테이블에서 선택한 수량산출부재를 3D 뷰포트에서 선택
 function selectQmIn3DViewer() {
-    console.log('[DEBUG][QM] Selecting objects in 3D viewer');
-    console.log('[DEBUG][QM] selectedQmIds:', Array.from(selectedQmIds));
 
     if (selectedQmIds.size === 0) {
         showToast('테이블에서 먼저 항목을 선택하세요.', 'warning');
@@ -1441,29 +1418,24 @@ function selectQmIn3DViewer() {
         return;
     }
 
-    console.log('[DEBUG][QM] loadedQuantityMembers count:', window.loadedQuantityMembers?.length);
 
     // 선택된 수량산출부재들의 raw_element_id 또는 split_element_id를 수집
     const bimIdsToSelect = [];
     const selectedQMs = window.loadedQuantityMembers.filter(qm => selectedQmIds.has(qm.id));
-    console.log('[DEBUG][QM] Found matching QMs:', selectedQMs.length);
 
     selectedQMs.forEach(qm => {
         const elementId = qm.split_element_id || qm.raw_element_id;
-        console.log('[DEBUG][QM] QM:', qm.id, 'raw_element_id:', qm.raw_element_id, 'split_element_id:', qm.split_element_id, 'using:', elementId);
         if (elementId) {
             bimIdsToSelect.push(elementId);
         }
     });
 
-    console.log('[DEBUG][QM] BIM IDs to select:', bimIdsToSelect);
 
     if (bimIdsToSelect.length === 0) {
         showToast('선택한 수량산출부재에 연결된 원본 요소가 없습니다.', 'warning');
         return;
     }
 
-    console.log(`[DEBUG][QM] Calling window.selectObjectsIn3DViewer with ${bimIdsToSelect.length} IDs`);
     window.selectObjectsIn3DViewer(bimIdsToSelect);
 
     showToast(`3D 뷰포트에서 ${bimIdsToSelect.length}개 객체를 선택했습니다.`, 'success');
@@ -1475,19 +1447,16 @@ function selectQmIn3DViewer() {
 
 // 그룹핑 적용
 function applyQmGrouping() {
-    console.log('[DEBUG][QM] Applying grouping');
     renderActiveQmView();
 }
 
 // 필터 적용
 function applyQmFilter() {
-    console.log('[DEBUG][QM] Applying filter');
     renderActiveQmView();
 }
 
 // 필터 초기화
 function clearQmFilter() {
-    console.log('[DEBUG][QM] Clearing filter');
     qmColumnFilters = {};
     renderActiveQmView();
     showToast('필터가 초기화되었습니다.', 'success');
@@ -1495,7 +1464,6 @@ function clearQmFilter() {
 
 // 선택 해제
 function clearQmSelection() {
-    console.log('[DEBUG][QM] Clearing selection');
     selectedQmIds.clear();
     renderActiveQmView();
     showToast('선택이 해제되었습니다.', 'success');
@@ -1503,7 +1471,6 @@ function clearQmSelection() {
 
 // 선택 필터 해제
 function clearQmSelectionFilter() {
-    console.log('[DEBUG][QM] Clearing selection filter');
 
     // 필터 비활성화
     window.isQmFilterToSelectionActive = false;
@@ -1847,9 +1814,7 @@ function populateQmFieldSelection() {
 function updateQmColumnsFromCheckboxes(shouldRender = true) {
     const checkedBoxes = document.querySelectorAll('.qm-field-checkbox:checked');
     currentQmColumns = Array.from(checkedBoxes).map(cb => cb.value);
-    console.log('[DEBUG] Updated currentQmColumns:', currentQmColumns);
     if (shouldRender) {
-        console.log('[DEBUG] Rendering table with updated columns');
         renderActiveQmView();
     }
 }
@@ -1883,8 +1848,6 @@ function renderQmSelectedProperties() {
     const fullBimObject = elementId && allRevitData ?
         allRevitData.find(item => item.id === elementId) : null;
 
-    console.log('[DEBUG] renderQmSelectedProperties - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
-    console.log('[DEBUG] allRevitData available:', !!allRevitData, 'count:', allRevitData ? allRevitData.length : 0);
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     let html = '';
@@ -2259,7 +2222,6 @@ function renderQmSelectedProperties() {
 function renderQmAssignedInfo() {
     // 기존에 구현된 할당 정보 렌더링 로직
     // 공사코드, 일람부호, 공간 할당 정보 표시
-    console.log('[DEBUG] Rendering assigned info');
 }
 
 /**
@@ -2304,7 +2266,6 @@ function updateQmTableColumns() {
         selectedFields.push(cb.value);
     });
 
-    console.log('[DEBUG] Selected QM fields:', selectedFields);
 
     // currentQmColumns에 저장
     currentQmColumns = selectedFields;
@@ -2561,7 +2522,6 @@ function initQmSplitBar() {
     const container = document.querySelector('#quantity-members .split-layout-container');
 
     if (!splitBar || !leftPanel || !container) {
-        console.log('[DEBUG] Split bar elements not found, skipping initialization');
         return;
     }
 
@@ -2604,7 +2564,6 @@ function initQmSplitBar() {
         }
     });
 
-    console.log('[DEBUG] QM Split bar initialized');
 }
 
 // =====================================================================

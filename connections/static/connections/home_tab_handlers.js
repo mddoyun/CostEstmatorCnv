@@ -7,26 +7,16 @@
  * 헤더의 #project-selector에서 프로젝트 목록을 가져옵니다.
  */
 function loadHomeProjectList() {
-    console.log('[DEBUG][loadHomeProjectList] === STARTING loadHomeProjectList ===');
-    console.log('[DEBUG][loadHomeProjectList] Current timestamp:', new Date().toISOString());
-    console.log('[DEBUG][loadHomeProjectList] Current activeTab:', window.activeTab);
-    console.log('[DEBUG][loadHomeProjectList] Current currentProjectId:', window.currentProjectId);
 
     const projectListContainer = document.getElementById('home-project-list');
     const projectSelector = document.getElementById('project-selector');
 
-    console.log('[DEBUG][loadHomeProjectList] Container found:', !!projectListContainer);
-    console.log('[DEBUG][loadHomeProjectList] Container element:', projectListContainer);
-    console.log('[DEBUG][loadHomeProjectList] Selector found:', !!projectSelector);
-    console.log('[DEBUG][loadHomeProjectList] Selector element:', projectSelector);
 
     if (!projectListContainer) {
-        console.warn('[WARN][loadHomeProjectList] Project list container not found');
         return;
     }
 
     if (!projectSelector) {
-        console.error('[ERROR][loadHomeProjectList] Project selector not found');
         projectListContainer.innerHTML = '<p style="color: #d32f2f; padding: 20px;">프로젝트 선택기를 찾을 수 없습니다.</p>';
         return;
     }
@@ -36,11 +26,9 @@ function loadHomeProjectList() {
         const projects = [];
         const options = projectSelector.options;
 
-        console.log('[DEBUG][loadHomeProjectList] Total options:', options.length);
 
         for (let i = 0; i < options.length; i++) {
             const option = options[i];
-            console.log(`[DEBUG][loadHomeProjectList] Option ${i}: value="${option.value}", text="${option.text}"`);
             // 첫 번째 옵션("프로젝트 선택")은 제외
             if (option.value) {
                 projects.push({
@@ -50,7 +38,6 @@ function loadHomeProjectList() {
             }
         }
 
-        console.log(`[DEBUG][loadHomeProjectList] Loaded ${projects.length} projects from selector:`, projects);
 
         if (projects.length === 0) {
             projectListContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: #999;">생성된 프로젝트가 없습니다.</p>';
@@ -62,10 +49,8 @@ function loadHomeProjectList() {
         // 현재 선택된 프로젝트 정보 업데이트
         updateHomeCurrentProjectInfo();
 
-        console.log('[DEBUG][loadHomeProjectList] === COMPLETED loadHomeProjectList ===');
 
     } catch (error) {
-        console.error('[ERROR][loadHomeProjectList] Failed to load projects:', error);
         projectListContainer.innerHTML = '<p style="color: #d32f2f; padding: 20px;">프로젝트 목록을 불러오는데 실패했습니다.</p>';
     }
 }
@@ -137,7 +122,6 @@ function renderHomeProjectList(projects) {
  * 홈 탭에서 프로젝트를 선택합니다.
  */
 function selectHomeProject(projectId) {
-    console.log(`[DEBUG][selectHomeProject] Selected project: ${projectId}`);
 
     // 프로젝트 셀렉터 업데이트
     const projectSelector = document.getElementById('project-selector');
@@ -243,11 +227,9 @@ function enableHomeProjectButtons() {
  * 홈 탭의 "새 프로젝트" 버튼 핸들러
  */
 async function handleHomeCreateProject() {
-    console.log('[DEBUG][handleHomeCreateProject] Create project button clicked');
 
     const nameInput = document.getElementById('home-new-project-name');
     if (!nameInput) {
-        console.error('[ERROR][handleHomeCreateProject] Name input not found');
         showToast('프로젝트 이름 입력란을 찾을 수 없습니다.', 'error');
         return;
     }
@@ -273,7 +255,6 @@ async function handleHomeCreateProject() {
 
         if (data.status === 'success') {
             showToast(`프로젝트 '${data.project_name}' 생성 완료.`, 'success');
-            console.log(`[DEBUG][handleHomeCreateProject] Project created:`, data);
 
             // 입력 필드 초기화
             nameInput.value = '';
@@ -300,7 +281,6 @@ async function handleHomeCreateProject() {
         }
 
     } catch (error) {
-        console.error('[ERROR][handleHomeCreateProject] Failed to create project:', error);
         showToast(`프로젝트 생성 실패: ${error.message}`, 'error');
     }
 }
@@ -309,7 +289,6 @@ async function handleHomeCreateProject() {
  * 홈 탭의 "프로젝트 삭제" 버튼 핸들러
  */
 async function handleHomeDeleteProject() {
-    console.log('[DEBUG][handleHomeDeleteProject] Delete project button clicked');
 
     if (!currentProjectId) {
         showToast('삭제할 프로젝트를 먼저 선택하세요.', 'error');
@@ -340,7 +319,6 @@ async function handleHomeDeleteProject() {
         }
 
         showToast(`프로젝트 "${projectName}"가 삭제되었습니다.`, 'success');
-        console.log(`[DEBUG][handleHomeDeleteProject] Project deleted: ${currentProjectId}`);
 
         // 프로젝트 셀렉터에서 제거 (옵션 제거)
         if (selectedOption) {
@@ -359,7 +337,6 @@ async function handleHomeDeleteProject() {
         }, 100);
 
     } catch (error) {
-        console.error('[ERROR][handleHomeDeleteProject] Failed to delete project:', error);
         showToast(`프로젝트 삭제 실패: ${error.message}`, 'error');
     }
 }
@@ -372,11 +349,9 @@ function handleQuickActionCardClick(e) {
     const targetTab = card.dataset.targetTab;
 
     if (!targetTab) {
-        console.warn('[WARN][handleQuickActionCardClick] No target tab specified');
         return;
     }
 
-    console.log(`[DEBUG][handleQuickActionCardClick] Navigating to tab: ${targetTab}`);
 
     // 탭 이동
     navigateToTab(targetTab);
@@ -386,7 +361,6 @@ function handleQuickActionCardClick(e) {
  * 특정 탭으로 이동하는 헬퍼 함수
  */
 function navigateToTab(tabId) {
-    console.log(`[DEBUG][navigateToTab] Navigating to: ${tabId}`);
 
     // 탭 매핑 (primary tab과 sub tab)
     const tabMapping = {
@@ -399,7 +373,6 @@ function navigateToTab(tabId) {
 
     const mapping = tabMapping[tabId];
     if (!mapping) {
-        console.error(`[ERROR][navigateToTab] Unknown tab: ${tabId}`);
         showToast('해당 탭을 찾을 수 없습니다.', 'error');
         return;
     }
@@ -429,16 +402,11 @@ function navigateToTab(tabId) {
  * 홈 탭의 "프로젝트 가져오기" 버튼 핸들러
  */
 function handleHomeImportProject() {
-    console.log('[DEBUG][handleHomeImportProject] ===== BUTTON CLICKED =====');
     const importInput = document.getElementById('project-import-input');
-    console.log('[DEBUG][handleHomeImportProject] importInput element:', importInput);
 
     if (importInput) {
-        console.log('[DEBUG][handleHomeImportProject] Triggering file input click...');
         importInput.click();
-        console.log('[DEBUG][handleHomeImportProject] File input click triggered');
     } else {
-        console.error('[ERROR][handleHomeImportProject] Project import input not found');
         showToast('프로젝트 가져오기 기능을 찾을 수 없습니다.', 'error');
     }
 }
@@ -447,7 +415,6 @@ function handleHomeImportProject() {
  * 홈 탭의 "프로젝트 내보내기" 버튼 핸들러
  */
 function handleHomeExportProject() {
-    console.log('[DEBUG][handleHomeExportProject] Export project button clicked');
     if (!currentProjectId) {
         showToast('내보낼 프로젝트를 먼저 선택하세요.', 'error');
         return;
@@ -456,7 +423,6 @@ function handleHomeExportProject() {
     if (typeof exportCurrentProject === 'function') {
         exportCurrentProject();
     } else {
-        console.error('[ERROR][handleHomeExportProject] exportCurrentProject function not found');
         showToast('프로젝트 내보내기 기능을 찾을 수 없습니다.', 'error');
     }
 }
@@ -465,7 +431,6 @@ function handleHomeExportProject() {
  * 홈 탭의 "프로젝트 이름 변경" 버튼 핸들러
  */
 async function handleHomeRenameProject() {
-    console.log('[DEBUG][handleHomeRenameProject] Rename project button clicked');
 
     if (!currentProjectId) {
         showToast('이름을 변경할 프로젝트를 먼저 선택하세요.', 'error');
@@ -479,7 +444,6 @@ async function handleHomeRenameProject() {
     const newName = prompt(`새 프로젝트 이름을 입력하세요:`, currentName);
 
     if (!newName) {
-        console.log('[DEBUG][handleHomeRenameProject] Rename cancelled or empty name');
         return;
     }
 
@@ -505,7 +469,6 @@ async function handleHomeRenameProject() {
         }
 
         showToast(result.message, 'success');
-        console.log(`[DEBUG][handleHomeRenameProject] Project renamed: ${currentName} -> ${newName}`);
 
         // 프로젝트 셀렉터 옵션 업데이트
         if (selectedOption) {
@@ -522,7 +485,6 @@ async function handleHomeRenameProject() {
             loadHomeProjectList();
         }
     } catch (error) {
-        console.error('[ERROR][handleHomeRenameProject] Error renaming project:', error);
         showToast(`오류: ${error.message}`, 'error');
     }
 }
@@ -531,8 +493,6 @@ async function handleHomeRenameProject() {
  * 홈 탭 이벤트 리스너 설정
  */
 function setupHomeTabListeners() {
-    console.log('[DEBUG][setupHomeTabListeners] === STARTING setupHomeTabListeners ===');
-    console.log('[DEBUG][setupHomeTabListeners] Current timestamp:', new Date().toISOString());
 
     // 프로젝트 관리 버튼들
     const createBtn = document.getElementById('home-create-project-btn');
@@ -542,15 +502,9 @@ function setupHomeTabListeners() {
     const deleteBtn = document.getElementById('home-delete-project-btn');
     const nameInput = document.getElementById('home-new-project-name');
 
-    console.log('[DEBUG][setupHomeTabListeners] Create button found:', !!createBtn);
-    console.log('[DEBUG][setupHomeTabListeners] Import button found:', !!importBtn);
-    console.log('[DEBUG][setupHomeTabListeners] Export button found:', !!exportBtn);
-    console.log('[DEBUG][setupHomeTabListeners] Rename button found:', !!renameBtn);
-    console.log('[DEBUG][setupHomeTabListeners] Delete button found:', !!deleteBtn);
 
     if (createBtn) {
         createBtn.addEventListener('click', handleHomeCreateProject);
-        console.log('[DEBUG][setupHomeTabListeners] Create button listener attached');
     }
     if (nameInput) {
         // Enter 키로도 프로젝트 생성 가능
@@ -559,28 +513,22 @@ function setupHomeTabListeners() {
                 handleHomeCreateProject();
             }
         });
-        console.log('[DEBUG][setupHomeTabListeners] Name input Enter key listener attached');
     }
     if (importBtn) {
         importBtn.addEventListener('click', handleHomeImportProject);
-        console.log('[DEBUG][setupHomeTabListeners] Import button listener attached');
     }
     if (exportBtn) {
         exportBtn.addEventListener('click', handleHomeExportProject);
-        console.log('[DEBUG][setupHomeTabListeners] Export button listener attached');
     }
     if (renameBtn) {
         renameBtn.addEventListener('click', handleHomeRenameProject);
-        console.log('[DEBUG][setupHomeTabListeners] Rename button listener attached');
     }
     if (deleteBtn) {
         deleteBtn.addEventListener('click', handleHomeDeleteProject);
-        console.log('[DEBUG][setupHomeTabListeners] Delete button listener attached');
     }
 
     // 빠른 작업 카드
     const quickActionCards = document.querySelectorAll('.quick-action-card');
-    console.log('[DEBUG][setupHomeTabListeners] Quick action cards found:', quickActionCards.length);
 
     quickActionCards.forEach(card => {
         card.addEventListener('click', handleQuickActionCardClick);
@@ -596,7 +544,6 @@ function setupHomeTabListeners() {
         });
     });
 
-    console.log('[DEBUG][setupHomeTabListeners] === COMPLETED setupHomeTabListeners ===');
 }
 
 // ▼▼▼ [NEW] 대시보드 함수들 ▼▼▼

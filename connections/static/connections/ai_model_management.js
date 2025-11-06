@@ -44,7 +44,6 @@ function loadDataForAiInnerTab(innerTabId) {
         `[DEBUG][loadDataForAiInnerTab] Loading data for AI inner tab: ${innerTabId}`
     ); // 디버깅
     if (!currentProjectId) {
-        console.warn('[WARN][loadDataForAiInnerTab] No project selected.'); // 디버깅
         return;
     }
 
@@ -64,10 +63,8 @@ function loadDataForAiInnerTab(innerTabId) {
 
 // AI 모델 목록 로드 API 호출
 async function loadAiModels() {
-    console.log('[DEBUG][loadAiModels] Loading AI models list...'); // 디버깅
     if (!currentProjectId) {
         renderAiModelsTable([]); // 빈 테이블 렌더링 (ui.js 함수)
-        console.warn('[WARN][loadAiModels] No project selected.'); // 디버깅
         return;
     }
     try {
@@ -83,7 +80,6 @@ async function loadAiModels() {
         // SD 탭 모델 드롭다운도 갱신 (선택 사항 - 필요 시 호출)
         // populateSdModelSelect(loadedAiModels);
     } catch (error) {
-        console.error('[ERROR][loadAiModels] Failed:', error); // 디버깅
         showToast(error.message, 'error');
         renderAiModelsTable([]); // 오류 시 빈 테이블
     }
@@ -170,7 +166,6 @@ async function uploadAiModel() {
 
     if (!name || !h5File) {
         showToast('모델 이름과 .h5 파일은 필수입니다.', 'error');
-        console.log('[DEBUG][uploadAiModel] Missing required name or h5 file.'); // 디버깅
         return;
     }
     // 이름 중복 검사 (선택 사항 - 클라이언트 측)
@@ -184,10 +179,8 @@ async function uploadAiModel() {
     formData.append('h5_file', h5File);
     if (jsonFile) {
         formData.append('json_file', jsonFile);
-        console.log('[DEBUG][uploadAiModel] Using metadata from json_file.'); // 디버깅
     } else if (metadataManual) {
         formData.append('metadata_manual', metadataManual);
-        console.log('[DEBUG][uploadAiModel] Using metadata from manual input.'); // 디버깅
     } else {
         console.log(
             '[WARN][uploadAiModel] No metadata file or manual input provided. Default metadata will be used.'
@@ -225,7 +218,6 @@ async function uploadAiModel() {
             'upload-ai-model-files-btn'
         ); // 버튼 텍스트 초기화
     } catch (error) {
-        console.error('[ERROR][uploadAiModel] Upload failed:', error); // 디버깅
         showToast(error.message, 'error');
     }
 }
@@ -276,7 +268,6 @@ async function handleAiModelListActions(event) {
                 showToast(error.message, 'error');
             }
         } else {
-            console.log('[DEBUG][handleAiModelListActions] Delete cancelled.'); // 디버깅
         }
     } else if (target.classList.contains('download-ai-model-h5-btn')) {
         console.log(
@@ -339,7 +330,6 @@ async function uploadAndAnalyzeCsv() {
         document.getElementById('training-step-3').style.display = 'none'; // 3단계 숨김
         renderFeatureSelectionLists(csvHeaders); // ui.js 함수 호출
     } catch (error) {
-        console.error('[ERROR][uploadAndAnalyzeCsv] Failed:', error); // 디버깅
         showToast(error.message, 'error');
         resetTrainingUI(); // 오류 시 UI 초기화
     }
@@ -578,7 +568,6 @@ function handleTrainingProgressUpdate(data) {
         activeTab !== 'ai-model-manager' ||
         document.getElementById('ai-model-training')?.style.display === 'none'
     ) {
-        // console.log(`[DEBUG][handleTrainingProgressUpdate] Received progress for irrelevant task (${data.task_id}) or tab, ignoring.`); // 너무 빈번할 수 있음
         return;
     }
 
@@ -737,7 +726,6 @@ async function saveTrainedModel() {
         // 버튼 비활성화 등 추가 처리 가능
         document.getElementById('save-trained-model-btn').disabled = true; // 저장 버튼 비활성화
     } catch (error) {
-        console.error('[ERROR][saveTrainedModel] Failed:', error); // 디버깅
         showToast(error.message, 'error');
     }
 }

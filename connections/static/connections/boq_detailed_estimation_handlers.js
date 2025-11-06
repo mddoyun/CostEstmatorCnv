@@ -50,7 +50,6 @@ function setupDetailedEstimationListeners() {
         ?.addEventListener("change", () => generateBoqReport());
     // DD 탭 UI 초기화 (토글 버튼, 탭 등)
     initializeBoqUI(); // 패널 토글, 상세 탭 리스너 설정
-    console.log("[DEBUG] Detailed Estimation (DD) listeners setup complete.");
 }
 
 async function loadBoqGroupingFields() {
@@ -59,7 +58,6 @@ async function loadBoqGroupingFields() {
         return;
     }
 
-    console.log("[DEBUG] BOQ 탭의 그룹핑/표시 필드 목록을 서버에 요청합니다.");
 
     try {
         const response = await fetch(
@@ -108,7 +106,6 @@ async function loadBoqGroupingFields() {
 }
 
 function addBoqGroupingLevel() {
-    console.log("[DEBUG] '+ 그룹핑 추가' 버튼 클릭됨");
     const container = document.getElementById("boq-grouping-controls");
     const newIndex = container.children.length;
 
@@ -134,23 +131,18 @@ function addBoqGroupingLevel() {
         <button class="remove-boq-group-level-btn" style="padding: 2px 6px; font-size: 12px;">-</button>
     `;
     container.appendChild(newLevelDiv);
-    console.log(`[DEBUG] 그룹핑 레벨 추가됨 (레이블 없음).`);
 
     newLevelDiv
         .querySelector(".remove-boq-group-level-btn")
         .addEventListener("click", function () {
-            console.log("[DEBUG] 그룹핑 레벨 제거 버튼 클릭됨");
             this.parentElement.remove();
-            console.log("[DEBUG] 그룹핑 레벨 제거 완료.");
         });
 }
 
 async function generateBoqReport(preserveColumnOrder = false) {
-    console.log("[DEBUG] '집계표 생성' 버튼 클릭됨 / 혹은 단가기준 변경됨");
 
     if (!currentProjectId) {
         showToast("먼저 프로젝트를 선택하세요.", "error");
-        console.error("[DEBUG] 프로젝트가 선택되지 않아 중단됨.");
         return;
     }
 
@@ -163,19 +155,16 @@ async function generateBoqReport(preserveColumnOrder = false) {
     const groupBySelects = document.querySelectorAll(".boq-group-by-select");
     if (groupBySelects.length === 0 && activeTab === "boq") {
         showToast("하나 이상의 그룹핑 기준을 추가하세요.", "error");
-        console.error("[DEBUG] 그룹핑 기준이 없어 중단됨.");
         return;
     }
 
     // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
     const groupByFields = Array.from(groupBySelects).map(select => select.value);
-    console.log("[DEBUG] 그룹핑 기준:", groupByFields);
 
     const displayByCheckboxes = document.querySelectorAll(
         ".boq-display-field-cb:checked"
     );
     const displayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
-    console.log("[DEBUG] 표시 필드:", displayByFields);
 
     const rawElementIds = boqFilteredRawElementIds.size > 0
         ? Array.from(boqFilteredRawElementIds)
@@ -186,10 +175,8 @@ async function generateBoqReport(preserveColumnOrder = false) {
         : [];
 
     if (rawElementIds.length > 0) {
-        console.log(`[DEBUG] Revit 필터링 ID ${rawElementIds.length}개 적용됨.`);
     }
     if (splitElementIds.length > 0) {
-        console.log(`[DEBUG] 분할 객체 필터링 ID ${splitElementIds.length}개 적용됨.`);
     }
 
     // POST body 데이터 구성
@@ -209,7 +196,6 @@ async function generateBoqReport(preserveColumnOrder = false) {
     console.log(
         `[DEBUG] 서버에 집계표 데이터 요청 시작 (POST)... /connections/api/boq/report/${currentProjectId}/`
     );
-    console.log(`[DEBUG] Request data:`, requestData);
 
     try {
         const response = await fetch(
@@ -232,14 +218,12 @@ async function generateBoqReport(preserveColumnOrder = false) {
         }
 
         const data = await response.json();
-        console.log("[DEBUG] 서버로부터 집계표 데이터 수신 완료:", data);
         if (data.items_detail) {
             loadedDdCostItems = data.items_detail;
             console.log(
                 `[DEBUG] loadedDdCostItems 업데이트 완료 (${loadedDdCostItems.length}개 항목).`
             );
         } else {
-            console.warn("[WARN] API 응답에 'items_detail' 필드가 없습니다.");
             loadedDdCostItems = [];
         }
         loadedUnitPriceTypesForBoq = data.unit_price_types || [];
@@ -247,12 +231,9 @@ async function generateBoqReport(preserveColumnOrder = false) {
             `[DEBUG] ${loadedUnitPriceTypesForBoq.length}개의 단가 기준 목록 수신.`
         );
 
-        console.log(`[DEBUG] preserveColumnOrder = ${preserveColumnOrder}`);
         if (!preserveColumnOrder) {
-            console.log('[DEBUG] Calling updateDdBoqColumns()...');
             updateDdBoqColumns();
         } else {
-            console.log('[DEBUG] SKIPPING updateDdBoqColumns() because preserveColumnOrder is true');
         }
 
         renderBoqTable(
@@ -262,11 +243,9 @@ async function generateBoqReport(preserveColumnOrder = false) {
             "boq-table-container"
         );
         setupBoqTableInteractions();
-        console.log("[DEBUG] 집계표 렌더링 완료.");
 
         updateBoqDetailsPanel(null);
     } catch (error) {
-        console.error("[DEBUG] 집계표 생성 중 오류 발생:", error);
         tableContainer.innerHTML = `<p style="padding: 20px; color: red;">오류: ${error.message}</p>`;
         showToast(error.message, "error");
     }
@@ -276,11 +255,9 @@ async function generateBoqReport(preserveColumnOrder = false) {
  * 집계 테이블과 상세 정보 패널의 모든 상호작용을 위한 이벤트 리스너를 설정합니다.
  */
 function setupBoqTableInteractions() {
-    console.log("[DEBUG] Setting up BOQ table interactions...");
     const tableContainer = document.getElementById("boq-table-container");
     const table = tableContainer?.querySelector(".boq-table");
     if (!table) {
-        console.log("[DEBUG] BOQ table not yet rendered (no data or still loading).");
         return;
     }
 
@@ -365,16 +342,11 @@ function setupBoqTableInteractions() {
 
     // --- 2. 메인 BOQ 테이블 '행' 클릭 시 -> 중앙 하단 목록 업데이트 ---
     const tbody = table.querySelector("tbody");
-    console.log('[DEBUG] Found tbody element:', tbody);
-    console.log('[DEBUG] tbody has rowClickListenerAttached:', tbody?.dataset.rowClickListenerAttached);
 
     if (tbody && !tbody.dataset.rowClickListenerAttached) {
         tbody.addEventListener("click", (e) => {
-            console.log('[DEBUG] tbody click event triggered', e.target);
             // Find either boq-group-header or boq-item-row
             const row = e.target.closest("tr.boq-group-header, tr.boq-item-row");
-            console.log('[DEBUG] Closest BOQ row:', row);
-            console.log('[DEBUG] Row classes:', row?.className);
 
             // Ignore clicks on select, button, or icon elements
             if (row && !e.target.matches("select, button, i")) {
@@ -396,11 +368,8 @@ function setupBoqTableInteractions() {
             }
         });
         tbody.dataset.rowClickListenerAttached = "true";
-        console.log("[DEBUG] Main BOQ table row click listener attached.");
     } else if (tbody) {
-        console.warn('[WARN] tbody already has rowClickListenerAttached, skipping...');
     } else {
-        console.error('[ERROR] tbody not found!');
     }
 
     // --- 3. 메인 BOQ 테이블 '단가기준' 드롭다운 변경 시 ---
@@ -528,9 +497,7 @@ function setupBoqTableInteractions() {
             }
         });
         itemListContainer.dataset.clickListenerAttached = "true";
-        console.log("[DEBUG] Bottom BOQ item list click listener attached.");
     }
-    console.log("[DEBUG] BOQ table interactions setup complete.");
 }
 
 /**
@@ -562,7 +529,6 @@ function handleBoqSelectInClientFromDetail(costItemId) {
     }
 
     const uniqueIdToSend = rawElement.element_unique_id;
-    console.log(`[DEBUG] Found Unique ID to send: ${uniqueIdToSend}`);
 
     const targetGroup =
         currentMode === "revit"
@@ -617,14 +583,12 @@ function handleBoqSelectInViewerFromDetail(costItemId) {
         return;
     }
 
-    console.log(`[DEBUG] Found RawElement ID to select in viewer: ${rawElement.id}`);
 
     // ▼▼▼ [수정] window.selectObjectsIn3DViewer 함수 사용 (2025-11-05) ▼▼▼
     // 3D 뷰어에서 객체 선택 (three_d_viewer.js의 함수 사용)
     if (typeof window.selectObjectsIn3DViewer === 'function') {
         window.selectObjectsIn3DViewer([rawElement.id]);
         showToast("3D 뷰어에서 객체를 선택했습니다.", "success");
-        console.log(`[DEBUG] Selected object ${rawElement.id} in 3D viewer.`);
 
         // 선택한 객체로 카메라 포커스
         if (typeof window.focusOnSelectedObjects === 'function') {
@@ -637,7 +601,6 @@ function handleBoqSelectInViewerFromDetail(costItemId) {
         }
     } else {
         showToast("3D 뷰어 기능을 사용할 수 없습니다.", "error");
-        console.error("[ERROR] window.selectObjectsIn3DViewer function not found.");
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 }
@@ -657,7 +620,6 @@ function updateBoqDetailsPanel(itemIds) {
     };
 
     if (!itemIds || itemIds.length === 0) {
-        console.log("[DEBUG][UI] updateBoqDetailsPanel called with no items (expected when no data selected).");
         listContainer.innerHTML =
             '<p style="padding: 10px;">이 그룹에 포함된 산출항목이 없습니다.</p>';
         renderBoqItemProperties(null);
@@ -665,7 +627,6 @@ function updateBoqDetailsPanel(itemIds) {
         return;
     }
 
-    console.log(`[DEBUG][UI] updateBoqDetailsPanel rendering ${itemIds.length} items.`);
 
     const itemsToRender = (loadedDdCostItems || []).filter((item) =>
         itemIds.includes(item.id)
@@ -775,7 +736,6 @@ function updateBoqDetailsPanel(itemIds) {
         const firstRow = listContainer.querySelector(`tr[data-item-id="${firstItemId}"]`);
         if (firstRow) {
             firstRow.classList.add('selected');
-            console.log(`[DEBUG][UI] Auto-selected first row with ID: ${firstItemId}`);
         }
         renderBoqItemProperties(firstItemId);
         renderBoqBimObjectCostSummary(firstItemId);
@@ -830,7 +790,6 @@ function updateBoqLeftPanelProperties(itemIds) {
         return;
     }
 
-    console.log(`[DEBUG] Updating BOQ left panel properties for itemIds:`, itemIds);
 
     // ▼▼▼ [수정] BOQ 전용 loadedDdCostItems 우선 사용 (2025-11-05) ▼▼▼
     // CostItem 가져오기 (DD 탭에서는 loadedDdCostItems 사용)
@@ -839,7 +798,6 @@ function updateBoqLeftPanelProperties(itemIds) {
     );
     if (!costItem) {
         propertiesContainer.innerHTML = "<p>관련 산출항목을 찾을 수 없습니다.</p>";
-        console.warn(`[WARN] CostItem not found for IDs:`, itemIds);
         return;
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -858,7 +816,6 @@ function updateBoqLeftPanelProperties(itemIds) {
     );
     if (!member) {
         propertiesContainer.innerHTML = "<p>부재 정보를 찾을 수 없습니다.</p>";
-        console.warn(`[WARN] QuantityMember not found for ID: ${memberId}`);
         return;
     }
 
@@ -1115,7 +1072,6 @@ function initBoqSplitBars() {
     const splitBars = document.querySelectorAll('.boq-split-bar');
 
     if (splitBars.length === 0) {
-        console.warn('[WARN] No split bars found in BOQ container.');
         return;
     }
 
@@ -1124,7 +1080,6 @@ function initBoqSplitBars() {
     if (rightPanel) {
         rightPanel.style.width = '300px'; // 고정 폭 300px
         rightPanel.style.flexBasis = '300px'; // flex-basis도 명시적으로 설정
-        console.log(`[DEBUG] Set initial right panel width to 300px (fixed)`);
     }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -1184,7 +1139,6 @@ function initBoqSplitBars() {
                 isResizing = false;
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                console.log(`[DEBUG] Split bar resize completed. New width: ${targetPanel?.offsetWidth}px`);
             }
         };
 
@@ -1195,7 +1149,6 @@ function initBoqSplitBars() {
         bar.dataset.listenerAttached = 'true';
     });
 
-    console.log(`[DEBUG] Initialized ${splitBars.length} split bar(s) for BOQ panel resizing.`);
 }
 
 /**
@@ -1206,12 +1159,10 @@ function initBoqRightPanelToggle() {
     const container = document.querySelector('.boq-container');
 
     if (!toggleBtn) {
-        console.warn('[WARN] Right panel toggle button not found.');
         return;
     }
 
     if (!container) {
-        console.warn('[WARN] BOQ container not found.');
         return;
     }
 
@@ -1223,11 +1174,9 @@ function initBoqRightPanelToggle() {
         container.classList.toggle('right-panel-collapsed');
         const isCollapsed = container.classList.contains('right-panel-collapsed');
         toggleBtn.textContent = isCollapsed ? '◀' : '▶';
-        console.log(`[DEBUG] Right panel toggled. Collapsed: ${isCollapsed}`);
     });
 
     toggleBtn.dataset.listenerAttached = 'true';
-    console.log('[DEBUG] Right panel toggle listener attached.');
 }
 
 function initializeBoqUI() {
@@ -1268,10 +1217,8 @@ function initializeBoqUI() {
                 );
             });
             leftToggleBtn.dataset.listenerAttached = "true";
-            console.log("[DEBUG] Left panel toggle listener attached.");
         }
     } else {
-        console.warn("[WARN] Left toggle button or BOQ container not found.");
     }
 
     // --- 2. 하단 패널 접기/펴기 기능 ---
@@ -1287,7 +1234,6 @@ function initializeBoqUI() {
                 );
             });
             bottomToggleBtn.dataset.listenerAttached = "true";
-            console.log("[DEBUG] Bottom panel toggle listener attached.");
         }
     } else {
         console.warn(
@@ -1308,7 +1254,6 @@ function initializeBoqUI() {
                 }
 
                 const targetTabId = clickedButton.dataset.tab;
-                console.log(`[DEBUG] BOQ left panel tab clicked: ${targetTabId}`);
 
                 // 모든 탭 버튼과 콘텐츠에서 active 클래스 제거
                 leftPanelTabContainer
@@ -1323,16 +1268,12 @@ function initializeBoqUI() {
                 const targetContent = leftPanelTabContainer.querySelector(`#${targetTabId}-content`);
                 if (targetContent) {
                     targetContent.classList.add("active");
-                    console.log(`[DEBUG] BOQ left panel tab content activated: ${targetTabId}`);
                 } else {
-                    console.warn(`[WARN] BOQ left panel tab content for '${targetTabId}' not found.`);
                 }
             });
             tabsContainer.dataset.listenerAttached = "true";
-            console.log("[DEBUG] BOQ left panel tab click listener attached.");
         }
     } else {
-        console.warn("[WARN] BOQ left-panel-tab-container not found.");
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
@@ -1342,27 +1283,22 @@ function initializeBoqUI() {
     // --- 5. 우측 패널 접기/펴기 기능 ---
     initBoqRightPanelToggle();
 
-    console.log("[DEBUG] Detailed Estimation (DD) UI initialization complete.");
 }
 
 function handleBoqSelectInClient() {
-    console.log("[DEBUG] '연동 프로그램에서 선택 확인' 버튼 클릭됨");
     const selectedRow = document.querySelector(
         ".boq-table tr.selected-boq-row"
     );
     if (!selectedRow) {
         showToast("먼저 집계표에서 확인할 행을 선택하세요.", "error");
-        console.warn("[DEBUG] 집계표에서 선택된 행이 없음.");
         return;
     }
 
     const itemIds = JSON.parse(selectedRow.dataset.itemIds || "[]");
     if (itemIds.length === 0) {
         showToast("선택된 행에 연관된 산출항목이 없습니다.", "info");
-        console.warn("[DEBUG] 선택된 행에 item_ids가 없음.");
         return;
     }
-    console.log(`[DEBUG] 선택된 행의 CostItem ID 목록:`, itemIds);
 
     const rawElementIds = new Set();
     itemIds.forEach((itemId) => {
@@ -1382,10 +1318,8 @@ function handleBoqSelectInClient() {
             "선택된 항목들은 BIM 객체와 직접 연관되어 있지 않습니다.",
             "info"
         );
-        console.warn("[DEBUG] 연관된 BIM 객체를 찾지 못함.");
         return;
     }
-    console.log(`[DEBUG] 최종 RawElement ID 목록:`, Array.from(rawElementIds));
 
     const uniqueIdsToSend = [];
     rawElementIds.forEach((rawId) => {
@@ -1424,12 +1358,10 @@ function handleBoqSelectInClient() {
             "연동 프로그램으로 보낼 유효한 객체를 찾지 못했습니다.",
             "error"
         );
-        console.error("[DEBUG] 전송할 최종 Unique ID를 찾지 못함.");
     }
 }
 
 function handleBoqGetFromClient() {
-    console.log("[DEBUG] '선택 객체 가져오기 (BOQ)' 버튼 클릭됨");
     const targetGroup =
         currentMode === "revit"
             ? "revit_broadcast_group"
@@ -1445,12 +1377,9 @@ function handleBoqGetFromClient() {
     );
     const clientName = currentMode === "revit" ? "Revit" : "Blender";
     showToast(`${clientName}에 선택 정보 가져오기를 요청했습니다.`, "info");
-    console.log(`[DEBUG] ${clientName}에 get_selection 명령 전송`);
 }
 function handleBoqClearFilter() {
-    console.log("[DEBUG] '선택 필터 해제 (BOQ)' 버튼 클릭됨");
     boqFilteredRawElementIds.clear();
-    console.log("[DEBUG] boqFilteredRawElementIds 초기화 완료.");
 
     document.getElementById("boq-clear-selection-filter-btn").style.display =
         "none";
@@ -1460,18 +1389,15 @@ function handleBoqClearFilter() {
     showToast("Revit 선택 필터를 해제하고 전체 집계표를 표시합니다.", "info");
 }
 function resetBoqColumnsAndRegenerate(skipConfirmation = false) {
-    console.log("[DEBUG] '열 순서/이름 초기화' 버튼 클릭됨");
 
     if (
         !skipConfirmation &&
         !confirm("테이블의 열 순서와 이름을 기본값으로 초기화하시겠습니까?")
     ) {
-        console.log("[DEBUG] 초기화 취소됨.");
         return;
     }
 
     localStorage.removeItem("boqColumnSettings");
-    console.log("[DEBUG] BOQ column settings removed from localStorage.");
 
     currentBoqColumns = [];
     boqColumnAliases = {};
@@ -1488,7 +1414,6 @@ function resetBoqColumnsAndRegenerate(skipConfirmation = false) {
  * DD 탭 하단 BOQ 테이블 컬럼 목록(currentBoqColumns)을 현재 UI 상태에 맞게 업데이트
  */
 function updateDdBoqColumns() {
-    console.log("[DEBUG][DD BOQ] Updating DD BOQ column definitions...");
     boqColumnAliases = {};
     document.querySelectorAll("#boq-table-container thead th").forEach((th) => {
         const colId = th.dataset.columnId;
@@ -1500,7 +1425,6 @@ function updateDdBoqColumns() {
             boqColumnAliases[colId] = currentText;
         }
     });
-    console.log("[DEBUG][DD BOQ] Updated boqColumnAliases:", boqColumnAliases);
 
     const selectedDisplayFields = Array.from(
         document.querySelectorAll(".boq-display-field-cb:checked")
@@ -1591,7 +1515,6 @@ function saveBoqColumnSettings() {
             `boqColumnSettings_${currentProjectId}`,
             JSON.stringify(settings)
         );
-        console.log("[DEBUG] Saved BOQ column settings to localStorage.");
     } catch (e) {
         console.error("Failed to save BOQ column settings to localStorage:", e);
         showToast(
@@ -2075,7 +1998,6 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
             } else {
                 // Fallback to empty array
                 itemIds = JSON.stringify([]);
-                console.warn('[WARN] Row has no item_ids or id:', item);
             }
 
             const currentUnitPriceTypeId = item.unit_price_type_id || "";
@@ -2176,12 +2098,10 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
  * 3D 뷰어에서 선택된 객체를 가져와서 BOQ 필터링
  */
 function handleBoqGetFromViewer() {
-    console.log("[DEBUG] '3D 뷰어 선택 가져오기' 버튼 클릭됨");
 
     // Check if 3D viewer functions are available
     if (typeof window.getViewerSelectedObject !== 'function') {
         showToast("3D 뷰어가 초기화되지 않았습니다. 먼저 3D 뷰어 탭으로 이동하여 지오메트리를 로드하세요.", "error");
-        console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
         return;
     }
 
@@ -2190,11 +2110,9 @@ function handleBoqGetFromViewer() {
 
     if (!selectedObjects || selectedObjects.length === 0) {
         showToast("3D 뷰어에서 선택된 객체가 없습니다.", "warning");
-        console.warn("[DEBUG] 3D 뷰어에 선택된 객체가 없음.");
         return;
     }
 
-    console.log(`[DEBUG] 3D 뷰어에서 선택된 객체: ${selectedObjects.length}개`);
 
     // Clear existing filters
     boqFilteredRawElementIds.clear();
@@ -2210,7 +2128,6 @@ function handleBoqGetFromViewer() {
         const splitElementId = obj.userData.splitElementId;
 
         if (!rawElementId) {
-            console.warn("[DEBUG] rawElementId가 없는 객체:", obj.userData);
             return;
         }
 
@@ -2218,16 +2135,13 @@ function handleBoqGetFromViewer() {
             // Split element
             window.boqFilterSplitElementIds.add(splitElementId);
             splitCount++;
-            console.log(`[DEBUG] 분할 객체 추가: split_element_id=${splitElementId}`);
         } else {
             // Original element
             boqFilteredRawElementIds.add(rawElementId);
             rawCount++;
-            console.log(`[DEBUG] 원본 객체 추가: raw_element_id=${rawElementId}`);
         }
     });
 
-    console.log(`[DEBUG] BOQ 필터 적용 완료: 원본=${rawCount}, 분할=${splitCount}, 총=${rawCount + splitCount}`);
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     // Show clear filter button
@@ -2246,43 +2160,36 @@ function handleBoqGetFromViewer() {
  * BOQ에서 선택된 항목을 3D 뷰어에서 선택
  */
 function handleBoqSelectInViewer() {
-    console.log("[DEBUG] '3D 뷰어에서 선택 확인' 버튼 클릭됨");
 
     // Get selected row from BOQ table
     const selectedRow = document.querySelector(".boq-table tr.selected-boq-row");
     if (!selectedRow) {
         showToast("먼저 집계표에서 확인할 행을 선택하세요.", "error");
-        console.warn("[DEBUG] 집계표에서 선택된 행이 없음.");
         return;
     }
 
     const itemIds = JSON.parse(selectedRow.dataset.itemIds || "[]");
     if (itemIds.length === 0) {
         showToast("선택된 행에 연관된 산출항목이 없습니다.", "info");
-        console.warn("[DEBUG] 선택된 행에 item_ids가 없음.");
         return;
     }
 
-    console.log(`[DEBUG] 선택된 행의 CostItem ID 목록:`, itemIds);
 
     // ▼▼▼ [수정] 먼저 3D 뷰어 탭으로 전환하고 초기화 ▼▼▼
     const viewerTab = document.querySelector('[data-primary-tab="three-d-viewer"]');
     if (viewerTab) {
         viewerTab.click();
-        console.log("[DEBUG] 3D 뷰어 탭으로 전환");
     }
 
     // Ensure 3D viewer is initialized
     if (typeof window.initThreeDViewer === 'function') {
         window.initThreeDViewer();
-        console.log("[DEBUG] 3D 뷰어 초기화 호출");
     }
 
     // Wait a bit for scene initialization, then try to select objects
     setTimeout(() => {
         if (typeof window.selectMultipleObjectsInViewer !== 'function') {
             showToast("3D 뷰어 함수를 사용할 수 없습니다.", "error");
-            console.error("[DEBUG] 3D 뷰어 함수가 없습니다.");
             return;
         }
 
@@ -2305,24 +2212,19 @@ function handleBoqSelectInViewer() {
 
             if (!rawElementId) continue;
 
-            console.log(`[DEBUG] CostItem ${itemId} -> Member ${member.id} -> RawElement ${rawElementId}, Split ${splitElementId || 'none'}`);
 
             // Prioritize split element if exists
             if (splitElementId && !elementDataMap.has(splitElementId)) {
                 elementDataMap.set(splitElementId, { id: splitElementId, isSplitElement: true });
-                console.log(`[DEBUG] 분할 객체 추가: ${splitElementId}`);
             } else if (!elementDataMap.has(rawElementId)) {
                 elementDataMap.set(rawElementId, { id: rawElementId, isSplitElement: false });
-                console.log(`[DEBUG] 원본 객체 추가: ${rawElementId}`);
             }
         }
 
         const elementData = Array.from(elementDataMap.values());
-        console.log(`[DEBUG] 총 ${elementData.length}개의 고유 객체를 선택 시도`);
 
         if (elementData.length === 0) {
             showToast("선택된 항목과 연결된 BIM 객체를 찾을 수 없습니다.", "warning");
-            console.warn("[DEBUG] 연결된 객체가 없음.");
             return;
         }
 
@@ -2335,10 +2237,8 @@ function handleBoqSelectInViewer() {
                 ? `3D 뷰어에서 ${selectedCount}개의 객체를 선택했습니다${hasSplitElements ? ' (분할 객체 포함)' : ''}`
                 : `3D 뷰어에서 객체를 선택했습니다${hasSplitElements ? ' (분할 객체)' : ''}`;
             showToast(message, "success");
-            console.log(`[DEBUG] ${selectedCount}개 객체 선택 완료`);
         } else {
             showToast("3D 뷰어에 지오메트리가 로드되지 않았거나 연결된 객체를 찾을 수 없습니다. Load Geometry 버튼을 먼저 클릭하세요.", "warning");
-            console.warn("[DEBUG] 3D 뷰어에서 연결된 객체를 찾지 못함.");
         }
         // ▲▲▲ [수정] 여기까지 ▲▲▲
     }, 300); // 300ms delay to allow scene initialization

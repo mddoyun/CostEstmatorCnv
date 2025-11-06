@@ -579,12 +579,6 @@
 
         // [DEBUG] Check first object's matrix
         if (allObjectsToLoad.length > 0) {
-            console.log('[DEBUG] First geometry object:', allObjectsToLoad[0]);
-            console.log('[DEBUG] Matrix:', allObjectsToLoad[0].geometry.matrix);
-            console.log('[DEBUG] Matrix length:', allObjectsToLoad[0].geometry.matrix ? allObjectsToLoad[0].geometry.matrix.length : 'null');
-            console.log('[DEBUG] Matrix type:', typeof allObjectsToLoad[0].geometry.matrix);
-            console.log('[DEBUG] Vertices sample:', allObjectsToLoad[0].geometry.vertices.slice(0, 3));
-            console.log('[DEBUG] Faces sample:', allObjectsToLoad[0].geometry.faces.slice(0, 3));
         }
 
         // Load BIM geometry using the dedicated function
@@ -3796,7 +3790,6 @@
         const fullBimObject = elementId && window.allRevitData ?
             window.allRevitData.find(item => item.id === elementId) : null;
 
-        console.log('[DEBUG] displayQuantityMemberDetails - elementId:', elementId, 'fullBimObject found:', !!fullBimObject);
 
         // 모든 속성을 수집하여 첫 번째 접두어로 그룹핑
         const allProperties = [];
@@ -4540,11 +4533,6 @@
         const member = memberId ? window.loadedQuantityMembers?.find(m => m.id === memberId) : null;
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
-        console.log('[DEBUG][displayActivityDetails] memberId:', memberId);
-        console.log('[DEBUG][displayActivityDetails] member:', member);
-        console.log('[DEBUG][displayActivityDetails] ao.quantity_member (original):', ao.quantity_member);
-        console.log('[DEBUG][displayActivityDetails] ao.cost_item:', ao.cost_item);
-        console.log('[DEBUG][displayActivityDetails] window.loadedQuantityMembers count:', window.loadedQuantityMembers?.length);
 
         if (member) {
             // QM 속성 수집
@@ -8036,9 +8024,6 @@
         console.log('[3D Viewer] showAll called');
         console.log('[3D Viewer] Current hiddenObjectIds size:', hiddenObjectIds.size);
         console.log('[3D Viewer] Selected object:', selectedObject ? getObjectId(selectedObject) : 'none');
-        console.log('[3D Viewer] [DEBUG] Checking global material maps:');
-        console.log('[3D Viewer] [DEBUG] originalMaterials size:', originalMaterials.size);
-        console.log('[3D Viewer] [DEBUG] simOriginalMaterials size:', simOriginalMaterials.size);
 
         let restoredCount = 0;
         let materialRestoredCount = 0;
@@ -8831,28 +8816,18 @@
 
             // Create mapping: quantity_member_id -> raw_element_id
             const qmIdToElementId = new Map();
-            console.log('[DEBUG] Total quantity members loaded:', quantityMembers.length);
 
             quantityMembers.forEach((qm, idx) => {
-                console.log(`[DEBUG] QM #${idx}:`, {
-                    id: qm.id,
-                    name: qm.name,
-                    raw_element_id: qm.raw_element_id,
-                    split_element_id: qm.split_element_id
-                });
 
                 if (qm.raw_element_id) {
                     qmIdToElementId.set(qm.id, qm.raw_element_id);
-                    console.log(`[DEBUG] Mapped QM ${qm.id} -> raw_element ${qm.raw_element_id}`);
                 }
                 if (qm.split_element_id) {
                     qmIdToElementId.set(qm.id, qm.split_element_id);
-                    console.log(`[DEBUG] Mapped QM ${qm.id} -> split_element ${qm.split_element_id}`);
                 }
             });
 
             console.log('[3D Viewer] QM to Element ID mapping:', qmIdToElementId.size, 'entries');
-            console.log('[DEBUG] Full mapping contents:', Array.from(qmIdToElementId.entries()));
 
             // 4. Filter cost items
             const completedCostItems = costItems.filter(item =>
@@ -8867,8 +8842,6 @@
 
             // ▼▼▼ [디버깅] Cost item 구조 확인 ▼▼▼
             if (inProgressCostItems.length > 0) {
-                console.log('[DEBUG] Sample in-progress cost item:', inProgressCostItems[0]);
-                console.log('[DEBUG] Cost item keys:', Object.keys(inProgressCostItems[0]));
             }
             // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
@@ -8877,86 +8850,56 @@
             const inProgressElementIds = new Set();
 
             // ▼▼▼ [디버깅] 상세 로그 추가 ▼▼▼
-            console.log('[DEBUG] === Detailed activity_objects debugging ===');
-            console.log('[DEBUG] Completed cost items count:', completedCostItems.length);
-            console.log('[DEBUG] In-progress cost items count:', inProgressCostItems.length);
 
             completedCostItems.forEach((item, itemIdx) => {
-                console.log(`[DEBUG] Completed item #${itemIdx}:`, {
-                    id: item.id,
-                    description: item.description,
-                    activity_objects_type: typeof item.activity_objects,
-                    activity_objects_isArray: Array.isArray(item.activity_objects),
                     activity_objects_length: item.activity_objects ? item.activity_objects.length : 0
                 });
 
                 // Extract element IDs from activity_objects
                 // ▼▼▼ [수정] quantity_member는 중첩 객체 구조 (quantity_member.id) ▼▼▼
                 if (item.activity_objects && Array.isArray(item.activity_objects)) {
-                    console.log(`[DEBUG] Processing ${item.activity_objects.length} activity objects from completed item #${itemIdx}`);
                     item.activity_objects.forEach((ao, aoIdx) => {
-                        console.log(`[DEBUG] Completed AO #${aoIdx}:`, ao);
 
                         // quantity_member는 중첩 객체
                         const qmId = ao.quantity_member?.id;
-                        console.log(`[DEBUG] AO quantity_member.id:`, qmId);
 
                         if (qmId) {
                             const elementId = qmIdToElementId.get(qmId);
-                            console.log(`[DEBUG] Looking up QM ${qmId} -> Element ${elementId}`);
                             if (elementId) {
                                 completedElementIds.add(elementId);
-                                console.log('[DEBUG] Completed item - QM:', qmId, '-> Element:', elementId);
                             } else {
-                                console.log('[DEBUG] No element ID found in mapping for QM:', qmId);
                             }
                         } else {
-                            console.log('[DEBUG] AO has no quantity_member or quantity_member.id');
                         }
                     });
                 } else {
-                    console.log(`[DEBUG] Completed item #${itemIdx} has no valid activity_objects array`);
                 }
             });
 
             inProgressCostItems.forEach((item, itemIdx) => {
-                console.log(`[DEBUG] In-progress item #${itemIdx}:`, {
-                    id: item.id,
-                    description: item.description,
-                    activity_objects_type: typeof item.activity_objects,
-                    activity_objects_isArray: Array.isArray(item.activity_objects),
                     activity_objects_length: item.activity_objects ? item.activity_objects.length : 0
                 });
 
                 // Extract element IDs from activity_objects
                 // ▼▼▼ [수정] quantity_member는 중첩 객체 구조 (quantity_member.id) ▼▼▼
                 if (item.activity_objects && Array.isArray(item.activity_objects)) {
-                    console.log(`[DEBUG] Processing ${item.activity_objects.length} activity objects from in-progress item #${itemIdx}`);
                     item.activity_objects.forEach((ao, aoIdx) => {
-                        console.log(`[DEBUG] In-progress AO #${aoIdx}:`, ao);
 
                         // quantity_member는 중첩 객체
                         const qmId = ao.quantity_member?.id;
-                        console.log(`[DEBUG] AO quantity_member.id:`, qmId);
 
                         if (qmId) {
                             const elementId = qmIdToElementId.get(qmId);
-                            console.log(`[DEBUG] Looking up QM ${qmId} -> Element ${elementId}`);
                             if (elementId) {
                                 inProgressElementIds.add(elementId);
-                                console.log('[DEBUG] In-progress item - QM:', qmId, '-> Element:', elementId);
                             } else {
-                                console.log('[DEBUG] No element ID found in mapping for QM:', qmId);
                             }
                         } else {
-                            console.log('[DEBUG] AO has no quantity_member or quantity_member.id');
                         }
                     });
                 } else {
-                    console.log(`[DEBUG] In-progress item #${itemIdx} has no valid activity_objects array`);
                 }
             });
-            console.log('[DEBUG] === End of detailed debugging ===');
             // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
             console.log(sceneType, 'Element IDs - Completed:', completedElementIds.size, 'In-progress:', inProgressElementIds.size);
@@ -8968,10 +8911,6 @@
             // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             // [DEBUG] Verify reference equality
-            console.log(sceneType, '[DEBUG] Reference check - workingMaterials === originalMaterials:', workingMaterials === originalMaterials);
-            console.log(sceneType, '[DEBUG] workingMaterials === simOriginalMaterials:', workingMaterials === simOriginalMaterials);
-            console.log(sceneType, '[DEBUG] workingMaterials size BEFORE clear:', workingMaterials.size);
-            console.log(sceneType, '[DEBUG] originalMaterials size BEFORE clear:', originalMaterials.size);
 
             workingHiddenIds.clear();
             let completedCount = 0;
@@ -8991,11 +8930,6 @@
                             isInProgress = inProgressElementIds.has(object.userData.splitElementId);
                             isCompleted = completedElementIds.has(object.userData.splitElementId);
 
-                            console.log(sceneType, '[DEBUG] Split object check:', {
-                                splitElementId: object.userData.splitElementId,
-                                isInProgress,
-                                isCompleted,
-                                inProgressIds: Array.from(inProgressElementIds),
                                 completedIds: Array.from(completedElementIds)
                             });
                         } else {
@@ -9008,13 +8942,6 @@
                                         completedElementIds.has(object.userData.bimObjectId) ||
                                         completedElementIds.has(object.userData.rawElementId);
 
-                            console.log(sceneType, '[DEBUG] Original object check:', {
-                                objectId,
-                                bimObjectId: object.userData.bimObjectId,
-                                rawElementId: object.userData.rawElementId,
-                                isInProgress,
-                                isCompleted,
-                                inProgressIds: Array.from(inProgressElementIds),
                                 completedIds: Array.from(completedElementIds)
                             });
                         }
@@ -9025,9 +8952,7 @@
                             object.visible = true;
 
                             if (!workingMaterials.has(object.id)) {
-                                console.log(sceneType, '[DEBUG] Saving original material for object.id:', object.id, 'objectId:', objectId);
                                 workingMaterials.set(object.id, object.material);
-                                console.log(sceneType, '[DEBUG] workingMaterials size after save:', workingMaterials.size);
                             }
 
                             const blueMaterial = new THREE.MeshStandardMaterial({
@@ -9039,7 +8964,6 @@
                             });
                             object.material = blueMaterial;
                             inProgressCount++;
-                            console.log(sceneType, '[DEBUG] Object set to IN-PROGRESS (BLUE), visible:', object.visible);
 
                         } else if (isCompleted) {
                             // Completed: GRAY
@@ -9056,14 +8980,12 @@
                             });
                             object.material = grayMaterial;
                             completedCount++;
-                            console.log(sceneType, '[DEBUG] Object set to COMPLETED (GRAY), visible:', object.visible);
 
                         } else {
                             // Future or not related: HIDE
                             object.visible = false;
                             workingHiddenIds.add(objectId);
                             hiddenCount++;
-                            console.log(sceneType, '[DEBUG] Object set to HIDDEN, visible:', object.visible);
 
                             // Restore original material
                             if (workingMaterials.has(object.id)) {
@@ -12404,7 +12326,6 @@
             const materials = rawData.System.Geometry.materials;
 
             // 디버깅: materials 객체 출력
-            console.log('[DEBUG] ✅ Materials data found for mesh:', materials);
 
             // Diffuse 색상 추출
             if (materials.diffuse_color && Array.isArray(materials.diffuse_color) && materials.diffuse_color.length >= 3) {
@@ -12412,21 +12333,16 @@
                 const g = materials.diffuse_color[1];
                 const b = materials.diffuse_color[2];
                 color = new THREE.Color(r, g, b).getHex();
-                console.log('[DEBUG] Applied color:', { r, g, b, hex: color.toString(16) });
             } else {
-                console.log('[DEBUG] No diffuse_color found, using default gray');
             }
 
             // 투명도 추출 (IFC의 Transparency는 0=불투명, 1=완전투명)
             if (materials.transparency !== undefined && materials.transparency !== null) {
                 opacity = 1.0 - materials.transparency; // Three.js opacity는 0=투명, 1=불투명
                 transparent = materials.transparency > 0;
-                console.log('[DEBUG] Applied transparency:', materials.transparency, 'opacity:', opacity);
             } else {
-                console.log('[DEBUG] No transparency found, using default opaque');
             }
         } else {
-            console.log('[DEBUG] No materials data found in rawData');
         }
 
         // 선택된 경우 노란색 하이라이트

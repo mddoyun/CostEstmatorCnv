@@ -135,7 +135,6 @@ function setupCostItemsListeners() {
     // 스플릿바 초기화
     initCiSplitBar();
 
-    console.log('[DEBUG] Cost Items listeners setup complete.');
 }
 
 async function loadCostItems() {
@@ -290,7 +289,6 @@ function handleCostItemActions(event) {
 
         // ▼▼▼ [수정] 액티비티별 뷰일 때는 확장된 데이터 사용 ▼▼▼
         if (window.activeCiView === 'activity-view' && window.expandedCostItemsForActivityView) {
-            console.log('[DEBUG][handleCostItemActions] Using expandedCostItemsForActivityView for group toggle');
             renderCostItemsTable(window.expandedCostItemsForActivityView);
         } else {
             renderCostItemsTable(window.loadedCostItems);
@@ -332,7 +330,6 @@ function handleCostItemActions(event) {
         .then(res => {
             if (!res.ok) {
                 return res.text().then(text => {
-                    console.error('[ERROR] PATCH failed:', res.status, text);
                     throw new Error(`서버 오류 (${res.status}): ${text.substring(0, 100)}`);
                 });
             }
@@ -347,7 +344,6 @@ function handleCostItemActions(event) {
             }
         })
         .catch(error => {
-            console.error('[ERROR] reset-manual-quantity-btn:', error);
             showToast(error.message, 'error');
         });
         return;
@@ -499,7 +495,6 @@ function handleCiColumnFilter(event) {
         delete window.ciColumnFilters[field];
     }
 
-    console.log('[DEBUG] CI filter (Enter):', field, '=', value);
     renderCostItemsTable(window.loadedCostItems);
 }
 
@@ -785,7 +780,6 @@ function selectCiInClient() {
  * 3D 뷰어에서 선택 가져오기
  */
 function getCiSelectionFrom3DViewer() {
-    console.log('[DEBUG][CI] Getting selection from 3D viewer');
 
     if (typeof window.getSelectedObjectsFrom3DViewer !== 'function') {
         showToast('3D 뷰어 기능을 사용할 수 없습니다.', 'error');
@@ -798,7 +792,6 @@ function getCiSelectionFrom3DViewer() {
         return;
     }
 
-    console.log(`[DEBUG][CI] Found ${selected3DObjects.length} selected objects in 3D viewer`);
 
     // 3D에서 선택된 객체의 BIM ID 수집
     const selectedBimIds = new Set();
@@ -831,7 +824,6 @@ function getCiSelectionFrom3DViewer() {
         }
     });
 
-    console.log(`[DEBUG][CI] Selected ${selectedCiIds.size} cost items from 3D viewer`);
 
     // 필터 활성화 및 버튼 표시 (사이드바 버튼과 테이블 하단 버튼 모두)
     window.isCiFilterToSelectionActive = true;
@@ -843,7 +835,6 @@ function getCiSelectionFrom3DViewer() {
     }
     if (clearBtnFooter) {
         clearBtnFooter.style.display = 'inline-block';
-        console.log('[DEBUG][CI] Footer clear filter button displayed');
     }
 
     // 테이블 다시 렌더링 (필터링 적용됨)
@@ -856,8 +847,6 @@ function getCiSelectionFrom3DViewer() {
  * 3D 뷰어에서 선택 확인
  */
 function selectCiIn3DViewer() {
-    console.log('[DEBUG][CI] Selecting objects in 3D viewer');
-    console.log('[DEBUG][CI] selectedCiIds:', Array.from(selectedCiIds));
 
     if (selectedCiIds.size === 0) {
         showToast('테이블에서 먼저 항목을 선택하세요.', 'warning');
@@ -869,20 +858,17 @@ function selectCiIn3DViewer() {
         return;
     }
 
-    console.log('[DEBUG][CI] loadedCostItems count:', window.loadedCostItems?.length);
 
     // 선택된 산출항목들의 raw_element_id 또는 split_element_id를 수집
     // CostItem -> QuantityMember -> RawElement 경로
     const bimIdsToSelect = [];
     const selectedCIs = window.loadedCostItems.filter(ci => selectedCiIds.has(ci.id));
-    console.log('[DEBUG][CI] Found matching CIs:', selectedCIs.length);
 
     selectedCIs.forEach(ci => {
         if (ci.quantity_member_id) {
             const qm = window.loadedQuantityMembers?.find(m => m.id === ci.quantity_member_id);
             if (qm) {
                 const elementId = qm.split_element_id || qm.raw_element_id;
-                console.log('[DEBUG][CI] CI:', ci.id, 'QM:', qm.id, 'raw_element_id:', qm.raw_element_id, 'split_element_id:', qm.split_element_id, 'using:', elementId);
                 if (elementId) {
                     bimIdsToSelect.push(elementId);
                 }
@@ -890,14 +876,12 @@ function selectCiIn3DViewer() {
         }
     });
 
-    console.log('[DEBUG][CI] BIM IDs to select:', bimIdsToSelect);
 
     if (bimIdsToSelect.length === 0) {
         showToast('선택한 산출항목에 연결된 원본 요소가 없습니다.', 'warning');
         return;
     }
 
-    console.log(`[DEBUG][CI] Calling window.selectObjectsIn3DViewer with ${bimIdsToSelect.length} IDs`);
     window.selectObjectsIn3DViewer(bimIdsToSelect);
 
     showToast(`3D 뷰포트에서 ${bimIdsToSelect.length}개 객체를 선택했습니다.`, 'success');
@@ -1103,7 +1087,6 @@ function populateCiFieldSelection(items) {
 
     // 전역 변수에 저장 (applyCiFieldSelection에서 사용)
     window.allCiFields = allFields;
-    console.log('[DEBUG][populateCiFieldSelection] allCiFields initialized with', window.allCiFields.length, 'fields');
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     container.innerHTML = html;
@@ -1511,12 +1494,10 @@ function applyCiFilters() {
 
     // 모든 필터 입력 필드의 값을 수집
     const filterInputs = document.querySelectorAll('.ci-filter-input');
-    console.log('[DEBUG] Found filter inputs:', filterInputs.length);
 
     filterInputs.forEach(input => {
         const field = input.dataset.field;
         const value = input.value.trim();
-        console.log('[DEBUG] Filter input:', field, '=', value);
 
         if (value) {
             window.ciColumnFilters[field] = value.toLowerCase();
@@ -1525,7 +1506,6 @@ function applyCiFilters() {
         }
     });
 
-    console.log('[DEBUG] Applying CI filters:', window.ciColumnFilters);
     renderCostItemsTable(window.loadedCostItems);
     showToast('필터가 적용되었습니다.', 'success');
 }
@@ -1570,7 +1550,6 @@ function initCiSplitBar() {
     const container = document.querySelector('#cost-item-management .split-layout-container');
 
     if (!splitBar || !leftPanel || !container) {
-        console.log('[DEBUG] CI Split bar elements not found, skipping initialization');
         return;
     }
 
@@ -1613,7 +1592,6 @@ function initCiSplitBar() {
         }
     });
 
-    console.log('[DEBUG] CI Split bar initialized');
 }
 
 // =====================================================================
@@ -1644,18 +1622,15 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
             return;
         }
         targetItems = window.window.loadedCostItems.filter(item => selectedCostItems.includes(item.id));
-        console.log(`[DEBUG][applyCostItemQuantityRules] Selected mode: ${targetItems.length} items`);
     }
 
     try {
-        console.log('[DEBUG][applyCostItemQuantityRules] Loading quantity calculation rules...');
 
         // 1. 수량산출룰셋 로드
         const response = await fetch(`/connections/api/rules/cost-code/${currentProjectId}/`);
         if (!response.ok) throw new Error('수량산출룰셋을 불러오는데 실패했습니다.');
 
         const rules = await response.json();
-        console.log('[DEBUG][applyCostItemQuantityRules] Loaded rules:', rules);
 
         if (!rules || rules.length === 0) {
             showToast('적용할 수량산출룰셋이 없습니다.', 'warning');
@@ -1685,12 +1660,9 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
                 // ▼▼▼ [추가] 대상 공사코드 체크 (2025-11-05) ▼▼▼
                 // target_cost_code_code가 지정되어 있으면 해당 공사코드에만 적용
                 if (rule.target_cost_code_code) {
-                    console.log(`[DEBUG][applyCostItemQuantityRules] Rule target_cost_code_code: "${rule.target_cost_code_code}", CostItem cost_code: "${ciContext['cost_code']}"`);
                     if (ciContext['cost_code'] !== rule.target_cost_code_code) {
-                        console.log(`[DEBUG][applyCostItemQuantityRules] Skipping rule due to cost_code mismatch`);
                         continue; // 대상 공사코드가 다르면 스킵
                     }
-                    console.log(`[DEBUG][applyCostItemQuantityRules] Cost code matched! Proceeding with conditions check...`);
                 }
                 // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -1710,7 +1682,6 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
 
         // 4. 변경된 항목 저장
         if (updatedItems.length > 0) {
-            console.log(`[DEBUG][applyCostItemQuantityRules] Saving ${updatedItems.length} updated items...`);
 
             for (const item of updatedItems) {
                 const saveResponse = await fetch(`/connections/api/cost-items/${currentProjectId}/`, {
@@ -1724,7 +1695,6 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
 
                 if (!saveResponse.ok) {
                     const error = await saveResponse.json();
-                    console.warn('[WARN][applyCostItemQuantityRules] Failed to save item:', item.id, error);
                 }
             }
 
@@ -1736,7 +1706,6 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
         }
 
     } catch (error) {
-        console.error('[ERROR][applyCostItemQuantityRules]', error);
         showToast(error.message, 'error');
     }
 }
@@ -1756,7 +1725,6 @@ function buildCostItemContext(costItem) {
 
     // 공사코드
     // ▼▼▼ [수정] costItem.cost_code는 UUID가 아니라 코드 문자열일 수 있음 (2025-11-05) ▼▼▼
-    console.log(`[DEBUG][buildCostItemContext] costItem.cost_code: "${costItem.cost_code}"`);
     if (costItem.cost_code) {
         // 먼저 UUID로 찾아보기 (기존 방식)
         let costCode = window.loadedCostCodes?.find(cc => cc.id === costItem.cost_code);
@@ -1764,7 +1732,6 @@ function buildCostItemContext(costItem) {
         // UUID로 못 찾으면 코드 문자열로 찾기
         if (!costCode) {
             costCode = window.loadedCostCodes?.find(cc => cc.code === costItem.cost_code);
-            console.log(`[DEBUG][buildCostItemContext] Searching by code string, found:`, costCode);
         }
 
         if (costCode) {
@@ -1780,15 +1747,12 @@ function buildCostItemContext(costItem) {
             context['cost_code_ai_sd_enabled'] = costCode.ai_sd_enabled;
             context['cost_code_dd_enabled'] = costCode.dd_enabled;
             context['name'] = `${costCode.code} - ${costCode.name}`;
-            console.log(`[DEBUG][buildCostItemContext] Set context['cost_code'] = "${context['cost_code']}"`);
         } else {
             // 그래도 못 찾으면 costItem.cost_code 자체를 코드로 사용
-            console.log(`[DEBUG][buildCostItemContext] Could not find in loadedCostCodes, using costItem.cost_code directly as code`);
             context['cost_code'] = costItem.cost_code;
             context['name'] = costItem.cost_code;
         }
     } else {
-        console.log(`[WARN][buildCostItemContext] costItem.cost_code is null/undefined`);
         context['name'] = 'No Cost Code';
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -1822,13 +1786,10 @@ function buildCostItemContext(costItem) {
                     // ▼▼▼ [수정] raw_data가 이미 평탄화되어 있는 경우 처리 (2025-11-05) ▼▼▼
                     // IFC 데이터는 이미 "Attributes.XXX", "Parameters.XXX" 형태로 평탄화되어 저장됨
 
-                    console.log('[DEBUG][buildCostItemContext] Processing raw_data with', Object.keys(rd).length, 'keys');
 
                     // ▼▼▼ [디버그] raw_data의 모든 키 출력 (2025-11-05) ▼▼▼
                     const allKeys = Object.keys(rd);
-                    console.log('[DEBUG][buildCostItemContext] All raw_data keys:', allKeys);
                     const quantityKeys = allKeys.filter(k => k.includes('Quantity'));
-                    console.log('[DEBUG][buildCostItemContext] Quantity-related keys:', quantityKeys);
                     // ▲▲▲ [디버그] 여기까지 ▲▲▲
 
                     // raw_data의 모든 키를 순회하며 적절한 prefix로 context에 저장
@@ -1855,7 +1816,6 @@ function buildCostItemContext(costItem) {
                         else if (key.startsWith('QuantitySet.')) {
                             // QuantitySet은 BIM.Attributes.QuantitySet으로 참조되므로 bim_attr_ 접두어 사용
                             context[`bim_attr_${key}`] = value;
-                            console.log(`[DEBUG][buildCostItemContext] Stored QuantitySet: bim_attr_${key} = ${value}`);
                         }
                         // ▲▲▲ [추가] 여기까지 ▲▲▲
                         // IFC 기본 속성들 (최상위 키)
@@ -1945,8 +1905,6 @@ function buildCostItemContext(costItem) {
     }
 
     // ▼▼▼ [디버그] Context 내용 확인 (2025-11-05) ▼▼▼
-    console.log('[DEBUG][buildCostItemContext] Built context for item:', costItem.id);
-    console.log('[DEBUG][buildCostItemContext] Context keys:', Object.keys(context).filter(k => k.startsWith('bim_')));
     // ▲▲▲ [디버그] 여기까지 ▲▲▲
 
     return context;
@@ -2061,7 +2019,6 @@ function evaluateQuantityFormula(formula, context) {
         const templatePattern = /\{([^}]+)\}/g;
         const matches = [...formula.matchAll(templatePattern)];
 
-        console.log('[DEBUG][evaluateQuantityFormula] Original formula:', formula);
 
         for (const match of matches) {
             const fullMatch = match[0]; // {property_name}
@@ -2107,7 +2064,6 @@ function evaluateQuantityFormula(formula, context) {
                 value = context[contextKey];
             }
 
-            console.log(`[DEBUG][evaluateQuantityFormula] Property: ${propertyPath} -> Context Key: ${contextKey}`);
 
             if (value !== undefined && value !== null) {
                 // 숫자로 변환 시도
@@ -2115,24 +2071,19 @@ function evaluateQuantityFormula(formula, context) {
                 if (!isNaN(numValue)) {
                     evaluatedFormula = evaluatedFormula.replace(fullMatch, numValue);
                 } else {
-                    console.warn(`[WARN][evaluateQuantityFormula] Non-numeric value for ${propertyPath}: ${value}`);
                     evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
                 }
             } else {
-                console.warn(`[WARN][evaluateQuantityFormula] Missing value for ${propertyPath}`);
                 evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
             }
         }
 
-        console.log('[DEBUG][evaluateQuantityFormula] Evaluated formula:', evaluatedFormula);
 
         // 수식 계산
         const result = eval(evaluatedFormula);
-        console.log('[DEBUG][evaluateQuantityFormula] Result:', result);
 
         return result;
     } catch (error) {
-        console.error('[ERROR][evaluateQuantityFormula]', error);
         return null;
     }
 }
@@ -2152,7 +2103,6 @@ function showManualQuantityInputModal() {
     }
 
     const selectedItems = window.window.loadedCostItems.filter(item => selectedCostItems.includes(item.id));
-    console.log('[DEBUG][showManualQuantityInputModal] Selected items:', selectedItems);
 
     // 이전에 저장된 quantity_mapping_expression 확인
     let previousExpression = null;
@@ -2170,7 +2120,6 @@ function showManualQuantityInputModal() {
             previousMode = 'formula';
             previousFormula = previousExpression.formula || '';
         }
-        console.log('[DEBUG][showManualQuantityInputModal] Previous expression:', previousExpression);
     }
 
     // 모달 HTML 생성
@@ -2338,7 +2287,6 @@ function showManualQuantityInputModal() {
                     return;
                 }
 
-                console.log(`[DEBUG][Manual Quantity] Direct mode: ${directValue}`);
 
                 for (const item of selectedItems) {
                     item.quantity = directValue;
@@ -2360,7 +2308,6 @@ function showManualQuantityInputModal() {
                     if (saveResponse.ok) {
                         updatedCount++;
                     } else {
-                        console.warn('[WARN] Failed to save item:', item.id);
                     }
                 }
             } else {
@@ -2372,7 +2319,6 @@ function showManualQuantityInputModal() {
                     return;
                 }
 
-                console.log(`[DEBUG][Manual Quantity] Formula mode: ${formula}`);
 
                 for (const item of selectedItems) {
                     const ciContext = buildCostItemContext(item);
@@ -2398,10 +2344,8 @@ function showManualQuantityInputModal() {
                         if (saveResponse.ok) {
                             updatedCount++;
                         } else {
-                            console.warn('[WARN] Failed to save item:', item.id);
                         }
                     } else {
-                        console.warn('[WARN] Formula evaluation failed for item:', ciContext.name);
                     }
                 }
             }
@@ -2412,7 +2356,6 @@ function showManualQuantityInputModal() {
             modal.remove();
 
         } catch (error) {
-            console.error('[ERROR][Manual Quantity Input]', error);
             showToast('수량 입력 중 오류가 발생했습니다.', 'error');
         }
     });
@@ -2706,9 +2649,6 @@ function renderCiActivitiesList() {
  * 액티비티 룰셋 적용
  */
 async function applyCiActivityRules() {
-    console.log('[DEBUG][applyCiActivityRules] Function called');
-    console.log('[DEBUG][applyCiActivityRules] currentProjectId:', currentProjectId);
-    console.log('[DEBUG][applyCiActivityRules] loadedCostItems count:', window.loadedCostItems?.length);
 
     if (!currentProjectId) {
         showToast('프로젝트를 먼저 선택하세요.', 'error');
@@ -2721,11 +2661,9 @@ async function applyCiActivityRules() {
     }
 
     if (!confirm('액티비티 할당 룰셋을 적용하시겠습니까?')) {
-        console.log('[DEBUG][applyCiActivityRules] User cancelled');
         return;
     }
 
-    console.log('[DEBUG][applyCiActivityRules] Sending API request...');
 
     try {
         const response = await fetch(
@@ -2739,10 +2677,8 @@ async function applyCiActivityRules() {
             }
         );
 
-        console.log('[DEBUG][applyCiActivityRules] Response received:', response.status);
 
         const result = await response.json();
-        console.log('[DEBUG][applyCiActivityRules] Result:', result);
 
         if (!response.ok) throw new Error(result.message);
 
@@ -2752,7 +2688,6 @@ async function applyCiActivityRules() {
         await loadCostItems();
         renderCiActivitiesList();
     } catch (error) {
-        console.error('[ERROR][applyCiActivityRules]', error);
         showToast(error.message, 'error');
     }
 }
@@ -2762,20 +2697,14 @@ async function applyCiActivityRules() {
 // =====================================================================
 
 function handleCiViewTabClick(e) {
-    console.log('[DEBUG][handleCiViewTabClick] ===== 뷰 탭 클릭 =====');
-    console.log('[DEBUG][handleCiViewTabClick] e.target:', e.target);
-    console.log('[DEBUG][handleCiViewTabClick] e.target.classList:', e.target.classList);
 
     if (!e.target.classList.contains('view-tab-button')) {
-        console.log('[DEBUG][handleCiViewTabClick] Not a view-tab-button, returning');
         return;
     }
 
     const viewType = e.target.dataset.view;
-    console.log('[DEBUG][handleCiViewTabClick] viewType:', viewType);
 
     if (!viewType) {
-        console.log('[DEBUG][handleCiViewTabClick] No viewType, returning');
         return;
     }
 
@@ -2784,58 +2713,38 @@ function handleCiViewTabClick(e) {
         btn.classList.remove('active');
     });
     e.target.classList.add('active');
-    console.log('[DEBUG][handleCiViewTabClick] Tab activated:', viewType);
 
     // 현재 뷰 상태 업데이트
     window.activeCiView = viewType;
 
     // 뷰에 따라 테이블 렌더링
     if (viewType === 'cost-item-view') {
-        console.log('[DEBUG][handleCiViewTabClick] Switching to COST-ITEM VIEW');
         // 기본 코스트아이템 뷰 - 그룹핑 초기화
         window.ciGroupingLevels = [];
-        console.log('[DEBUG][handleCiViewTabClick] window.ciGroupingLevels reset to:', window.ciGroupingLevels);
 
         // ▼▼▼ [추가] DOM 그룹핑 컨트롤도 초기화 ▼▼▼
         const groupingControls = document.querySelectorAll('#ci-grouping-controls .group-by-select');
         groupingControls.forEach(select => {
             select.value = '';
         });
-        console.log('[DEBUG][handleCiViewTabClick] DOM grouping controls cleared:', groupingControls.length, 'selects');
         // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        console.log('[DEBUG][handleCiViewTabClick] Rendering with loadedCostItems count:', window.loadedCostItems.length);
         renderCostItemsTable(window.loadedCostItems);
     } else if (viewType === 'activity-view') {
-        console.log('[DEBUG][handleCiViewTabClick] Switching to ACTIVITY VIEW');
         // 액티비티별 뷰: 각 CostItem을 할당된 Activity마다 복제
         renderCostItemsByActivityView();
     }
-    console.log('[DEBUG][handleCiViewTabClick] ===== 뷰 탭 클릭 종료 =====');
 }
 
 function renderCostItemsByActivityView() {
-    console.log('[DEBUG][renderCostItemsByActivityView] ===== Activity View 렌더링 시작 =====');
-    console.log('[DEBUG][renderCostItemsByActivityView] loadedCostItems count:', window.loadedCostItems.length);
 
     const expandedItems = [];
 
     window.loadedCostItems.forEach((ci, index) => {
-        console.log(`[DEBUG][renderCostItemsByActivityView] Processing CostItem ${index}:`, {
-            id: ci.id,
-            name: ci.name || 'N/A',
-            activities: ci.activities,
-            activitiesCount: ci.activities ? ci.activities.length : 0
-        });
 
         if (ci.activities && ci.activities.length > 0) {
             // 각 Activity마다 CostItem 복제
             ci.activities.forEach(activity => {
-                console.log(`[DEBUG][renderCostItemsByActivityView]   - Expanding for Activity:`, {
-                    code: activity.code,
-                    name: activity.name,
-                    id: activity.id
-                });
 
                 const expandedCi = {
                     ...ci,
@@ -2854,7 +2763,6 @@ function renderCostItemsByActivityView() {
                 expandedItems.push(expandedCi);
             });
         } else {
-            console.log(`[DEBUG][renderCostItemsByActivityView]   - No activities, adding as (할당 안됨)`);
             // Activity가 없는 CostItem도 표시
             expandedItems.push({
                 ...ci,
@@ -2866,8 +2774,6 @@ function renderCostItemsByActivityView() {
         }
     });
 
-    console.log(`[DEBUG][renderCostItemsByActivityView] Expanded ${window.loadedCostItems.length} items to ${expandedItems.length} rows`);
-    console.log('[DEBUG][renderCostItemsByActivityView] Sample expanded items (first 3):');
     expandedItems.slice(0, 3).forEach((item, idx) => {
         console.log(`  [${idx}]:`, {
             id: item.id,
@@ -2886,16 +2792,12 @@ function renderCostItemsByActivityView() {
 
     // Activity.code를 최상위로, 사용자 설정 그룹핑을 하위로 설정
     window.ciGroupingLevels = ['Activity.code', ...userGroupingLevels];
-    console.log('[DEBUG][renderCostItemsByActivityView] window.ciGroupingLevels set to:', window.ciGroupingLevels);
 
     // ▼▼▼ [추가] 확장된 데이터를 글로벌 변수에 저장 (그룹 접기/펼치기 시 재사용) ▼▼▼
     window.expandedCostItemsForActivityView = expandedItems;
-    console.log('[DEBUG][renderCostItemsByActivityView] Saved expandedItems to window.expandedCostItemsForActivityView');
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-    console.log('[DEBUG][renderCostItemsByActivityView] Calling renderCostItemsTable with expandedItems...');
     renderCostItemsTable(expandedItems);
-    console.log('[DEBUG][renderCostItemsByActivityView] ===== Activity View 렌더링 종료 =====');
 }
 
 // 전역 함수로 등록

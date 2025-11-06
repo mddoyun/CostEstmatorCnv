@@ -106,5 +106,4 @@ window.setupTagManagementListeners = function() {
     document
         .getElementById("export-tags-btn")
         ?.addEventListener("click", window.exportTags);
-    console.log("[DEBUG] Tag Management listeners setup complete.");
 };

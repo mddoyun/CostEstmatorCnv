@@ -7,7 +7,6 @@ function setupManagementDataListeners() {
 
     if (exportBtn) {
         exportBtn.addEventListener('click', handleExportManagementData);
-        console.log('[DEBUG] Export management data button listener attached');
     }
 
     if (importBtn && fileInput) {
@@ -15,10 +14,8 @@ function setupManagementDataListeners() {
             fileInput.click();
         });
         fileInput.addEventListener('change', handleImportManagementData);
-        console.log('[DEBUG] Import management data button and file input listeners attached');
     }
 
-    console.log('[DEBUG] Management data listeners setup complete.');
 }
 
 function setupSpaceManagementListeners() {
@@ -80,7 +77,6 @@ function setupSpaceManagementListeners() {
     }
 
     setupAssignedElementsModalListeners(); // Call the new setup function
-    console.log("[DEBUG] Space Management listeners setup complete.");
 }
 
 function setupRulesetManagementListeners() {
@@ -181,7 +177,6 @@ function setupRulesetManagementListeners() {
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     // CSV 가져오기/내보내기 버튼 (동적 설정)
     setupRulesetCsvButtons();
-    console.log("[DEBUG] Ruleset Management listeners setup complete.");
 }
 
 function setupCostCodeManagementListeners() {
@@ -199,7 +194,6 @@ function setupCostCodeManagementListeners() {
     document
         .getElementById("import-cost-codes-btn")
         ?.addEventListener("click", triggerCostCodesImport);
-    console.log("[DEBUG] Cost Code Management listeners setup complete.");
 }
 
 function setupMemberMarkManagementListeners() {
@@ -208,7 +202,6 @@ function setupMemberMarkManagementListeners() {
         ?.addEventListener("click", () => {
             if (!currentProjectId) {
                 showToast('프로젝트를 먼저 선택해주세요.', 'warning');
-                console.warn('[WARN] Attempted to add member mark without project selected');
                 return;
             }
             renderMemberMarksTable(loadedMemberMarks, "new");
@@ -222,7 +215,6 @@ function setupMemberMarkManagementListeners() {
     document
         .getElementById("import-member-marks-btn")
         ?.addEventListener("click", triggerMemberMarksImport);
-    console.log("[DEBUG] Member Mark Management listeners setup complete.");
 }
 
 
@@ -351,7 +343,6 @@ function setupAiModelManagementListeners() {
             }
         });
 
-    console.log("[DEBUG] AI Model Management listeners setup complete.");
 }
 
 // ▲▲▲ [교체] 여기까지 ▲▲▲
@@ -559,52 +550,39 @@ function getCurrentViewerState() {
 
 // ▼▼▼ [추가] CSV 파일이 선택되었을 때 서버로 전송하는 함수 ▼▼▼
 async function handleCsvFileSelect(event) {
-    console.log('[DEBUG][handleCsvFileSelect] Function called');
-    console.log('[DEBUG][handleCsvFileSelect] currentProjectId:', currentProjectId);
-    console.log('[DEBUG][handleCsvFileSelect] currentCsvImportUrl:', currentCsvImportUrl);
 
     if (!currentProjectId || !currentCsvImportUrl) {
         showToast("프로젝트가 선택되지 않았거나, 잘못된 접근입니다.", "error");
         return;
     }
     const file = event.target.files[0];
-    console.log('[DEBUG][handleCsvFileSelect] Selected file:', file?.name);
     if (!file) return;
 
     const formData = new FormData();
     formData.append("csv_file", file);
 
     try {
-        console.log('[DEBUG][handleCsvFileSelect] Sending POST request to:', currentCsvImportUrl);
         const response = await fetch(currentCsvImportUrl, {
             method: "POST",
             headers: { "X-CSRFToken": csrftoken },
             body: formData,
         });
-        console.log('[DEBUG][handleCsvFileSelect] Response received, status:', response.status);
         const result = await response.json();
-        console.log('[DEBUG][handleCsvFileSelect] Response data:', result);
 
         if (!response.ok) {
             throw new Error(result.message || "파일 업로드에 실패했습니다.");
         }
         showToast(result.message, "success");
-        console.log('[DEBUG][handleCsvFileSelect] CSV import successful.');
 
         // 현재 활성화된 탭에 따라 올바른 데이터를 다시 로드합니다.
-        console.log('[DEBUG][handleCsvFileSelect] activeTab:', activeTab);
         if (activeTab === "ruleset-management") {
             const activeRulesetContent = document.querySelector(
                 ".ruleset-content.active"
             );
-            console.log('[DEBUG][handleCsvFileSelect] activeRulesetContent:', activeRulesetContent);
             if (activeRulesetContent) {
                 const rulesetId = activeRulesetContent.id;
-                console.log('[DEBUG][handleCsvFileSelect] rulesetId:', rulesetId);
                 if (rulesetId === "classification-ruleset") {
-                    console.log('[DEBUG][handleCsvFileSelect] Calling loadClassificationRules()');
                     await loadClassificationRules();
-                    console.log('[DEBUG][handleCsvFileSelect] loadClassificationRules() completed');
                 } else if (rulesetId === "mapping-ruleset")
                     await loadPropertyMappingRules();
                 else if (rulesetId === "costcode-ruleset")
@@ -627,11 +605,9 @@ async function handleCsvFileSelect(event) {
             await loadSpaceClassifications();
         }
     } catch (error) {
-        console.error('[ERROR][handleCsvFileSelect]', error);
         showToast(error.message, "error");
     } finally {
         // 작업 완료 후, 파일 입력과 URL 변수 초기화
-        console.log('[DEBUG][handleCsvFileSelect] Cleanup - resetting file input and URL');
         event.target.value = "";
         currentCsvImportUrl = null;
     }
@@ -660,7 +636,6 @@ const debouncedRender = (contextPrefix) =>
  * [임시] '집계' 탭의 내용을 Excel로 내보내는 기능 (현재는 미구현)
  */
 function exportBoqReportToExcel() {
-    console.log("[DEBUG] 'Excel 내보내기' 버튼 클릭됨 (현재 미구현).");
     showToast("Excel 내보내기 기능은 현재 준비 중입니다.", "info");
     // TODO: SheetJS 등의 라이브러리를 사용하여 실제 Excel 내보내기 기능 구현
 }
@@ -685,7 +660,6 @@ async function runBatchAutoUpdate() {
         return;
     }
 
-    console.log("[DEBUG] --- 일괄 자동 업데이트 시작 (13단계) ---");
 
     // 프로그레스바 초기화
     const progressBar = document.getElementById('data-fetch-progress');
@@ -696,12 +670,10 @@ async function runBatchAutoUpdate() {
         progressBar.max = TOTAL_STEPS;
         progressBar.value = 0;
         progressStatus.textContent = `0/${TOTAL_STEPS}`;
-        console.log("[DEBUG] Progress bar initialized: 0/13");
     }
 
     try {
         // ========== 1단계: BIM원본데이터 - 룰셋 일괄적용 ==========
-        console.log("[DEBUG] (1/13) BIM원본데이터 - 룰셋 일괄적용 시작...");
         showToast("1/13: BIM원본데이터에 룰셋을 일괄 적용합니다...", "info");
         await applyClassificationRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
@@ -712,7 +684,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 2단계: 수량산출부재 - 자동 생성 (분류 기준) ==========
-        console.log("[DEBUG] (2/13) 수량산출부재 - 자동 생성 (분류 기준) 시작...");
         showToast("2/13: 수량산출부재를 자동 생성합니다...", "info");
         await createAutoQuantityMembers(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
@@ -723,7 +694,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 3단계: 수량산출부재 - 속성 룰셋 일괄 적용 ==========
-        console.log("[DEBUG] (3/13) 수량산출부재 - 속성 룰셋 일괄 적용 시작...");
         showToast("3/13: 수량산출부재에 속성 룰셋을 적용합니다...", "info");
         await applyPropertyRulesToAllQm();
         if (progressBar && progressStatus) {
@@ -734,7 +704,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 4단계: 수량산출부재 - 할당 룰셋 일괄적용 (1차) ==========
-        console.log("[DEBUG] (4/13) 수량산출부재 - 할당 룰셋 일괄적용 (1차) 시작...");
         showToast("4/13: 수량산출부재에 할당 룰셋을 적용합니다 (1차)...", "info");
         await applyAssignmentRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
@@ -745,7 +714,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 5단계: 수량산출부재 - 수동 수량 산출식 업데이트 ==========
-        console.log("[DEBUG] (5/13) 수량산출부재 - 수동 수량 산출식 업데이트 시작...");
         showToast("5/13: 수량산출부재의 수동 수량 산출식을 업데이트합니다...", "info");
         await updateAllQmFormulas();
         if (progressBar && progressStatus) {
@@ -756,7 +724,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 6단계: 수량산출부재 - 할당 룰셋 일괄적용 (2차) ==========
-        console.log("[DEBUG] (6/13) 수량산출부재 - 할당 룰셋 일괄적용 (2차) 시작...");
         showToast("6/13: 수량산출부재에 할당 룰셋을 적용합니다 (2차)...", "info");
         await applyAssignmentRules(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
@@ -767,7 +734,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 7단계: 코스트아이템 - 자동 생성(공사코드 기준) ==========
-        console.log("[DEBUG] (7/13) 코스트아이템 - 자동 생성(공사코드 기준) 시작...");
         showToast("7/13: 코스트아이템을 자동 생성합니다...", "info");
         await createAutoCostItems(true); // skipConfirmation = true
         if (progressBar && progressStatus) {
@@ -778,7 +744,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 8단계: 코스트아이템 - 룰셋수량계산 (전체) ==========
-        console.log("[DEBUG] (8/13) 코스트아이템 - 룰셋수량계산 (전체) 시작...");
         showToast("8/13: 코스트아이템의 룰셋수량계산을 실행합니다...", "info");
         await applyCostItemQuantityRules(false); // selectedOnly = false (전체 항목 대상)
         if (progressBar && progressStatus) {
@@ -789,7 +754,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 9단계: 코스트아이템 - 산출식 업데이트 ==========
-        console.log("[DEBUG] (9/13) 코스트아이템 - 산출식 업데이트 시작...");
         showToast("9/13: 코스트아이템의 산출식을 업데이트합니다...", "info");
         await updateAllCiFormulas();
         if (progressBar && progressStatus) {
@@ -800,7 +764,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 10단계: 코스트아이템 - 액티비티 룰셋 적용 ==========
-        console.log("[DEBUG] (10/13) 코스트아이템 - 액티비티 룰셋 적용 시작...");
         showToast("10/13: 코스트아이템에 액티비티 룰셋을 적용합니다...", "info");
         await applyCiActivityRules();
         if (progressBar && progressStatus) {
@@ -811,7 +774,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 11단계: 액티비티 객체 - 자동 생성(액티비티코드 기준) ==========
-        console.log("[DEBUG] (11/13) 액티비티 객체 - 자동 생성(액티비티코드 기준) 시작...");
         showToast("11/13: 액티비티 객체를 자동 생성합니다...", "info");
         await createActivityObjectsAuto();
         if (progressBar && progressStatus) {
@@ -822,7 +784,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 12단계: 액티비티 객체 - 자동 수량계산 ==========
-        console.log("[DEBUG] (12/13) 액티비티 객체 - 자동 수량계산 시작...");
         showToast("12/13: 액티비티 객체의 자동 수량계산을 실행합니다...", "info");
         await recalculateAllAoQuantities();
         if (progressBar && progressStatus) {
@@ -833,7 +794,6 @@ async function runBatchAutoUpdate() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // ========== 13단계: 액티비티 객체 - 산출식 업데이트 ==========
-        console.log("[DEBUG] (13/13) 액티비티 객체 - 산출식 업데이트 시작...");
         showToast("13/13: 액티비티 객체의 산출식을 업데이트합니다...", "info");
         await updateAllAoFormulas();
         if (progressBar && progressStatus) {
@@ -845,9 +805,7 @@ async function runBatchAutoUpdate() {
 
         // ========== 완료 메시지 ==========
         showToast("🎉 모든 자동화 프로세스가 완료되었습니다! (13단계)", "success", 5000);
-        console.log("[DEBUG] --- 일괄 자동 업데이트 성공적으로 완료 (13단계) ---");
     } catch (error) {
-        console.error("[ERROR] 일괄 자동 업데이트 중 오류 발생:", error);
         showToast(`오류 발생: ${error.message}`, "error", 5000);
         // 에러 발생 시 프로그레스바 리셋
         if (progressBar && progressStatus) {
@@ -878,7 +836,6 @@ function debounce(fn, delay = 300) {
 
 // --- 공통 CSV 파일 처리 ---
 async function handleCsvFileSelect(event) {
-    console.log("[DEBUG][handleCsvFileSelect] CSV file selected."); // 디버깅
     if (!currentProjectId || !currentCsvImportUrl) {
         showToast(
             "프로젝트가 선택되지 않았거나, 잘못된 CSV 가져오기 요청입니다.",
@@ -892,7 +849,6 @@ async function handleCsvFileSelect(event) {
     }
     const file = event.target.files[0];
     if (!file) {
-        console.log("[DEBUG][handleCsvFileSelect] File selection cancelled."); // 디버깅
         return;
     }
 
@@ -902,7 +858,6 @@ async function handleCsvFileSelect(event) {
     currentCsvImportUrl = null; // 사용 후 초기화
 
     showToast(`CSV 파일 (${file.name}) 가져오는 중...`, "info");
-    console.log(`[DEBUG][handleCsvFileSelect] Uploading CSV to: ${importUrl}`); // 디버깅
     try {
         const response = await fetch(importUrl, {
             method: "POST",
@@ -914,7 +869,6 @@ async function handleCsvFileSelect(event) {
             throw new Error(result.message || "파일 업로드/처리 실패");
         }
         showToast(result.message, "success");
-        console.log(`[DEBUG][handleCsvFileSelect] CSV import successful.`); // 디버깅
 
         // 가져오기 성공 후 현재 활성 탭 데이터 새로고침
         console.log(
@@ -922,7 +876,6 @@ async function handleCsvFileSelect(event) {
         ); // 디버깅
         loadDataForActiveTab();
     } catch (error) {
-        console.error("[ERROR][handleCsvFileSelect] CSV import failed:", error); // 디버깅
         showToast(`CSV 가져오기 실패: ${error.message}`, "error");
     } finally {
         // 성공/실패 여부와 관계없이 파일 입력 초기화
@@ -932,7 +885,6 @@ async function handleCsvFileSelect(event) {
 
 // --- 룰셋 CSV 버튼 설정 및 핸들러 ---
 function setupRulesetCsvButtons() {
-    console.log("[DEBUG] Setting up Ruleset CSV import/export buttons...");
     const rulesetActions = {
         classification: {
             importBtn: "import-classification-rules-btn",
@@ -994,7 +946,6 @@ function setupRulesetCsvButtons() {
             );
         }
     }
-    console.log("[DEBUG] Ruleset CSV buttons setup complete.");
 }
 
 function triggerRulesetImport(rulesetPath) {
@@ -1023,7 +974,6 @@ function exportRuleset(rulesetPath) {
 
 // --- 공간분류 CSV 핸들러 ---
 function exportSpaceClassifications() {
-    console.log("[DEBUG] Triggering Space Classifications CSV export.");
     if (!currentProjectId) {
         showToast("프로젝트를 선택하세요.", "error");
         return;
@@ -1031,7 +981,6 @@ function exportSpaceClassifications() {
     window.location.href = `/connections/api/space-classifications/${currentProjectId}/export/`;
 }
 function triggerSpaceClassificationsImport() {
-    console.log("[DEBUG] Triggering Space Classifications CSV import.");
     if (!currentProjectId) {
         showToast("프로젝트를 선택하세요.", "error");
         return;
@@ -1055,7 +1004,6 @@ async function applyAssignmentRules(skipConfirmation = false) {
             "정의된 모든 할당 룰셋(일람부호, 공사코드, 공간)을 전체 부재에 적용하시겠습니까?\n이 작업은 기존 할당 정보를 덮어쓰거나 추가할 수 있습니다."
         )
     ) {
-        console.log("[DEBUG][applyAssignmentRules] User cancelled."); // 디버깅
         return;
     }
 
@@ -1072,7 +1020,6 @@ async function applyAssignmentRules(skipConfirmation = false) {
         if (!response.ok) throw new Error(result.message || "룰셋 적용 실패");
 
         showToast(result.message, "success");
-        console.log(`[DEBUG][applyAssignmentRules] Success: ${result.message}`); // 디버깅
 
         // 룰셋 적용 후 관련 데이터 및 UI 새로고침
         console.log(
@@ -1086,7 +1033,6 @@ async function applyAssignmentRules(skipConfirmation = false) {
         renderQmMemberMarkDetails();
         renderQmSpacesList(); // 공간 정보도 업데이트
     } catch (error) {
-        console.error("[ERROR][applyAssignmentRules] Failed:", error); // 디버깅
         showToast(`룰셋 적용 실패: ${error.message}`, "error");
     }
 }
@@ -1158,7 +1104,6 @@ function saveBoqColumnSettings() {
             `boqColumnSettings_${currentProjectId}`,
             JSON.stringify(settings)
         );
-        console.log("[DEBUG] Saved BOQ column settings to localStorage.");
     } catch (e) {
         console.error("Failed to save BOQ column settings to localStorage:", e);
         showToast(
@@ -1221,7 +1166,6 @@ function saveBoqColumnSettings() {
 (function initializeCiSplitBar() {
     if (typeof window.initCiSplitBar === 'function') {
         window.initCiSplitBar();
-        console.log('[DEBUG] CI split bar initialized from app.js');
     }
 })();
 
@@ -1231,12 +1175,10 @@ function saveBoqColumnSettings() {
     // setupAoListeners 호출
     if (typeof window.setupAoListeners === 'function') {
         window.setupAoListeners();
-        console.log('[DEBUG] AO listeners initialized from app.js');
     }
 
     // initAoSplitBar 호출
     if (typeof window.initAoSplitBar === 'function') {
         window.initAoSplitBar();
-        console.log('[DEBUG] AO split bar initialized from app.js');
     }
 })();

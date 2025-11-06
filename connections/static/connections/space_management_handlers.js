@@ -391,7 +391,6 @@ function handleSpaceTreeActions(e) {
 function closeAssignedElementsModal() {
     const modal = document.getElementById('assigned-elements-modal');
     if (modal) modal.style.display = 'none';
-    console.log('[DEBUG] Closed Assigned Elements Modal.');
 }
 
 function handleAssignedElementsTableClick(e) {

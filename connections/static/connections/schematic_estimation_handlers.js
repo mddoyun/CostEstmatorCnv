@@ -82,7 +82,6 @@ function setupSchematicEstimationListeners() {
                 )
                     return;
                 const targetTab = clickedButton.dataset.tab; // 예: "sd-member-prop"
-                console.log(`[DEBUG] SD Detail tab clicked: ${targetTab}`);
 
                 sdDetailsPanel
                     .querySelectorAll(".detail-tab-button.active")
@@ -102,7 +101,6 @@ function setupSchematicEstimationListeners() {
     }
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-    console.log("[DEBUG] Schematic Estimation (SD) listeners setup complete.");
 }
 function handleSdAssociatedItemClick(event) {
     const itemRow = event.target.closest("tr[data-item-id]");
@@ -155,7 +153,6 @@ async function loadAiModelsForSd() {
     ); // 디버깅
     try {
         const apiUrl = `/connections/api/ai-models/${currentProjectId}/`;
-        console.log(`[DEBUG][loadAiModelsForSd] Fetching from: ${apiUrl}`);
         const response = await fetch(apiUrl);
         if (!response.ok) {
             const errorText = await response.text();
@@ -218,7 +215,6 @@ function populateSdModelSelect(models) {
                     model.created_at
                 ).toLocaleDateString()})`;
                 select.add(new Option(optionText, model.id));
-                // console.log(`[DEBUG][populateSdModelSelect] Added option: ${optionText} (ID: ${model.id})`); // 너무 많을 수 있음
             } else {
                 console.warn(
                     "[WARN][populateSdModelSelect] Invalid model data found:",
@@ -293,7 +289,6 @@ async function loadSdCostCodes() {
             }
         }
     } catch (error) {
-        console.error("[ERROR][loadSdCostCodes] Failed:", error); // 디버깅
         showToast(error.message, "error");
         sdEnabledCostCodes = [];
     }
@@ -347,7 +342,6 @@ function handleSdModelSelection(event) {
         // --- [핵심 수정] 여기까지 ---
     } else {
         // 모델 선택 해제 시 초기화
-        console.log("[DEBUG][handleSdModelSelection] SD Model deselected.");
         inputFieldsDiv.innerHTML =
             "<p>모델을 선택하면 입력 항목이 표시됩니다.</p>";
         predictBtn.disabled = true;
@@ -432,7 +426,6 @@ function handleSdInputChange(event) {
 
 // SD 예측 실행 API 호출
 async function runSdPrediction() {
-    console.log("[DEBUG][runSdPrediction] Starting SD prediction API call..."); // 디버깅
     if (!currentProjectId || !selectedSdModelId) {
         showToast("프로젝트와 예측 모델을 선택하세요.", "error");
         console.error(
@@ -479,7 +472,6 @@ async function runSdPrediction() {
     showToast("AI 모델 예측 중...", "info");
     const predictBtn = document.getElementById("sd-predict-btn");
     predictBtn.disabled = true; // 중복 실행 방지
-    console.log("[DEBUG][runSdPrediction] Predict button disabled."); // 디버깅
 
     try {
         const response = await fetch(
@@ -524,7 +516,6 @@ async function runSdPrediction() {
             renderSdPredictionChart({});
         }
     } catch (error) {
-        console.error("[ERROR][runSdPrediction] Prediction failed:", error); // 디버깅
         showToast(error.message, "error");
         document.getElementById(
             "sd-prediction-results-table"
@@ -538,7 +529,6 @@ async function runSdPrediction() {
         } // 오류 시 차트 제거
     } finally {
         predictBtn.disabled = false; // 버튼 다시 활성화
-        console.log("[DEBUG][runSdPrediction] Predict button enabled."); // 디버깅
     }
 }
 
@@ -564,7 +554,6 @@ async function loadSdCostItems() {
         // TODO: SD 테이블 그룹핑 필드 설정 함수 호출 (필요 시)
         // populateSdFieldSelection(loadedSdCostItems);
     } catch (error) {
-        console.error("[ERROR][loadSdCostItems] Failed:", error); // 디버깅
         showToast(error.message, "error");
         renderSdCostItemsTable([]); // 오류 시 빈 테이블
     }
@@ -675,7 +664,6 @@ function initializeSdUI() {
     // 관련 전역 변수 초기화 (필요 시 더 추가)
     selectedSdModelId = null;
     selectedSdItemIds.clear();
-    console.log("[DEBUG][initializeSdUI] SD UI elements reset."); // 디버깅
 }
 
 // =====================================================================
@@ -690,7 +678,6 @@ let sdBoqColumnAliases = {}; // SD 테이블 컬럼 별칭
  * SD 탭 하단의 BOQ 컨트롤 (그룹핑, 표시 필드) UI를 초기화하고 이벤트 리스너 설정
  */
 function initializeSdBoqControls() {
-    console.log("[DEBUG][SD BOQ] Initializing SD BOQ controls.");
     // 그룹핑 컨트롤 초기화
     const sdGroupingContainer = document.getElementById("sd-grouping-controls");
     if (sdGroupingContainer) sdGroupingContainer.innerHTML = ""; // 기존 레벨 제거
@@ -726,7 +713,6 @@ function initializeSdBoqControls() {
             );
         }
     } else {
-        console.warn("[WARN][SD BOQ] SD display fields container not found.");
     }
 
     // 그룹핑 레벨 추가 (최소 1개) - 필드가 로드된 후 호출되어야 함
@@ -746,7 +732,6 @@ function initializeSdBoqControls() {
  * SD 탭 하단 BOQ 테이블에 그룹핑 레벨 추가
  */
 function addSdGroupingLevel() {
-    console.log("[DEBUG][SD BOQ] Adding grouping level for SD BOQ.");
     const container = document.getElementById("sd-grouping-controls");
     if (!container) {
         console.warn(
@@ -779,13 +764,11 @@ function addSdGroupingLevel() {
         <button class="remove-sd-group-level-btn" style="padding: 2px 6px; font-size: 12px;">-</button> 
     `;
     container.appendChild(newLevelDiv);
-    console.log(`[DEBUG][SD BOQ] ${newIndex + 1}차 SD grouping level added.`);
 
     // 제거 버튼 리스너 (이벤트 위임 대신 직접 추가)
     newLevelDiv
         .querySelector(".remove-sd-group-level-btn")
         .addEventListener("click", function () {
-            console.log("[DEBUG][SD BOQ] Removing SD grouping level.");
             this.parentElement.remove();
             // 레벨 번호 재정렬
             container
@@ -802,7 +785,6 @@ function addSdGroupingLevel() {
  * SD 탭 하단 BOQ 테이블 컬럼 목록(currentSdBoqColumns)을 현재 UI 상태에 맞게 업데이트
  */
 function updateSdBoqColumns() {
-    console.log("[DEBUG][SD BOQ] Updating SD BOQ column definitions...");
     sdBoqColumnAliases = {}; // 별칭 초기화 (SD는 별칭 편집 기능 없음)
 
     const selectedDisplayFields = Array.from(
@@ -843,11 +825,9 @@ function updateSdBoqColumns() {
  * SD 탭 하단 BOQ 테이블 데이터를 서버에 요청하고 렌더링 (DD와 유사하나 필터 고정)
  */
 async function generateSdBoqReport() {
-    console.log("[DEBUG][SD BOQ] Generating BOQ report for SD tab...");
 
     if (!currentProjectId) {
         showToast("먼저 프로젝트를 선택하세요.", "error");
-        console.error("[ERROR][SD BOQ] Project not selected.");
         return;
     }
 
@@ -868,13 +848,11 @@ async function generateSdBoqReport() {
 
     // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
     const groupByFields = Array.from(groupBySelects).map(select => select.value);
-    console.log("[DEBUG][SD BOQ] Grouping criteria:", groupByFields);
 
     const displayByCheckboxes = document.querySelectorAll(
         ".sd-display-field-cb:checked"
     ); // SD용 체크박스 사용
     const displayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
-    console.log("[DEBUG][SD BOQ] Display fields:", displayByFields);
 
     // POST body 데이터 구성
     const requestData = {
@@ -884,7 +862,6 @@ async function generateSdBoqReport() {
         filter_ai: true,
         filter_dd: false
     };
-    console.log("[DEBUG][SD BOQ] Filters: filter_ai=true, filter_dd=false");
 
     const tableContainer = document.getElementById("sd-table-container"); // SD용 컨테이너 ID
     if (!tableContainer) {
@@ -899,7 +876,6 @@ async function generateSdBoqReport() {
     console.log(
         `[DEBUG][SD BOQ] Requesting BOQ report data from server (POST)... /connections/api/boq/report/${currentProjectId}/`
     );
-    console.log(`[DEBUG][SD BOQ] Request data:`, requestData);
 
     try {
         const response = await fetch(
@@ -922,7 +898,6 @@ async function generateSdBoqReport() {
         }
 
         const data = await response.json();
-        console.log("[DEBUG][SD BOQ] Received BOQ report data:", data);
 
         // 전역 변수 업데이트 (SD 탭에서도 상세 정보 확인 위해)
         if (data.items_detail) {
@@ -933,7 +908,6 @@ async function generateSdBoqReport() {
             // SD에서는 단가 타입 정보는 불필요할 수 있으나, renderBoqTable 호환성을 위해 유지
             loadedUnitPriceTypesForBoq = data.unit_price_types || [];
         } else {
-            console.warn("[WARN][SD BOQ] API response missing 'items_detail'.");
             loadedSdCostItems = [];
         }
 
@@ -948,7 +922,6 @@ async function generateSdBoqReport() {
             "sd-table-container"
         );
         setupSdBoqTableInteractions(); // SD 테이블 상호작용 설정 함수 호출
-        console.log("[DEBUG][SD BOQ] SD BOQ table rendered.");
     } catch (error) {
         console.error(
             "[ERROR][SD BOQ] Failed to generate SD BOQ report:",
@@ -963,7 +936,6 @@ async function generateSdBoqReport() {
  * SD 탭 하단 BOQ 테이블 상호작용 설정 (DD와 유사하나 일부 기능 제외/수정)
  */
 function setupSdBoqTableInteractions() {
-    console.log("[DEBUG][SD BOQ] Setting up interactions for SD BOQ table.");
     const tableContainer = document.getElementById("sd-table-container");
     const table = tableContainer.querySelector(".boq-table"); // renderBoqTable이 생성한 테이블
     if (!table) {
@@ -1000,7 +972,6 @@ function setupSdBoqTableInteractions() {
             "[DEBUG][SD BOQ] Row click listener attached to SD BOQ table body."
         );
     } else if (!tbody) {
-        console.warn("[WARN][SD BOQ] SD BOQ table body not found.");
     }
 
     // --- 2. 단가 기준 드롭다운 없음 ---

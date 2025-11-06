@@ -109,7 +109,6 @@
         const tokenInput = document.querySelector("[name=csrfmiddlewaretoken]");
         if (tokenInput && tokenInput.value) {
             window.csrftoken = tokenInput.value; // Assign to global window.csrftoken
-            console.log("[DEBUG] CSRF token updated from input field.");
         } else {
             console.warn(
                 "[DEBUG] CSRF token input field not found, using cookie value."
@@ -181,17 +180,14 @@
         if (typeof window.setupHomeTabListeners === 'function') {
             window.setupHomeTabListeners();
         } else {
-            console.log("[DEBUG] setupHomeTabListeners not yet loaded.");
         }
 
         // [수정] 3D Viewer는 모듈로 비동기 로드되므로 조건부 호출
         if (typeof window.setupThreeDViewerListeners === 'function') {
             window.setupThreeDViewerListeners();
         } else {
-            console.log("[DEBUG] setupThreeDViewerListeners not yet loaded (will be available after module loads).");
         }
 
-        console.log("[DEBUG] All specific tab listeners setup complete.");
 
         // --- 초기 프로젝트 로드 ---
         window.currentProjectId = projectSelector ? projectSelector.value : null; // Assign to global window.currentProjectId
@@ -201,7 +197,6 @@
             );
             // 초기 데이터 로드는 아래 기본 탭 활성화 로직에서 처리
         } else {
-            console.log("[DEBUG] No initial project selected.");
             clearAllTabData(); // 프로젝트 없으면 초기화
         }
 
@@ -251,6 +246,5 @@
             }
         }
 
-        console.log("[DEBUG] DOMContentLoaded end - Initial setup finished.");
     });
 })();

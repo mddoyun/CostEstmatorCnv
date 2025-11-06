@@ -6,9 +6,7 @@
  * 현재 프로젝트의 모든 일람부호를 서버에서 불러옵니다.
  */
 async function loadMemberMarks() {
-    console.log(`[DEBUG][loadMemberMarks] Called. currentProjectId: ${currentProjectId}`);
     if (!currentProjectId) {
-        console.warn('[WARN][loadMemberMarks] No project selected. Clearing table.');
         renderMemberMarksTable([]);
         return;
     }
@@ -202,7 +200,6 @@ function renderMemberMarksTable(marks, editId = null) {
             // 새 속성 행 추가
             const tbody = builder.querySelector('.member-mark-properties-list');
             if (!tbody) {
-                console.error('[ERROR] Could not find .member-mark-properties-list tbody');
                 showToast('UI 오류: tbody를 찾을 수 없습니다.', 'error');
                 return;
             }
@@ -302,7 +299,6 @@ async function handleMemberMarkActions(event) {
     } else if (target.classList.contains('save-member-mark-btn')) {
         // currentProjectId 확인
         if (!currentProjectId) {
-            console.error('[ERROR] currentProjectId is not set when trying to save member mark');
             showToast('프로젝트가 선택되지 않았습니다. 프로젝트를 선택해주세요.', 'error');
             return;
         }
@@ -335,8 +331,6 @@ async function handleMemberMarkActions(event) {
             : `/connections/api/member-marks/${currentProjectId}/${markId}/`;
         const method = isNew ? 'POST' : 'PUT';
 
-        console.log(`[DEBUG] Saving member mark with URL: ${url}, method: ${method}`);
-        console.log('[DEBUG] Mark data:', markData);
 
         try {
             const response = await fetch(url, {
@@ -361,7 +355,6 @@ async function handleMemberMarkActions(event) {
 
 // --- 일람부호 CSV 핸들러 ---
 function exportMemberMarks() {
-    console.log('[DEBUG] Triggering Member Marks CSV export.');
     if (!currentProjectId) {
         showToast('프로젝트를 선택하세요.', 'error');
         return;
@@ -369,7 +362,6 @@ function exportMemberMarks() {
     window.location.href = `/connections/api/member-marks/${currentProjectId}/export/`;
 }
 function triggerMemberMarksImport() {
-    console.log('[DEBUG] Triggering Member Marks CSV import.');
     if (!currentProjectId) {
         showToast('프로젝트를 선택하세요.', 'error');
         return;

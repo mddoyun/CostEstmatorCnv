@@ -266,7 +266,6 @@ async function handleCostCodeActions(event) {
 
 // --- 공사코드 CSV 핸들러 ---
 function exportCostCodes() {
-    console.log('[DEBUG] Triggering Cost Codes CSV export.');
     if (!currentProjectId) {
         showToast('프로젝트를 선택하세요.', 'error');
         return;
@@ -274,7 +273,6 @@ function exportCostCodes() {
     window.location.href = `/connections/api/cost-codes/${currentProjectId}/export/`;
 }
 function triggerCostCodesImport() {
-    console.log('[DEBUG] Triggering Cost Codes CSV import.');
     if (!currentProjectId) {
         showToast('프로젝트를 선택하세요.', 'error');
         return;

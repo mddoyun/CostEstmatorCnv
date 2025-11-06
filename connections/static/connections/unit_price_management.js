@@ -30,11 +30,9 @@ function setupUnitPriceManagementListeners() {
             handleUnitPriceInputChange
         ); // 단가 입력 시 합계 계산
     }
-    console.log("[DEBUG] Unit Price Management listeners setup complete.");
 }
 
 async function loadCostCodesForUnitPrice() {
-    console.log("[DEBUG][loadCostCodesForUnitPrice] Start");
     if (!currentProjectId) {
         console.log(
             "[INFO][loadCostCodesForUnitPrice] No project selected. Skipping load."
@@ -61,13 +59,11 @@ async function loadCostCodesForUnitPrice() {
         );
         renderCostCodeListForUnitPrice(loadedCostCodes);
     } catch (error) {
-        console.error("[ERROR][loadCostCodesForUnitPrice] Failed:", error);
         showToast(`공사코드 목록 로딩 실패: ${error.message}`, "error");
         renderCostCodeListForUnitPrice([]);
     }
 }
 function handleCostCodeSelectionForUnitPrice(event) {
-    console.log("[DEBUG][handleCostCodeSelectionForUnitPrice] Start");
     const targetItem = event.target.closest(".cost-code-item");
     if (!targetItem) {
         console.log(
@@ -136,10 +132,8 @@ function handleCostCodeSelectionForUnitPrice(event) {
 
     // 단가 목록 로드
     loadUnitPrices(costCodeId);
-    console.log("[DEBUG][handleCostCodeSelectionForUnitPrice] End");
 }
 async function loadUnitPriceTypes() {
-    console.log("[DEBUG][loadUnitPriceTypes] Start");
     if (!currentProjectId) {
         console.log(
             "[INFO][loadUnitPriceTypes] No project selected. Skipping load."
@@ -166,13 +160,11 @@ async function loadUnitPriceTypes() {
         );
         renderUnitPriceTypesTable(loadedUnitPriceTypes);
     } catch (error) {
-        console.error("[ERROR][loadUnitPriceTypes] Failed:", error);
         showToast(`단가 구분 목록 로딩 실패: ${error.message}`, "error");
         renderUnitPriceTypesTable([]);
     }
 }
 async function handleUnitPriceTypeActions(event) {
-    console.log("[DEBUG][handleUnitPriceTypeActions] Start");
     const target = event.target;
     const actionRow = target.closest("tr");
     if (!actionRow) return;
@@ -247,12 +239,9 @@ async function handleUnitPriceTypeActions(event) {
         );
         renderUnitPriceTypesTable(loadedUnitPriceTypes);
     }
-    console.log("[DEBUG][handleUnitPriceTypeActions] End");
 }
 async function saveUnitPriceType(typeData) {
-    console.log("[DEBUG][saveUnitPriceType] Start, Data:", typeData);
     if (!currentProjectId) {
-        console.error("[ERROR][saveUnitPriceType] Project ID is missing.");
         return;
     }
 
@@ -278,7 +267,6 @@ async function saveUnitPriceType(typeData) {
             }),
         });
         const result = await response.json();
-        console.log("[DEBUG][saveUnitPriceType] Server response:", result);
 
         if (!response.ok)
             throw new Error(
@@ -288,15 +276,12 @@ async function saveUnitPriceType(typeData) {
         showToast(result.message, "success");
         await loadUnitPriceTypes(); // 목록 새로고침
     } catch (error) {
-        console.error("[ERROR][saveUnitPriceType] Failed:", error);
         showToast(error.message, "error");
         renderUnitPriceTypesTable(loadedUnitPriceTypes); // 실패 시 편집 상태 해제
     }
 }
 async function deleteUnitPriceType(typeId) {
-    console.log(`[DEBUG][deleteUnitPriceType] Start, ID: ${typeId}`);
     if (!currentProjectId) {
-        console.error("[ERROR][deleteUnitPriceType] Project ID is missing.");
         return;
     }
 
@@ -310,21 +295,18 @@ async function deleteUnitPriceType(typeId) {
             headers: { "X-CSRFToken": csrftoken },
         });
         const result = await response.json();
-        console.log("[DEBUG][deleteUnitPriceType] Server response:", result);
 
         if (!response.ok) throw new Error(result.message || "삭제 실패");
 
         showToast(result.message, "success");
         await loadUnitPriceTypes(); // 목록 새로고침
     } catch (error) {
-        console.error("[ERROR][deleteUnitPriceType] Failed:", error);
         showToast(error.message, "error");
         // 삭제 실패해도 목록은 다시 그림 (보호된 경우 등 메시지 표시 후 상태 복귀)
         renderUnitPriceTypesTable(loadedUnitPriceTypes);
     }
 }
 async function loadUnitPrices(costCodeId) {
-    console.log(`[DEBUG][loadUnitPrices] Start, CostCode ID: ${costCodeId}`);
     if (!currentProjectId) {
         console.log(
             "[INFO][loadUnitPrices] No project selected. Skipping load."
@@ -357,14 +339,12 @@ async function loadUnitPrices(costCodeId) {
         );
         renderUnitPricesTable(loadedUnitPrices);
     } catch (error) {
-        console.error("[ERROR][loadUnitPrices] Failed:", error);
         showToast(`단가 목록 로딩 실패: ${error.message}`, "error");
         renderUnitPricesTable([]);
     }
 }
 
 async function handleUnitPriceActions(event) {
-    console.log("[DEBUG][handleUnitPriceActions] Start");
     const target = event.target;
     const actionRow = target.closest("tr");
     if (!actionRow) return;
@@ -482,14 +462,12 @@ async function handleUnitPriceActions(event) {
         currentUnitPriceEditState = { id: null, originalData: null }; // 취소 시 상태 초기화
         renderUnitPricesTable(loadedUnitPrices);
     }
-    console.log("[DEBUG][handleUnitPriceActions] End");
 }
 
 /**
  * 단가 저장 API 호출
  */
 async function saveUnitPrice(priceData) {
-    console.log("[DEBUG][saveUnitPrice] Start, Data:", priceData);
     if (!currentProjectId || !selectedCostCodeIdForUnitPrice) {
         console.error(
             "[ERROR][saveUnitPrice] Project ID or selected Cost Code ID is missing."
@@ -526,7 +504,6 @@ async function saveUnitPrice(priceData) {
             body: JSON.stringify(payload),
         });
         const result = await response.json();
-        console.log("[DEBUG][saveUnitPrice] Server response:", result);
 
         if (!response.ok)
             throw new Error(
@@ -536,7 +513,6 @@ async function saveUnitPrice(priceData) {
         showToast(result.message, "success");
         await loadUnitPrices(selectedCostCodeIdForUnitPrice); // 목록 새로고침
     } catch (error) {
-        console.error("[ERROR][saveUnitPrice] Failed:", error);
         showToast(error.message, "error");
         // 실패 시 편집 상태 유지 또는 해제 결정 필요 (현재는 해제)
         renderUnitPricesTable(loadedUnitPrices);
@@ -547,7 +523,6 @@ async function saveUnitPrice(priceData) {
  * 단가 삭제 API 호출
  */
 async function deleteUnitPrice(priceId) {
-    console.log(`[DEBUG][deleteUnitPrice] Start, ID: ${priceId}`);
     if (!currentProjectId || !selectedCostCodeIdForUnitPrice) {
         console.error(
             "[ERROR][deleteUnitPrice] Project ID or selected Cost Code ID is missing."
@@ -557,20 +532,17 @@ async function deleteUnitPrice(priceId) {
 
     try {
         const url = `/connections/api/unit-prices/${currentProjectId}/${selectedCostCodeIdForUnitPrice}/${priceId}/`;
-        console.log(`[DEBUG][deleteUnitPrice] Sending request: DELETE ${url}`);
         const response = await fetch(url, {
             method: "DELETE",
             headers: { "X-CSRFToken": csrftoken },
         });
         const result = await response.json();
-        console.log("[DEBUG][deleteUnitPrice] Server response:", result);
 
         if (!response.ok) throw new Error(result.message || "삭제 실패");
 
         showToast(result.message, "success");
         await loadUnitPrices(selectedCostCodeIdForUnitPrice); // 목록 새로고침
     } catch (error) {
-        console.error("[ERROR][deleteUnitPrice] Failed:", error);
         showToast(error.message, "error");
         // 실패해도 목록 다시 그림
         renderUnitPricesTable(loadedUnitPrices);

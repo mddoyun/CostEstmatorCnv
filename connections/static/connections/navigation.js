@@ -178,7 +178,6 @@ window.handleSubNavClick = function handleSubNavClick(e) {
             viewerTopSection.style.minHeight = '300px';
             viewerTopSection.style.height = '';
             viewerTopSection.style.overflow = '';
-            console.log('[DEBUG][handleSubNavClick] Restored viewer-top-section height');
         }
         // 첫 번째 스플릿바는 HTML에서 제거됨
     }
@@ -243,7 +242,6 @@ window.handleSubNavClick = function handleSubNavClick(e) {
             viewerTopSection.style.minHeight = '0';
             viewerTopSection.style.height = '0';
             viewerTopSection.style.overflow = 'hidden';
-            console.log('[DEBUG][handleSubNavClick] Hiding viewer-top-section for simulation tab');
         }
         // 첫 번째 스플릿바는 HTML에서 제거됨
 
@@ -251,7 +249,6 @@ window.handleSubNavClick = function handleSubNavClick(e) {
         setTimeout(() => {
             const ganttTabBtn = document.querySelector('.viewer-bottom-tab-btn[data-tab="gantt-chart"]');
             if (ganttTabBtn && !ganttTabBtn.classList.contains('active')) {
-                console.log('[DEBUG][handleSubNavClick] Switching to Gantt Chart tab for simulation');
                 ganttTabBtn.click();
             }
         }, 50);
@@ -268,7 +265,6 @@ window.handleSubNavClick = function handleSubNavClick(e) {
                 if (boqToggleIcon) {
                     boqToggleIcon.textContent = '▲';
                 }
-                console.log('[DEBUG][handleSubNavClick] BOQ section expanded for simulation tab');
             }
         }, 100);
     }
@@ -417,7 +413,6 @@ window.handleSubNavClick = function handleSubNavClick(e) {
         );
         loadDataForActiveTab();
     }
-    console.log('[DEBUG][handleSubNavClick] Function end.');
 }
 
 window.loadDataForActiveTab = function loadDataForActiveTab() {
@@ -461,16 +456,13 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             const activeRulesetBtn = document.querySelector('.ruleset-nav-button.active');
             if (activeRulesetBtn) {
                 const rulesetType = activeRulesetBtn.dataset.ruleset;
-                console.log(`[DEBUG][loadDataForActiveTab] Loading active ruleset type: ${rulesetType}`);
                 loadSpecificRuleset(rulesetType);
             }
             break;
         case 'cost-code-management':
-            console.log(`[DEBUG][loadDataForActiveTab] Loading Cost Codes.`); // 디버깅
             loadCostCodes();
             break;
         case 'member-mark-management':
-            console.log(`[DEBUG][loadDataForActiveTab] Loading Member Marks.`); // 디버깅
             loadMemberMarks();
             break;
         case 'tag-management':
@@ -584,10 +576,8 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             // 자동으로 집계표 생성 (데이터 로드 후 실행)
             setTimeout(() => {
                 if (typeof window.generateBoqReport === 'function') {
-                    console.log('[DEBUG][loadDataForActiveTab] Auto-generating BOQ table on DD tab entry');
                     window.generateBoqReport();
                 } else {
-                    console.warn('[WARN] generateBoqReport function not available yet');
                 }
             }, 500); // 데이터 로드를 위한 짧은 지연
             break;
@@ -671,7 +661,6 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             // ▼▼▼ [추가] 간트차트 데이터 로드 (시뮬레이션을 위해 필요) ▼▼▼
             if (typeof window.loadGanttChart === 'function') {
                 window.loadGanttChart();
-                console.log('[DEBUG][loadDataForActiveTab] Gantt chart data loading initiated for simulation');
             }
             // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -739,7 +728,6 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
 }
 
 window.loadSpecificRuleset = async function loadSpecificRuleset(rulesetType) {
-    console.log(`[DEBUG][loadSpecificRuleset] Loading ruleset: ${rulesetType}`);
     if (!currentProjectId) return; // 프로젝트 ID 없으면 중단
 
     switch (rulesetType) {
@@ -886,12 +874,10 @@ window.clearAllTabData = function clearAllTabData() {
     if (trainingChartInstance) {
         trainingChartInstance.destroy();
         trainingChartInstance = null;
-        console.log('[DEBUG] Training chart destroyed.');
     }
     if (sdPredictionChartInstance) {
         sdPredictionChartInstance.destroy();
         sdPredictionChartInstance = null;
-        console.log('[DEBUG] SD prediction chart destroyed.');
     }
 
     console.log(
@@ -1008,15 +994,12 @@ window.clearAllTabData = function clearAllTabData() {
     document.getElementById('clear-selection-filter-btn').style.display =
         'none';
 
-    console.log('[DEBUG][clearAllTabData] UI elements cleared/reset.'); // 디버깅
 }
 
 window.clearContainer = function clearContainer(id, message = '<p>프로젝트를 선택하세요.</p>') {
     const container = document.getElementById(id);
     if (container) {
         container.innerHTML = message;
-        // console.log(`[DEBUG][UI] Cleared container: #${id}`); // 필요 시 디버깅 로그 활성화
     } else {
-        console.warn(`[WARN][UI] Container not found for clearing: #${id}`); // 컨테이너 못 찾으면 경고
     }
 }
