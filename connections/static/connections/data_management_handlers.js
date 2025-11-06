@@ -109,6 +109,9 @@ function fetchDataFromClient() {
     const progressStatus = document.getElementById('progress-status-text');
     const progressBar = document.getElementById('data-fetch-progress');
 
+    if (progressContainer) {
+        progressContainer.style.display = 'block';
+    }
     progressStatus.textContent = `${currentMode === 'revit' ? 'Revit' : 'Blender'
         }에 데이터 요청 중...`;
     progressBar.value = 0;

@@ -2017,21 +2017,65 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
                 let cellStyle = `text-align: ${col.align || "left"};`;
 
+                // ▼▼▼ [추가] 그룹 행에서는 구분과 금액 관련 열만 표시하고 나머지는 숨김 ▼▼▼
+                if (isGroup) {
+                    const allowedGroupColumns = [
+                        "name",
+                        "total_cost_total",
+                        "material_cost_total",
+                        "labor_cost_total",
+                        "expense_cost_total"
+                    ];
+                    if (!allowedGroupColumns.includes(col.id)) {
+                        cellContent = "";  // 빈 값으로 설정
+                    }
+                }
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
                 if (col.id === "name") {
                     const padding = level * 20;
                     const toggleIcon = isGroup
                         ? `<i class="fas fa-chevron-right group-toggle-icon" style="margin-right: 5px;"></i>`
                         : "";
                     cellContent = `<span style="padding-left: ${padding}px;">${toggleIcon}${cellContent}</span>`;
-                } else if (col.id === "unit_price_type_id" && !isGroup) {
-                    cellContent = `
-                        <select class="unit-price-type-select" data-item-ids='${itemIds}'>
-                            ${unitPriceOptions.replace(
-                                `value="${currentUnitPriceTypeId}"`,
-                                `value="${currentUnitPriceTypeId}" selected`
-                            )}
-                        </select>
-                    `;
+                } else if (col.id === "unit_price_type_id") {
+                    if (isGroup) {
+                        // 그룹 행: 하위 항목들의 단가기준을 확인
+                        const childUnitPriceTypeIds = new Set();
+                        const collectChildUnitPriceTypeIds = (items) => {
+                            items.forEach(child => {
+                                if (child.children && child.children.length > 0) {
+                                    // 재귀적으로 하위 그룹 확인
+                                    collectChildUnitPriceTypeIds(child.children);
+                                } else {
+                                    // 리프 노드의 단가기준 수집
+                                    childUnitPriceTypeIds.add(child.unit_price_type_id || "");
+                                }
+                            });
+                        };
+                        collectChildUnitPriceTypeIds(item.children || []);
+
+                        // 하위 항목들이 서로 다른 단가기준을 가지면 "다양함" 표시
+                        if (childUnitPriceTypeIds.size > 1) {
+                            cellContent = "다양함";
+                        } else if (childUnitPriceTypeIds.size === 1) {
+                            const singleTypeId = Array.from(childUnitPriceTypeIds)[0];
+                            const unitPriceType = unitPriceTypes.find(t => t.id === singleTypeId);
+                            cellContent = unitPriceType ? unitPriceType.name : "(미지정)";
+                        } else {
+                            cellContent = "-";
+                        }
+                    } else {
+                        // 개별 항목: 드롭다운 표시
+                        cellContent = `
+                            <select class="unit-price-type-select" data-item-ids='${itemIds}'>
+                                ${unitPriceOptions.replace(
+                                    `value="${currentUnitPriceTypeId}"`,
+                                    `value="${currentUnitPriceTypeId}" selected`
+                                )}
+                            </select>
+                        `;
+                    }
                 } else if (
                     typeof cellContent === "number" &&
                     col.id !== "count"

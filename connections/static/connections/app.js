@@ -661,11 +661,15 @@ async function runBatchAutoUpdate() {
     }
 
 
-    // 프로그레스바 초기화
+    // 프로그레스바 초기화 및 표시
+    const progressContainer = document.getElementById('progress-container');
     const progressBar = document.getElementById('data-fetch-progress');
     const progressStatus = document.getElementById('progress-status-text');
     const TOTAL_STEPS = 13;
 
+    if (progressContainer) {
+        progressContainer.style.display = 'block';
+    }
     if (progressBar && progressStatus) {
         progressBar.max = TOTAL_STEPS;
         progressBar.value = 0;

@@ -251,8 +251,9 @@ window.setupWebSocket = function() {
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 setTimeout(() => {
-                    progressBar.value = 0;
-                    progressStatus.textContent = '대기중';
+                    if (progressContainer) {
+                        progressContainer.style.display = 'none';
+                    }
                 }, 1500);
                 document.getElementById('project-selector').disabled = false;
                 console.log(
@@ -336,8 +337,9 @@ window.setupWebSocket = function() {
                 }
 
                 setTimeout(() => {
-                    progressBar.value = 0;
-                    progressStatus.textContent = '대기중';
+                    if (progressContainer) {
+                        progressContainer.style.display = 'none';
+                    }
                 }, 1500);
                 document.getElementById('project-selector').disabled = false;
                 console.log(
