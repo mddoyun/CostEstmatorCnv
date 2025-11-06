@@ -2223,24 +2223,21 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                     cellContent = `<span style="padding-left: ${padding}px;">${toggleIcon}${cellContent}</span>`;
                 } else if (col.id === "unit_price_type_id") {
                     if (isGroup) {
-                        // ▼▼▼ [수정] 단가기준 "다양함" 드롭다운 표시 (2025-11-06) ▼▼▼
-                        // 모든 고유한 단가기준 값을 수집 (null/"미지정"도 하나의 값으로 취급)
+                        // ▼▼▼ [수정] item_ids로부터 실제 CostItem 데이터 조회하여 단가기준 확인 (2025-11-06) ▼▼▼
+                        // item_ids 배열에서 실제 loadedDdCostItems를 찾아서 unit_price_type_id 수집
                         const childUnitPriceTypeIds = new Set();
 
-                        const collectChildUnitPriceTypeIds = (items) => {
-                            items.forEach(child => {
-                                if (child.children && child.children.length > 0) {
-                                    // 재귀적으로 하위 그룹 확인
-                                    collectChildUnitPriceTypeIds(child.children);
-                                } else {
-                                    // 리프 노드의 단가기준 수집
-                                    const typeId = child.unit_price_type_id;
-                                    // null/빈값은 "(미지정)"으로, 실제값은 그대로 추가
-                                    childUnitPriceTypeIds.add(typeId || "(미지정)");
-                                }
-                            });
-                        };
-                        collectChildUnitPriceTypeIds(item.children || []);
+                        // Parse item_ids from the row's data attribute
+                        const itemIdsList = JSON.parse(itemIds);
+
+                        itemIdsList.forEach(costItemId => {
+                            const costItem = window.loadedDdCostItems.find(ci => ci.id === costItemId);
+                            if (costItem) {
+                                const typeId = costItem.unit_price_type_id;
+                                // null/빈값은 "(미지정)"으로, 실제값은 그대로 추가
+                                childUnitPriceTypeIds.add(typeId || "(미지정)");
+                            }
+                        });
 
                         let selectedValue = "";
                         // 서로 다른 값이 2개 이상이면 "다양함"
@@ -2250,6 +2247,7 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                             const singleValue = Array.from(childUnitPriceTypeIds)[0];
                             selectedValue = (singleValue === "(미지정)") ? "" : singleValue;
                         }
+                        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                         // ▼▼▼ [수정] 그룹도 드롭다운으로 표시하고 변경 가능하게 (2025-11-06) ▼▼▼
                         // 그룹 행에서 단가기준 변경 시 모든 포함된 산출항목의 단가기준을 변경

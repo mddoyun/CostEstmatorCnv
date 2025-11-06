@@ -2957,6 +2957,12 @@ def generate_boq_report_api(request, project_id):
 
         for i, field in enumerate(group_by_fields):
             key = item.get(field)
+            # ▼▼▼ [디버깅] 값이 None인 경우 로깅 (2025-11-06) ▼▼▼
+            if key is None:
+                print(f"[DEBUG][BOQ Grouping] Field '{field}' returned None for item {item.get('id')}")
+                print(f"[DEBUG][BOQ Grouping] Available keys in item: {list(item.keys())[:10]}...")
+            # ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
             if isinstance(key, (dict, list)):
                 key_str = json.dumps(key, sort_keys=True)
             else:
