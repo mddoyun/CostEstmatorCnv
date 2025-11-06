@@ -179,6 +179,32 @@ function getValueForItem(item, field) {
     // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
     if (internalField in item && internalField !== 'raw_data') return item[internalField] ?? '';
+
+    // ▼▼▼ [추가] 다단계 경로 처리 (Type.Attributes.*, Type.PropertySet.*, etc.) - 2025-11-06 ▼▼▼
+    // 경로가 점으로 구분된 경우 (e.g., "Type.Attributes.Name", "PropertySet.Pset_WallCommon__LoadBearing")
+    if (internalField.includes('.')) {
+        const parts = internalField.split('.');
+        let current = raw_data;
+
+        for (const part of parts) {
+            if (current && typeof current === 'object' && part in current) {
+                current = current[part];
+            } else {
+                current = undefined;
+                break;
+            }
+        }
+
+        if (current !== undefined && current !== null) {
+            // 객체인 경우 JSON 문자열로 반환
+            if (typeof current === 'object') {
+                return JSON.stringify(current);
+            }
+            return current;
+        }
+    }
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     if (internalField.startsWith('TypeParameters.')) {
         const subKey = internalField.substring(15);
         return raw_data.TypeParameters
@@ -3481,6 +3507,8 @@ function generateBIMPropertyOptions() {
     const propertySetProps = new Set();
     const spatialContainerProps = new Set();
     const typeInfoProps = new Set();
+    const typeAttributeProps = new Set(); // Type.Attributes.* 추가
+    const typePropertySetProps = new Set(); // Type.PropertySet.* 추가
     const otherProps = new Set();
 
     // 시스템 속성 (Cost Estimator 관리)
@@ -3526,7 +3554,15 @@ function generateBIMPropertyOptions() {
                 else if (k.startsWith('Spatial_Container.')) {
                     spatialContainerProps.add(k);
                 }
-                // Type.* 형태의 속성
+                // Type.Attributes.* 형태의 속성 (세부 타입 속성)
+                else if (k.startsWith('Type.Attributes.')) {
+                    typeAttributeProps.add(k);
+                }
+                // Type.PropertySet.* 형태의 속성 (타입 PropertySet)
+                else if (k.startsWith('Type.PropertySet.')) {
+                    typePropertySetProps.add(k);
+                }
+                // Type.* 형태의 속성 (기본 타입 정보)
                 else if (k.startsWith('Type.')) {
                     typeInfoProps.add(k);
                 }
@@ -3612,7 +3648,7 @@ function generateBIMPropertyOptions() {
         });
     }
 
-    // BIM.Type.* 그룹 (새로 추가!)
+    // BIM.Type.* 그룹 (기본 타입 정보)
     if (typeInfoProps.size > 0) {
         const options = Array.from(typeInfoProps).sort().map(prop => {
             // Type.XXX -> BIM.Type.XXX 형태로 표시
@@ -3621,6 +3657,32 @@ function generateBIMPropertyOptions() {
         });
         propertyOptions.push({
             group: 'BIM Type Info (타입 정보)',
+            options: options
+        });
+    }
+
+    // BIM.Type.Attributes.* 그룹 (타입 세부 속성 - 2025-11-06 추가)
+    if (typeAttributeProps.size > 0) {
+        const options = Array.from(typeAttributeProps).sort().map(prop => {
+            // Type.Attributes.XXX -> BIM.Type.Attributes.XXX 형태로 표시
+            const displayName = `BIM.${prop}`;
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM Type Attributes (타입 세부 속성)',
+            options: options
+        });
+    }
+
+    // BIM.Type.PropertySet.* 그룹 (타입 PropertySet - 2025-11-06 추가)
+    if (typePropertySetProps.size > 0) {
+        const options = Array.from(typePropertySetProps).sort().map(prop => {
+            // Type.PropertySet.XXX -> BIM.Type.PropertySet.XXX 형태로 표시
+            const displayName = `BIM.${prop}`;
+            return { value: displayName, label: displayName };
+        });
+        propertyOptions.push({
+            group: 'BIM Type PropertySet (타입 속성 세트)',
             options: options
         });
     }

@@ -500,7 +500,7 @@ function renderRawDataHelperPanel() {
         }
     }
 
-    // ▼▼▼ [수정] 필드 선택과 동일하게 세부 그룹으로 나눠서 표시 (2025-11-05) ▼▼▼
+    // ▼▼▼ [수정] 필드 선택과 동일하게 세부 그룹으로 나눠서 표시 (2025-11-05, 2025-11-06 확장) ▼▼▼
     // 속성을 세부 그룹별로 수집
     const propertyGroups = {
         'System': [],
@@ -508,6 +508,9 @@ function renderRawDataHelperPanel() {
         'Parameters': [],
         'TypeParameters': [],
         'QuantitySet': [],
+        'TypeInfo': [],            // Type.Name, Type.IfcClass 등
+        'TypeAttributes': [],      // Type.Attributes.* 추가 (2025-11-06)
+        'TypePropertySet': [],     // Type.PropertySet.* 추가 (2025-11-06)
         'Other': []
     };
 
@@ -566,6 +569,42 @@ function renderRawDataHelperPanel() {
                 }
             });
         }
+        // ▼▼▼ [추가] Type 그룹 처리 (2025-11-06) ▼▼▼
+        // Type 객체 처리 (Type.Name, Type.IfcClass, Type.Attributes.*, Type.PropertySet.*)
+        else if (topLevelKey === 'Type' && typeof topLevelValue === 'object' && !Array.isArray(topLevelValue)) {
+            Object.entries(topLevelValue).forEach(([typeKey, typeValue]) => {
+                // Type.Attributes.* 그룹
+                if (typeKey === 'Attributes' && typeof typeValue === 'object' && !Array.isArray(typeValue)) {
+                    Object.entries(typeValue).forEach(([attrKey, attrValue]) => {
+                        if (attrValue !== undefined && attrValue !== null) {
+                            propertyGroups['TypeAttributes'].push({
+                                displayKey: `{Type.Attributes.${attrKey}}`,
+                                value: String(attrValue)
+                            });
+                        }
+                    });
+                }
+                // Type.PropertySet.* 그룹
+                else if (typeKey === 'PropertySet' && typeof typeValue === 'object' && !Array.isArray(typeValue)) {
+                    Object.entries(typeValue).forEach(([propKey, propValue]) => {
+                        if (propValue !== undefined && propValue !== null) {
+                            propertyGroups['TypePropertySet'].push({
+                                displayKey: `{Type.PropertySet.${propKey}}`,
+                                value: String(propValue)
+                            });
+                        }
+                    });
+                }
+                // Type.Name, Type.IfcClass 등 기본 정보
+                else if (typeValue !== undefined && typeValue !== null) {
+                    propertyGroups['TypeInfo'].push({
+                        displayKey: `{Type.${typeKey}}`,
+                        value: String(typeValue)
+                    });
+                }
+            });
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
         // Attributes 그룹 (기타 단순 속성들)
         else if (typeof topLevelValue !== 'object' || Array.isArray(topLevelValue)) {
             if (topLevelValue !== undefined && topLevelValue !== null) {
@@ -588,13 +627,16 @@ function renderRawDataHelperPanel() {
         }
     });
 
-    // 각 그룹별로 렌더링
+    // 각 그룹별로 렌더링 (2025-11-06: Type 그룹 추가)
     const groupConfigs = [
         { key: 'System', title: '⚙️ 시스템 속성', color: '#1976d2' },
         { key: 'Attributes', title: '🏗️ 기본 속성', color: '#388e3c' },
         { key: 'Parameters', title: '🔧 Parameters', color: '#f57c00' },
         { key: 'TypeParameters', title: '📝 TypeParameters', color: '#7b1fa2' },
         { key: 'QuantitySet', title: '📏 QuantitySet', color: '#0288d1' },
+        { key: 'TypeInfo', title: '🏷️ Type Info', color: '#c2185b' },              // 추가
+        { key: 'TypeAttributes', title: '🔖 Type Attributes', color: '#e91e63' },   // 추가
+        { key: 'TypePropertySet', title: '📋 Type PropertySet', color: '#ad1457' }, // 추가
         { key: 'Other', title: '📦 기타 속성', color: '#607d8b' }
     ];
 

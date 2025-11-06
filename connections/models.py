@@ -16,6 +16,7 @@ class Project(models.Model):
     name = models.CharField(max_length=200, default="새 프로젝트")
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    visibility_filters = models.JSONField(default=list, blank=True)  # 추가 (2025-11-06): 3D 뷰어 조건부 숨김 필터
 
     def __str__(self):
         # 디버깅: 프로젝트 이름 반환 확인
