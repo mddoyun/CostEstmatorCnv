@@ -805,6 +805,12 @@ async function runBatchAutoUpdate() {
 
         // ========== 완료 메시지 ==========
         showToast("🎉 모든 자동화 프로세스가 완료되었습니다! (13단계)", "success", 5000);
+
+        // ========== 대시보드 업데이트 ==========
+        // 홈 탭의 대시보드를 업데이트하여 최신 데이터 반영
+        if (typeof loadHomeDashboardData === 'function' && currentProjectId) {
+            await loadHomeDashboardData(currentProjectId);
+        }
     } catch (error) {
         showToast(`오류 발생: ${error.message}`, "error", 5000);
         // 에러 발생 시 프로그레스바 리셋
