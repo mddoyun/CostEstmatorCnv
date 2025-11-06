@@ -4085,7 +4085,26 @@ def import_project(request):
 
             # --- 기존 프로젝트 데이터 삭제 ---
             print("[DEBUG][import_project]   - 기존 프로젝트의 관련 데이터 삭제 시작...")
-            # (ForeignKey 제약 고려한 삭제 순서)
+            # (ForeignKey 제약 고려한 삭제 순서: 자식 → 부모)
+
+            # 공정 관련 (CostItem 참조하므로 먼저 삭제)
+            print("[DEBUG][import_project]      - ActivityObject 삭제 중...")
+            count, details = ActivityObject.objects.filter(project=target_project).delete()
+            print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
+            print("[DEBUG][import_project]      - ActivityDependency 삭제 중...")
+            count, details = ActivityDependency.objects.filter(project=target_project).delete()
+            print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
+            print("[DEBUG][import_project]      - Activity 삭제 중...")
+            count, details = Activity.objects.filter(project=target_project).delete()
+            print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
+            print("[DEBUG][import_project]      - WorkCalendar 삭제 중...")
+            count, details = WorkCalendar.objects.filter(project=target_project).delete()
+            print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
+            print("[DEBUG][import_project]      - ActivityAssignmentRule 삭제 중...")
+            count, details = ActivityAssignmentRule.objects.filter(project=target_project).delete()
+            print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
+
+            # 원가 관련
             print("[DEBUG][import_project]      - CostItem 삭제 중...")
             count, details = target_project.cost_items.all().delete()
             print(f"[DEBUG][import_project]        > {count}개 삭제됨. {details}")
@@ -4166,14 +4185,24 @@ def import_project(request):
         # --- 2. 관련 데이터 가져오기 (기존 로직 활용 및 모델 추가) ---
         print("[DEBUG][import_project] 2. 관련 데이터 가져오기 시작...")
 
-        # 모델 처리 순서 정의 (ForeignKey 의존성 고려, UnitPriceType, UnitPrice, AIModel 추가 확인)
+        # 모델 처리 순서 정의 (ForeignKey 의존성 고려)
         model_import_order = [
+            # 기본 참조 데이터 (다른 모델이 참조)
             'QuantityClassificationTag', 'CostCode', 'MemberMark', 'UnitPriceType', 'AIModel',
-            'RawElement', 'SpaceClassification', 'UnitPrice',
+            # BIM 원본 데이터
+            'RawElement', 'SplitElement', 'ElementClassificationAssignment',
+            # 공간 분류
+            'SpaceClassification',
+            # 단가 (CostCode 참조)
+            'UnitPrice',
+            # 룰셋 (QuantityMember 생성 전에 필요)
             'ClassificationRule', 'PropertyMappingRule', 'CostCodeRule',
             'MemberMarkAssignmentRule', 'CostCodeAssignmentRule',
-            'SpaceClassificationRule', 'SpaceAssignmentRule',
-            'QuantityMember', 'CostItem'
+            'SpaceClassificationRule', 'SpaceAssignmentRule', 'ActivityAssignmentRule',
+            # 수량산출 및 원가
+            'QuantityMember', 'CostItem',
+            # 공정 (CostItem 이후)
+            'Activity', 'WorkCalendar', 'ActivityDependency', 'ActivityObject'
         ]
 
         # 모델별 Foreign Key 필드 정의 (자동으로 새 PK로 매핑하기 위함)
@@ -4184,6 +4213,8 @@ def import_project(request):
             'UnitPriceType': ['project'],
             'AIModel': ['project'],
             'RawElement': ['project'],
+            'SplitElement': ['project', 'parent_element'],  # 추가
+            'ElementClassificationAssignment': ['raw_element', 'tag'],  # 추가
             'SpaceClassification': ['project', 'parent', 'source_element'],
             'UnitPrice': ['project', 'cost_code', 'unit_price_type'],
             'ClassificationRule': ['project', 'target_tag'],
@@ -4193,8 +4224,13 @@ def import_project(request):
             'CostCodeAssignmentRule': ['project'],
             'SpaceClassificationRule': ['project'],
             'SpaceAssignmentRule': ['project'],
+            'ActivityAssignmentRule': ['project'],  # 추가
             'QuantityMember': ['project', 'raw_element', 'classification_tag', 'member_mark'],
             'CostItem': ['project', 'quantity_member', 'cost_code', 'unit_price_type'],
+            'Activity': ['project', 'calendar'],  # 추가
+            'WorkCalendar': ['project'],  # 추가
+            'ActivityDependency': ['project', 'activity', 'predecessor'],  # 추가
+            'ActivityObject': ['project', 'activity', 'cost_item'],  # 추가
         }
 
         # 모델별 ManyToMany 필드 정의 (나중에 별도 처리)
