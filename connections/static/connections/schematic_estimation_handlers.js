@@ -847,12 +847,18 @@ async function generateSdBoqReport() {
     }
 
     // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
-    const groupByFields = Array.from(groupBySelects).map(select => select.value);
+    // ▼▼▼ [추가] 클라이언트 필드를 서버 형식으로 변환 (2025-11-06) ▼▼▼
+    const groupByFields = Array.from(groupBySelects).map(select =>
+        convertClientFieldToServerFormat(select.value)
+    );
 
     const displayByCheckboxes = document.querySelectorAll(
         ".sd-display-field-cb:checked"
     ); // SD용 체크박스 사용
-    const displayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
+    const displayByFields = Array.from(displayByCheckboxes).map(cb =>
+        convertClientFieldToServerFormat(cb.value)
+    );
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     // POST body 데이터 구성
     const requestData = {

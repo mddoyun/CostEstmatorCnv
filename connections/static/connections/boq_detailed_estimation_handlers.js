@@ -11,6 +11,87 @@ let currentBoqDetailItemId = null; // Currently selected item ID in the BOQ deta
 // This function needs to be available in this scope. For now, assuming it's global.
 // function getValueForItem(rawElement, key) { ... }
 
+/**
+ * ▼▼▼ [추가] 클라이언트 필드 형식을 서버 형식으로 변환 (2025-11-06) ▼▼▼
+ * 클라이언트: BIM.Parameters.Name, QM.properties.prop1, CI.System.quantity
+ * 서버: quantity_member__raw_element__raw_data__Parameters__Name, quantity_member__properties__prop1, quantity
+ */
+window.convertClientFieldToServerFormat = function convertClientFieldToServerFormat(clientField) {
+    // BIM.System.* → quantity_member__raw_element__ 직접 필드
+    if (clientField.startsWith('BIM.System.')) {
+        const fieldName = clientField.replace('BIM.System.', '');
+        if (fieldName === 'id') return 'quantity_member__raw_element_id';
+        if (fieldName === 'classification_tags') return 'quantity_member__classification_tag__name';
+        if (fieldName === 'element_unique_id') return 'quantity_member__raw_element__element_unique_id';
+        if (fieldName === 'geometry_volume') return 'quantity_member__raw_element__geometry_volume';
+        return `quantity_member__raw_element__${fieldName}`;
+    }
+
+    // BIM.Parameters.* → quantity_member__raw_element__raw_data__Parameters__*
+    if (clientField.startsWith('BIM.Parameters.')) {
+        const paramName = clientField.replace('BIM.Parameters.', '');
+        return `quantity_member__raw_element__raw_data__Parameters__${paramName}`;
+    }
+
+    // BIM.TypeParameters.* → quantity_member__raw_element__raw_data__TypeParameters__*
+    if (clientField.startsWith('BIM.TypeParameters.')) {
+        const paramName = clientField.replace('BIM.TypeParameters.', '');
+        return `quantity_member__raw_element__raw_data__TypeParameters__${paramName}`;
+    }
+
+    // BIM.Attributes.* → quantity_member__raw_element__raw_data__*
+    if (clientField.startsWith('BIM.Attributes.')) {
+        const attrName = clientField.replace('BIM.Attributes.', '');
+        return `quantity_member__raw_element__raw_data__${attrName}`;
+    }
+
+    // QM.System.* → quantity_member__*
+    if (clientField.startsWith('QM.System.')) {
+        const fieldName = clientField.replace('QM.System.', '');
+        return `quantity_member__${fieldName}`;
+    }
+
+    // QM.properties.* → quantity_member__properties__*
+    if (clientField.startsWith('QM.properties.')) {
+        const propName = clientField.replace('QM.properties.', '');
+        return `quantity_member__properties__${propName}`;
+    }
+
+    // MM.System.* → quantity_member__member_mark__*
+    if (clientField.startsWith('MM.System.')) {
+        const fieldName = clientField.replace('MM.System.', '');
+        return `quantity_member__member_mark__${fieldName}`;
+    }
+
+    // MM.properties.* → quantity_member__member_mark__properties__*
+    if (clientField.startsWith('MM.properties.')) {
+        const propName = clientField.replace('MM.properties.', '');
+        return `quantity_member__member_mark__properties__${propName}`;
+    }
+
+    // SC.System.* → quantity_member__space__*
+    if (clientField.startsWith('SC.System.')) {
+        const fieldName = clientField.replace('SC.System.', '');
+        return `quantity_member__space__${fieldName}`;
+    }
+
+    // CI.System.* → 직접 필드
+    if (clientField.startsWith('CI.System.')) {
+        const fieldName = clientField.replace('CI.System.', '');
+        return fieldName;
+    }
+
+    // CC.System.* → cost_code__*
+    if (clientField.startsWith('CC.System.')) {
+        const fieldName = clientField.replace('CC.System.', '');
+        return `cost_code__${fieldName}`;
+    }
+
+    // 변환이 필요 없는 경우 그대로 반환
+    return clientField;
+}
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
 function setupDetailedEstimationListeners() {
     document
         .getElementById("generate-boq-btn")
@@ -167,12 +248,18 @@ async function generateBoqReport(preserveColumnOrder = false) {
     }
 
     // ▼▼▼ [수정] GET → POST 방식으로 변경 (URL 길이 제한 문제 해결) ▼▼▼
-    const groupByFields = Array.from(groupBySelects).map(select => select.value);
+    // ▼▼▼ [추가] 클라이언트 필드를 서버 형식으로 변환 (2025-11-06) ▼▼▼
+    const groupByFields = Array.from(groupBySelects).map(select =>
+        convertClientFieldToServerFormat(select.value)
+    );
 
     const displayByCheckboxes = document.querySelectorAll(
         ".boq-display-field-cb:checked"
     );
-    const displayByFields = Array.from(displayByCheckboxes).map(cb => cb.value);
+    const displayByFields = Array.from(displayByCheckboxes).map(cb =>
+        convertClientFieldToServerFormat(cb.value)
+    );
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 
     const rawElementIds = boqFilteredRawElementIds.size > 0
         ? Array.from(boqFilteredRawElementIds)
