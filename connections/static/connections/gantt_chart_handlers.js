@@ -95,13 +95,14 @@ function addWorkingDays(startDate, workingDays, calendar = null) {
         calendar = mainCalendar;
     }
 
-    // ▼▼▼ [수정] 캘린더가 없으면 일반 날짜 추가, 0일이면 시작일 반환 (2025-11-06) ▼▼▼
+    // ▼▼▼ [수정] 캘린더가 없으면 일반 날짜 추가 (2025-11-06) ▼▼▼
     if (!calendar) {
         return addDays(startDate, workingDays);
     }
 
+    // ▼▼▼ [수정] Lag=0인 경우: 다음 작업일 반환 (2025-11-06) ▼▼▼
     if (workingDays === 0) {
-        // 0일 추가 = 다음 작업일 찾기
+        // 0일 추가 = startDate 다음 작업일 찾기
         let current = new Date(startDate);
         current.setDate(current.getDate() + 1); // 다음 날부터 시작
 
@@ -109,21 +110,32 @@ function addWorkingDays(startDate, workingDays, calendar = null) {
             current.setDate(current.getDate() + 1);
         }
 
+        console.log(`[DEBUG][addWorkingDays] Lag=0: ${startDate.toISOString().split('T')[0]} → ${current.toISOString().split('T')[0]}`);
         return current;
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
+    // ▼▼▼ [핵심 수정] startDate를 1일차로 포함하여 N일차 계산 (2025-11-06) ▼▼▼
+    // 예: 11월 6일(목) 시작, 14일 소요 = 11월 6일이 1일차, 11월 25일이 14일차
     let current = new Date(startDate);
     let daysAdded = 0;
 
-    // ▼▼▼ [수정] 다음 날부터 작업일 카운트 시작 (2025-11-06) ▼▼▼
-    // 시작일 다음 날부터 작업일을 찾아서 추가
+    // startDate가 작업일이면 1일차로 카운트
+    if (isWorkingDay(current, calendar)) {
+        daysAdded = 1;
+        console.log(`[DEBUG][addWorkingDays] Day ${daysAdded}: ${current.toISOString().split('T')[0]}`);
+    }
+
+    // 나머지 일수만큼 작업일 카운트
     while (daysAdded < workingDays) {
         current.setDate(current.getDate() + 1);
         if (isWorkingDay(current, calendar)) {
             daysAdded++;
+            console.log(`[DEBUG][addWorkingDays] Day ${daysAdded}: ${current.toISOString().split('T')[0]}`);
         }
     }
+
+    console.log(`[DEBUG][addWorkingDays] RESULT: ${startDate.toISOString().split('T')[0]} 시작, ${workingDays}일 소요 = ${current.toISOString().split('T')[0]} 종료`);
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     return current;
