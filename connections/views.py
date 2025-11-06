@@ -4195,14 +4195,16 @@ def import_project(request):
             'SpaceClassification',
             # 단가 (CostCode 참조)
             'UnitPrice',
-            # 룰셋 (QuantityMember 생성 전에 필요)
+            # 룰셋 (QuantityMember 생성 전, ActivityAssignmentRule 제외)
             'ClassificationRule', 'PropertyMappingRule', 'CostCodeRule',
             'MemberMarkAssignmentRule', 'CostCodeAssignmentRule',
-            'SpaceClassificationRule', 'SpaceAssignmentRule', 'ActivityAssignmentRule',
+            'SpaceClassificationRule', 'SpaceAssignmentRule',
             # 수량산출 및 원가
             'QuantityMember', 'CostItem',
-            # 공정 (CostItem 이후)
-            'Activity', 'WorkCalendar', 'ActivityDependency', 'ActivityObject'
+            # 공정 기본 데이터 (Activity, WorkCalendar 먼저)
+            'WorkCalendar', 'Activity',
+            # 공정 의존 데이터 (Activity 참조)
+            'ActivityDependency', 'ActivityObject', 'ActivityAssignmentRule'
         ]
 
         # 모델별 Foreign Key 필드 정의 (자동으로 새 PK로 매핑하기 위함)
@@ -4224,12 +4226,12 @@ def import_project(request):
             'CostCodeAssignmentRule': ['project'],
             'SpaceClassificationRule': ['project'],
             'SpaceAssignmentRule': ['project'],
-            'ActivityAssignmentRule': ['project'],  # 추가
+            'ActivityAssignmentRule': ['project', 'target_activity'],  # 수정: target_activity FK 추가
             'QuantityMember': ['project', 'raw_element', 'classification_tag', 'member_mark'],
             'CostItem': ['project', 'quantity_member', 'cost_code', 'unit_price_type'],
             'Activity': ['project', 'calendar'],  # 추가
             'WorkCalendar': ['project'],  # 추가
-            'ActivityDependency': ['project', 'activity', 'predecessor'],  # 추가
+            'ActivityDependency': ['project', 'predecessor_activity', 'successor_activity'],  # 수정: 필드명 정확히
             'ActivityObject': ['project', 'activity', 'cost_item'],  # 추가
         }
 
