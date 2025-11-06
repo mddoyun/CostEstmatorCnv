@@ -39,10 +39,11 @@ window.convertClientFieldToServerFormat = function convertClientFieldToServerFor
         return `quantity_member__raw_element__raw_data__TypeParameters__${paramName}`;
     }
 
-    // BIM.Attributes.* → quantity_member__raw_element__raw_data__*
+    // BIM.Attributes.* → quantity_member__raw_element__raw_data__Attributes__*
+    // raw_data에 "Attributes.XXX" 형식으로 저장되어 있음
     if (clientField.startsWith('BIM.Attributes.')) {
         const attrName = clientField.replace('BIM.Attributes.', '');
-        return `quantity_member__raw_element__raw_data__${attrName}`;
+        return `quantity_member__raw_element__raw_data__Attributes__${attrName}`;
     }
 
     // BIM.QuantitySet.* → quantity_member__raw_element__raw_data__QuantitySet__*
@@ -58,7 +59,9 @@ window.convertClientFieldToServerFormat = function convertClientFieldToServerFor
         if (!path.startsWith('System.') && !path.startsWith('Parameters.') &&
             !path.startsWith('TypeParameters.') && !path.startsWith('Attributes.') &&
             !path.startsWith('QuantitySet.')) {
-            return `quantity_member__raw_element__raw_data__${path}`;
+            // 점(.)을 언더스코어 2개로 변환 (계층 구조 유지)
+            const convertedPath = path.replace(/\./g, '__');
+            return `quantity_member__raw_element__raw_data__${convertedPath}`;
         }
     }
 
@@ -349,6 +352,14 @@ async function generateBoqReport(preserveColumnOrder = false) {
             `[DEBUG] ${loadedUnitPriceTypesForBoq.length}개의 단가 기준 목록 수신.`
         );
 
+        // [DEBUG] Log sample report data
+        if (data.report && data.report.length > 0) {
+            console.log('[DEBUG] Sample report item:', data.report[0]);
+            if (data.report[0].display_values) {
+                console.log('[DEBUG] Sample display_values keys:', Object.keys(data.report[0].display_values));
+            }
+        }
+
         if (!preserveColumnOrder) {
             updateDdBoqColumns();
         } else {
@@ -503,7 +514,7 @@ function setupBoqTableInteractions() {
                 if (itemIdsToUpdate.length === 0) return;
 
                 // ▼▼▼ [추가] "다양함" 선택 방지 (2025-11-06) ▼▼▼
-                if (newTypeId === "diverse") {
+                if (newTypeId === "various") {
                     showToast('"다양함"은 선택할 수 없습니다. 실제 단가기준을 선택해주세요.', "warning");
                     // Revert to previous value
                     const row = selectElement.closest("tr");
@@ -1092,6 +1103,20 @@ function updateBoqLeftPanelProperties(itemIds) {
     const fullBimObject = elementId && window.allRevitData ?
         window.allRevitData.find(item => item.id === elementId) : null;
 
+    // ▼▼▼ [디버깅] BIM 객체 구조 확인 ▼▼▼
+    console.log('[DEBUG][BOQ] fullBimObject:', fullBimObject);
+    if (fullBimObject && fullBimObject.raw_data) {
+        console.log('[DEBUG][BOQ] raw_data keys:', Object.keys(fullBimObject.raw_data));
+        console.log('[DEBUG][BOQ] raw_data sample:', {
+            Name: fullBimObject.raw_data.Name,
+            IfcClass: fullBimObject.raw_data.IfcClass,
+            Parameters: fullBimObject.raw_data.Parameters ? Object.keys(fullBimObject.raw_data.Parameters).slice(0, 5) : null,
+            TypeParameters: fullBimObject.raw_data.TypeParameters ? Object.keys(fullBimObject.raw_data.TypeParameters).slice(0, 5) : null,
+            QuantitySet: fullBimObject.raw_data.QuantitySet ? Object.keys(fullBimObject.raw_data.QuantitySet).slice(0, 5) : null
+        });
+    }
+    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
+
     if (fullBimObject && fullBimObject.raw_data) {
         // 7. BIM 시스템 속성
         html += '<div class="property-section">';
@@ -1110,14 +1135,25 @@ function updateBoqLeftPanelProperties(itemIds) {
         html += '</tbody></table>';
         html += '</div>';
 
-        // 8. BIM 기본 속성 - Show ALL top-level properties
+        // 8. BIM 기본 속성 (Attributes) - Show ALL top-level properties
         html += '<div class="property-section">';
-        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM 기본 속성 (상속 from BIM)</h4>';
+        html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM Attributes (상속 from BIM)</h4>';
         html += '<table class="properties-table"><tbody>';
 
         const rawData = fullBimObject.raw_data;
-        // Exclude nested objects like Parameters, TypeParameters, Geometry
-        const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials'];
+        // Exclude nested objects like Parameters, TypeParameters, Geometry, QuantitySet
+        const excludedKeys = ['Parameters', 'TypeParameters', 'Geometry', 'GeometryData', 'Materials', 'QuantitySet'];
+
+        // ▼▼▼ [디버깅] Attributes 섹션에 추가될 속성 확인 ▼▼▼
+        const attributeKeys = [];
+        for (const [attr, value] of Object.entries(rawData)) {
+            if (excludedKeys.includes(attr)) continue;
+            if (value === undefined || value === null || value === '') continue;
+            if (typeof value === 'object') continue;
+            attributeKeys.push(attr);
+        }
+        console.log('[DEBUG][BOQ] BIM.Attributes keys:', attributeKeys);
+        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
         for (const [attr, value] of Object.entries(rawData)) {
             // Skip excluded keys, null/undefined values, and nested objects/arrays
@@ -1125,8 +1161,14 @@ function updateBoqLeftPanelProperties(itemIds) {
             if (value === undefined || value === null || value === '') continue;
             if (typeof value === 'object') continue; // Skip nested objects/arrays
 
-            // Use BIM.Attributes.XXX format to match field selector naming
-            html += `<tr><td class="prop-name">BIM.Attributes.${attr}</td><td class="prop-value">${value}</td></tr>`;
+            // ▼▼▼ [수정] raw_data의 키가 이미 prefix를 포함하는 경우 처리 ▼▼▼
+            // 예: "Attributes.Name", "QuantitySet.XXX", "PropertySet.XXX" 등
+            // 이미 prefix가 있으면 BIM.만 붙이고, 없으면 BIM.Attributes.를 붙임
+            const propName = (attr.includes('.'))
+                ? `BIM.${attr}`  // 이미 prefix 있음: "Attributes.Name" → "BIM.Attributes.Name"
+                : `BIM.Attributes.${attr}`;  // prefix 없음: "Name" → "BIM.Attributes.Name"
+            html += `<tr><td class="prop-name">${propName}</td><td class="prop-value">${value}</td></tr>`;
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         }
 
         html += '</tbody></table>';
@@ -1184,6 +1226,33 @@ function updateBoqLeftPanelProperties(itemIds) {
             html += '</tbody></table>';
             html += '</div>';
         }
+
+        // ▼▼▼ [추가] 11. BIM QuantitySet - Use BIM.QuantitySet.XXX format ▼▼▼
+        if (rawData.QuantitySet && Object.keys(rawData.QuantitySet).length > 0) {
+            html += '<div class="property-section">';
+            html += '<h4 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 5px;">🏗️ BIM QuantitySet (상속 from BIM)</h4>';
+            html += '<table class="properties-table"><tbody>';
+
+            // Sort quantity set properties for better readability
+            const sortedQs = Object.entries(rawData.QuantitySet).sort((a, b) => a[0].localeCompare(b[0]));
+
+            for (const [key, value] of sortedQs) {
+                if (value === null || value === undefined || value === '') continue; // Skip empty values
+
+                // Skip complex nested objects (but allow simple values)
+                if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 5) {
+                    continue;
+                }
+
+                const displayValue = (typeof value === 'object')
+                    ? JSON.stringify(value).substring(0, 100)
+                    : String(value).substring(0, 200);
+                html += `<tr><td class="prop-name">BIM.QuantitySet.${key}</td><td class="prop-value">${displayValue}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            html += '</div>';
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     propertiesContainer.innerHTML = html;
@@ -1556,11 +1625,18 @@ function updateDdBoqColumns() {
 
     const selectedDisplayFields = Array.from(
         document.querySelectorAll(".boq-display-field-cb:checked")
-    ).map((cb) => ({
-        id: cb.value.replace(/__/g, "_"),
-        label: cb.parentElement.textContent.trim(),
-        isDynamic: true,
-    }));
+    ).map((cb) => {
+        const originalValue = cb.value;  // e.g., "BIM.QuantitySet.XXX"
+        // Convert to server format, then to frontend format to match display_values keys
+        const serverFormat = convertClientFieldToServerFormat(originalValue);  // e.g., "quantity_member__raw_element__raw_data__QuantitySet__XXX"
+        const frontendKey = serverFormat.replace(/__/g, "_");  // e.g., "quantity_member_raw_element_raw_data_QuantitySet_XXX"
+        console.log(`[DEBUG] updateDdBoqColumns: "${originalValue}" → server: "${serverFormat}" → frontend: "${frontendKey}"`);
+        return {
+            id: frontendKey,
+            label: cb.parentElement.textContent.trim(),
+            isDynamic: true,
+        };
+    });
 
     currentBoqColumns = [
         { id: "name", label: "구분", isDynamic: false, align: "left" },
@@ -2020,11 +2096,16 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
 
     const dynamicDisplayFields = Array.from(
         document.querySelectorAll(".boq-display-field-cb:checked")
-    ).map((cb) => ({
-        id: cb.value.replace(/__/g, "_"),
-        label: cb.parentElement.textContent.trim(),
-        isDynamic: true,
-    }));
+    ).map((cb) => {
+        const originalValue = cb.value;
+        const serverFormat = convertClientFieldToServerFormat(originalValue);
+        const frontendKey = serverFormat.replace(/__/g, "_");
+        return {
+            id: frontendKey,
+            label: cb.parentElement.textContent.trim(),
+            isDynamic: true,
+        };
+    });
 
     let finalColumns = [
         { id: "name", label: "구분", isDynamic: false, align: "left" },
@@ -2128,7 +2209,7 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
     // 그룹용 드롭다운 옵션 ("다양함" 포함)
     const unitPriceOptionsForGroup = [
         `<option value="">-- 미지정 --</option>`,
-        `<option value="diverse">다양함</option>`,
+        `<option value="various">다양함</option>`,
         ...unitPriceTypes.map(
             (type) => `<option value="${type.id}">${type.name}</option>`
         ),
@@ -2195,6 +2276,18 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                 } else {
                     cellContent = item[col.id];
                 }
+
+                // [DEBUG] Field value debugging for first few items
+                if (col.isDynamic && item.is_group !== 1) {
+                    console.log('[DEBUG] Dynamic field check:', {
+                        colId: col.id,
+                        colLabel: col.label,
+                        hasDisplayValues: !!item.display_values,
+                        displayValuesKeys: item.display_values ? Object.keys(item.display_values) : [],
+                        cellContent: cellContent,
+                        itemKeys: Object.keys(item)
+                    });
+                }
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
                 let cellStyle = `text-align: ${col.align || "left"};`;
 
@@ -2206,36 +2299,12 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                     cellContent = `<span style="padding-left: ${padding}px;">${toggleIcon}${cellContent}</span>`;
                 } else if (col.id === "unit_price_type_id") {
                     if (isGroup) {
-                        // ▼▼▼ [수정] item_ids로부터 실제 CostItem 데이터 조회하여 단가기준 확인 (2025-11-06) ▼▼▼
-                        // item_ids 배열에서 실제 loadedDdCostItems를 찾아서 unit_price_type_id 수집
-                        const childUnitPriceTypeIds = new Set();
+                        // ▼▼▼ [수정] 서버에서 계산된 unit_price_type_id 사용 (2025-11-06) ▼▼▼
+                        // 서버가 이미 'various', 단일 ID, 또는 null을 반환함
+                        let selectedValue = item.unit_price_type_id || "";
 
-                        // Parse item_ids from the row's data attribute
-                        const itemIdsList = JSON.parse(itemIds);
-
-                        itemIdsList.forEach(costItemId => {
-                            const costItem = loadedDdCostItems.find(ci => ci.id === costItemId);
-                            if (costItem) {
-                                const typeId = costItem.unit_price_type_id;
-                                // null/빈값은 "(미지정)"으로, 실제값은 그대로 추가
-                                childUnitPriceTypeIds.add(typeId || "(미지정)");
-                            }
-                        });
-
-                        // ▼▼▼ [디버깅] 단가기준 다양성 확인 (2025-11-06) ▼▼▼
-                        console.log(`[DEBUG][Unit Price] Group row has ${itemIdsList.length} items, ${childUnitPriceTypeIds.size} unique unit price types:`, Array.from(childUnitPriceTypeIds));
-                        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
-
-                        let selectedValue = "";
-                        // 서로 다른 값이 2개 이상이면 "다양함"
-                        if (childUnitPriceTypeIds.size > 1) {
-                            selectedValue = "diverse";
-                            console.log(`[DEBUG][Unit Price] Setting selectedValue to "diverse"`);
-                        } else if (childUnitPriceTypeIds.size === 1) {
-                            const singleValue = Array.from(childUnitPriceTypeIds)[0];
-                            selectedValue = (singleValue === "(미지정)") ? "" : singleValue;
-                            console.log(`[DEBUG][Unit Price] Setting selectedValue to "${selectedValue}" (single value: ${singleValue})`);
-                        }
+                        // [DEBUG] 단가기준 값 확인
+                        console.log(`[DEBUG][Unit Price] Group row unit_price_type_id: "${selectedValue}"`);
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
                         // ▼▼▼ [수정] 그룹도 드롭다운으로 표시하고 변경 가능하게 (2025-11-06) ▼▼▼

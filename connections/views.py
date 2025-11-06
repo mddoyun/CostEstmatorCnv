@@ -2844,11 +2844,20 @@ def generate_boq_report_api(request, project_id):
             if len(key_path) == 1:
                 return current
 
-            # Parameters, TypeParameters, QuantitySet은 flat한 dict 구조
-            if first_key in ('Parameters', 'TypeParameters', 'QuantitySet') and isinstance(current, dict):
+            # Attributes, QuantitySet는 raw_data에 "Prefix.Key" 형식으로 저장됨
+            # 예: "Attributes.IfcClass" → raw_data["Attributes.IfcClass"]
+            # 예: "QuantitySet.Qto_WallBaseQuantities__Length" → raw_data["QuantitySet.Qto_WallBaseQuantities__Length"]
+            if first_key in ('Attributes', 'QuantitySet') and len(key_path) > 1:
+                # "Prefix.Key" 형식으로 키 조회
+                # key_path[1:]을 '__'로 연결
+                suffix = '__'.join(key_path[1:])
+                full_key = f"{first_key}.{suffix}"
+                return raw_data_dict.get(full_key)
+
+            # Parameters, TypeParameters는 dict 구조
+            if first_key in ('Parameters', 'TypeParameters') and isinstance(current, dict):
                 # 나머지 경로를 '__'로 연결해서 키로 사용
                 # 예: ['Parameters', 'EPset_Parametric', 'Engine'] → 'EPset_Parametric__Engine'
-                # 예: ['QuantitySet', 'Qto_WallBaseQuantities', 'Length'] → 'Qto_WallBaseQuantities__Length'
                 flat_key = '__'.join(key_path[1:])
                 return current.get(flat_key)
 
@@ -3026,6 +3035,10 @@ def generate_boq_report_api(request, project_id):
                 else:
                     value_str = value if value is not None else ''
                 final_display_values[frontend_key] = '<다양함>' if value is VARIOUS_VALUES_SENTINEL else value_str
+
+                # [DEBUG] Log field conversion
+                if field.startswith('quantity_member__raw_element__raw_data'):
+                    print(f"[DEBUG] Field conversion: {field} -> {frontend_key}, value: {value}")
             
             child_list_item = {
                 'name': child_node['name'],
