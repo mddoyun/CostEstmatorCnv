@@ -95,25 +95,36 @@ function addWorkingDays(startDate, workingDays, calendar = null) {
         calendar = mainCalendar;
     }
 
-    // 캘린더가 없거나 작업일이 0이면 일반 날짜 추가
-    if (!calendar || workingDays === 0) {
+    // ▼▼▼ [수정] 캘린더가 없으면 일반 날짜 추가, 0일이면 시작일 반환 (2025-11-06) ▼▼▼
+    if (!calendar) {
         return addDays(startDate, workingDays);
     }
+
+    if (workingDays === 0) {
+        // 0일 추가 = 다음 작업일 찾기
+        let current = new Date(startDate);
+        current.setDate(current.getDate() + 1); // 다음 날부터 시작
+
+        while (!isWorkingDay(current, calendar)) {
+            current.setDate(current.getDate() + 1);
+        }
+
+        return current;
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     let current = new Date(startDate);
     let daysAdded = 0;
 
-    // 시작일이 작업일이면 카운트에 포함
-    if (isWorkingDay(current, calendar)) {
-        daysAdded = 1;
-    }
-
+    // ▼▼▼ [수정] 다음 날부터 작업일 카운트 시작 (2025-11-06) ▼▼▼
+    // 시작일 다음 날부터 작업일을 찾아서 추가
     while (daysAdded < workingDays) {
         current.setDate(current.getDate() + 1);
         if (isWorkingDay(current, calendar)) {
             daysAdded++;
         }
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     return current;
 }
@@ -248,18 +259,17 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
             const activity = activityMap.get(activityId);
             if (!activity) return;
 
+            // ▼▼▼ [수정] 올림 처리 제거 - 먼저 합산 후 나중에 올림 (2025-11-06) ▼▼▼
             // AO.actual_duration 사용 (없으면 자동 계산 값 사용)
-            const durationDays = Math.max(
-                1,
-                Math.ceil(parseFloat(ao.actual_duration) ||
-                    (parseFloat(activity.duration_per_unit || 0) * parseFloat(ao.quantity || 0)))
-            );
+            const durationDays = parseFloat(ao.actual_duration) ||
+                (parseFloat(activity.duration_per_unit || 0) * parseFloat(ao.quantity || 0));
 
-            // 같은 activityId의 duration을 누적
+            // 같은 activityId의 duration을 누적 (소수점 포함)
             if (!activityDurationMap.has(activityId)) {
                 activityDurationMap.set(activityId, 0);
             }
             activityDurationMap.set(activityId, activityDurationMap.get(activityId) + durationDays);
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
         });
     } else {
         // Fallback: ActivityObject가 없으면 기존 방식 (CostItem 기반) 사용
@@ -270,14 +280,16 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
                 const activity = activityMap.get(activityId);
                 if (!activity) return;
 
+                // ▼▼▼ [수정] 올림 처리 제거 - 먼저 합산 후 나중에 올림 (2025-11-06) ▼▼▼
                 // 실제 소요일수 계산: duration_per_unit * quantity
-                const durationDays = Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(item.quantity || 0)));
+                const durationDays = parseFloat(activity.duration_per_unit || 0) * parseFloat(item.quantity || 0);
 
-                // 같은 activityId의 duration을 누적
+                // 같은 activityId의 duration을 누적 (소수점 포함)
                 if (!activityDurationMap.has(activityId)) {
                     activityDurationMap.set(activityId, 0);
                 }
                 activityDurationMap.set(activityId, activityDurationMap.get(activityId) + durationDays);
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
             });
         });
     }
@@ -289,6 +301,11 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
         const activity = activityMap.get(activityId);
         if (!activity) return;
 
+        // ▼▼▼ [수정] 합산된 총 일수를 올림 처리 (2025-11-06) ▼▼▼
+        // 0.5일 + 0.5일 = 1.0일 → ceil(1.0) = 1일
+        const roundedDuration = Math.max(1, Math.ceil(totalDuration));
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
         // ▼▼▼ [수정] 액티비티별 캘린더 찾기 (없으면 메인 캘린더 사용) ▼▼▼
         let taskCalendar = mainCalendar;
         if (activity.work_calendar) {
@@ -297,7 +314,7 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
 
         // 기본 start/end 설정 (나중에 calculateTaskDates에서 재계산)
         const defaultStart = new Date(projectStartDate);
-        const defaultEnd = addWorkingDays(defaultStart, totalDuration, taskCalendar);
+        const defaultEnd = addWorkingDays(defaultStart, roundedDuration, taskCalendar);
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         tasks.push({
@@ -307,7 +324,7 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
             end: formatDateForGantt(defaultEnd),
             activityId: activityId,
             activity: activity,
-            durationDays: totalDuration, // 합산된 총 duration
+            durationDays: roundedDuration, // ▼▼▼ [수정] 올림 처리된 일수 사용 ▼▼▼
             progress: 0,
             custom_class: `activity-${activity.code}`,
             calendar: taskCalendar, // ▼▼▼ [추가] 캘린더 정보 ▼▼▼
@@ -329,6 +346,20 @@ function generateGanttData(costItems, activities, dependencies, activityObjects)
 function calculateTaskDates(tasks, dependencies, activityMap) {
     if (!tasks || tasks.length === 0) return;
     if (!dependencies || dependencies.length === 0) return;
+
+    // ▼▼▼ [디버깅] 의존성 데이터 출력 (2025-11-06) ▼▼▼
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[DEBUG] calculateTaskDates 시작');
+    console.log('[DEBUG] 총 태스크 수:', tasks.length);
+    console.log('[DEBUG] 총 의존성 수:', dependencies.length);
+    console.log('[DEBUG] 의존성 데이터:', dependencies.map(dep => ({
+        선행: activityMap.get(dep.predecessor_activity)?.code || dep.predecessor_activity,
+        후행: activityMap.get(dep.successor_activity)?.code || dep.successor_activity,
+        lag: dep.lag_days,
+        type: dep.dependency_type
+    })));
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
     try {
         // Activity ID별로 태스크를 그룹화
@@ -380,10 +411,24 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
                     const predCalendar = predTask.calendar || mainCalendar;
                     const predEndDate = addWorkingDays(predStartDate, predDuration, predCalendar);
 
-                    // Lag 적용 (작업일 기준)
-                    const lagDays = parseFloat(dep.lag_days || 0);
+                    // ▼▼▼ [수정] Lag 적용 (작업일 기준, 올림 처리) (2025-11-06) ▼▼▼
+                    const lagDaysRaw = parseFloat(dep.lag_days || 0);
+                    const lagDays = lagDaysRaw >= 0 ? Math.ceil(lagDaysRaw) : Math.floor(lagDaysRaw);
                     const adjustedDate = addWorkingDays(predEndDate, lagDays, predCalendar);
                     // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                    // ▼▼▼ [디버깅] 선행 작업 계산 상세 정보 (2025-11-06) ▼▼▼
+                    console.log(`[DEBUG] 의존성 계산:`, {
+                        선행작업: predTask.activity?.code || predTask.name,
+                        선행시작일: predStartDate.toISOString().split('T')[0],
+                        선행일수: predDuration,
+                        선행종료일: predEndDate.toISOString().split('T')[0],
+                        Lag원본: lagDaysRaw,
+                        Lag올림: lagDays,
+                        후행시작일: adjustedDate.toISOString().split('T')[0],
+                        캘린더: predCalendar?.name || '메인'
+                    });
+                    // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
                     if (adjustedDate > maxEndDate) {
                         maxEndDate = adjustedDate;
@@ -413,6 +458,17 @@ function calculateTaskDates(tasks, dependencies, activityMap) {
                 const taskCalendar = task.calendar || mainCalendar;
                 const endDate = addWorkingDays(startDate, task.durationDays, taskCalendar);
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+                // ▼▼▼ [디버깅] 최종 날짜 설정 정보 (2025-11-06) ▼▼▼
+                console.log(`[DEBUG] 최종 날짜 설정:`, {
+                    액티비티: task.activity?.code || task.name,
+                    시작일: startDate.toISOString().split('T')[0],
+                    일수: task.durationDays,
+                    종료일: endDate.toISOString().split('T')[0],
+                    수동시작일: task.activity?.manual_start_date || '없음',
+                    캘린더: taskCalendar?.name || '메인'
+                });
+                // ▲▲▲ [디버깅] 여기까지 ▲▲▲
 
                 task.start = formatDateForGantt(startDate);
                 task.end = formatDateForGantt(endDate);
@@ -688,8 +744,11 @@ function renderGanttChart(tasks, containerId = 'gantt-chart-container') {
         validTasks.forEach((task, index) => {
             const startDate = new Date(task.start);
             const endDate = new Date(task.end);
-            const taskStartDay = Math.ceil((startDate - minDate) / (1000 * 60 * 60 * 24));
-            const taskEndDay = Math.ceil((endDate - minDate) / (1000 * 60 * 60 * 24));
+            // ▼▼▼ [수정] 간트차트 셀 범위 계산 시 올림 대신 정확한 계산 (2025-11-06) ▼▼▼
+            // 시작일은 내림(floor), 종료일은 올림(ceil)하여 전체 범위 포함
+            const taskStartDay = Math.floor((startDate - minDate) / (1000 * 60 * 60 * 24));
+            const taskEndDay = taskStartDay + task.durationDays; // 시작일 + 일수 = 종료일
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             const activity = task.activity || {};
             const bgColor = index % 2 === 0 ? '#ffffff' : '#f9f9f9';
@@ -1087,7 +1146,9 @@ function renderTaskDetail(taskId) {
         const isSelected = ao.id === selectedActivityObjectId;
         const bgColor = isSelected ? '#f3e5f5' : (index % 2 === 0 ? '#ffffff' : '#f9f9f9');
         const borderColor = isSelected ? '#6a1b9a' : '#e0e0e0';
-        const durationDays = ao.actual_duration || Math.max(1, Math.ceil(parseFloat(activity.duration_per_unit || 0) * parseFloat(ao.quantity || 0)));
+        // ▼▼▼ [수정] 개별 AO의 일수는 올림하지 않고 표시 (2025-11-06) ▼▼▼
+        const durationDays = (ao.actual_duration || (parseFloat(activity.duration_per_unit || 0) * parseFloat(ao.quantity || 0))).toFixed(2);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         html += `
             <div class="activity-object-card" data-ao-id="${ao.id}"
