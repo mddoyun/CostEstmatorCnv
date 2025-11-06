@@ -4298,11 +4298,19 @@ def import_project(request):
                         elif fk_field == 'unit_price_type' and model_name == 'CostItem' and not new_fk_obj:
                             print(f"[INFO][import_project]     - CostItem(old_pk={old_pk_str})의 unit_price_type(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
                             fields[fk_field] = None
+                        elif model_name == 'CostItem' and fk_field in ['quantity_member', 'cost_code'] and not new_fk_obj:
+                            # CostItem의 nullable FK 처리 (quantity_member는 nullable, cost_code는 필수이지만 복원 실패 시 null 허용)
+                            print(f"[INFO][import_project]     - CostItem(old_pk={old_pk_str})의 '{fk_field}'(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
+                            fields[fk_field] = None
                         elif model_name == 'QuantityMember' and fk_field in ['raw_element', 'classification_tag', 'member_mark'] and not new_fk_obj:
                              print(f"[INFO][import_project]     - QuantityMember(old_pk={old_pk_str})의 '{fk_field}'(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
                              fields[fk_field] = None
+                        elif model_name == 'ActivityObject' and fk_field in ['activity', 'cost_item'] and not new_fk_obj:
+                            # ActivityObject의 nullable FK 처리
+                            print(f"[INFO][import_project]     - ActivityObject(old_pk={old_pk_str})의 '{fk_field}'(old_pk={old_fk_value_str})를 찾을 수 없어 null 처리.")
+                            fields[fk_field] = None
                         elif not new_fk_obj: # 다른 필수 ForeignKey 를 못 찾으면 오류 처리
-                            print(f"[ERROR][import_project]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): 필수 ForeignKey '{fk_field}'(old_pk={old_fk_value_str})의 새 객체를 찾을 수 없어 건너<0xEB><0x9B><0x81>니다.")
+                            print(f"[ERROR][import_project]     - 항목 {idx+1}/{total_count} (old_pk={old_pk_str}): 필수 ForeignKey '{fk_field}'(old_pk={old_fk_value_str})의 새 객체를 찾을 수 없어 건너뛰니다.")
                             skip_creation = True
                             skipped_count += 1
                             break
