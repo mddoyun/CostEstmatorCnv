@@ -2107,12 +2107,23 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
         finalColumns = reordered;
     }
 
+    // ▼▼▼ [수정] 개별 항목용 드롭다운 옵션 (2025-11-06) ▼▼▼
     const unitPriceOptions = [
         `<option value="">-- 미지정 --</option>`,
         ...unitPriceTypes.map(
             (type) => `<option value="${type.id}">${type.name}</option>`
         ),
     ].join("");
+
+    // 그룹용 드롭다운 옵션 ("다양함" 포함)
+    const unitPriceOptionsForGroup = [
+        `<option value="">-- 미지정 --</option>`,
+        `<option value="diverse">다양함</option>`,
+        ...unitPriceTypes.map(
+            (type) => `<option value="${type.id}">${type.name}</option>`
+        ),
+    ].join("");
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     let tableHtml = `<table class="boq-table"><thead><tr>`;
     finalColumns.forEach((col) => {
@@ -2202,7 +2213,7 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                     cellContent = `<span style="padding-left: ${padding}px;">${toggleIcon}${cellContent}</span>`;
                 } else if (col.id === "unit_price_type_id") {
                     if (isGroup) {
-                        // ▼▼▼ [수정] 단가기준 "다양함" 로직 개선 (2025-11-06) ▼▼▼
+                        // ▼▼▼ [수정] 단가기준 "다양함" 드롭다운 표시 (2025-11-06) ▼▼▼
                         // 모든 고유한 단가기준 값을 수집 (null/"미지정"도 하나의 값으로 취급)
                         const childUnitPriceTypeIds = new Set();
 
@@ -2221,20 +2232,24 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
                         };
                         collectChildUnitPriceTypeIds(item.children || []);
 
+                        let selectedValue = "";
                         // 서로 다른 값이 2개 이상이면 "다양함"
                         if (childUnitPriceTypeIds.size > 1) {
-                            cellContent = "다양함";
+                            selectedValue = "diverse";
                         } else if (childUnitPriceTypeIds.size === 1) {
                             const singleValue = Array.from(childUnitPriceTypeIds)[0];
-                            if (singleValue === "(미지정)") {
-                                cellContent = "(미지정)";
-                            } else {
-                                const unitPriceType = unitPriceTypes.find(t => t.id === singleValue);
-                                cellContent = unitPriceType ? unitPriceType.name : "(미지정)";
-                            }
-                        } else {
-                            cellContent = "-";
+                            selectedValue = (singleValue === "(미지정)") ? "" : singleValue;
                         }
+
+                        // 그룹도 드롭다운으로 표시 (편집 불가능하게 disabled 처리)
+                        cellContent = `
+                            <select class="unit-price-type-select" data-item-ids='${itemIds}' disabled>
+                                ${unitPriceOptionsForGroup.replace(
+                                    `value="${selectedValue}"`,
+                                    `value="${selectedValue}" selected`
+                                )}
+                            </select>
+                        `;
                         // ▲▲▲ [수정] 여기까지 ▲▲▲
                     } else {
                         // 개별 항목: 드롭다운 표시

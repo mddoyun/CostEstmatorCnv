@@ -2820,10 +2820,11 @@ def generate_boq_report_api(request, project_id):
             if len(key_path) == 1:
                 return current
 
-            # Parameters나 TypeParameters는 flat한 dict 구조
-            if first_key in ('Parameters', 'TypeParameters') and isinstance(current, dict):
+            # Parameters, TypeParameters, QuantitySet은 flat한 dict 구조
+            if first_key in ('Parameters', 'TypeParameters', 'QuantitySet') and isinstance(current, dict):
                 # 나머지 경로를 '__'로 연결해서 키로 사용
                 # 예: ['Parameters', 'EPset_Parametric', 'Engine'] → 'EPset_Parametric__Engine'
+                # 예: ['QuantitySet', 'Qto_WallBaseQuantities', 'Length'] → 'Qto_WallBaseQuantities__Length'
                 flat_key = '__'.join(key_path[1:])
                 return current.get(flat_key)
 
