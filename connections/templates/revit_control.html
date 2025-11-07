@@ -2203,6 +2203,12 @@
                         >
                             🎓 모델 학습
                         </button>
+                        <button
+                            class="inner-tab-button"
+                            data-inner-tab="llm-finetuning"
+                        >
+                            🧠 LLM 파인튜닝
+                        </button>
                     </nav>
 
                     <div class="inner-tab-content-container">
@@ -2623,6 +2629,117 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- ▼▼▼ [NEW] LLM 파인튜닝 탭 ▼▼▼ -->
+                        <div id="llm-finetuning" class="inner-tab-content">
+                            <div class="llm-finetuning-section panel-box">
+                                <div class="panel-header">
+                                    <h3>🧠 Ollama LLM 파인튜닝</h3>
+                                    <p style="font-size: 12px; color: #666; margin: 5px 0 0 0;">
+                                        피드백 데이터를 사용하여 Ollama 모델을 파인튜닝합니다.
+                                    </p>
+                                </div>
+                                <div class="panel-content" style="display: flex; flex-direction: column; gap: 20px;">
+
+                                    <!-- Step 1: 피드백 데이터 확인 -->
+                                    <div class="finetuning-step">
+                                        <h4>1단계: 학습 데이터 확인</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                            <button id="load-feedback-data-btn" class="primary-button">
+                                                📊 피드백 데이터 불러오기
+                                            </button>
+                                            <span id="feedback-count-label" style="padding: 8px; color: #666;"></span>
+                                        </div>
+                                        <div id="feedback-data-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
+                                            <p style="color: #999;">프로젝트를 선택하고 "피드백 데이터 불러오기" 버튼을 클릭하세요.</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step 2: Modelfile 생성 -->
+                                    <div class="finetuning-step">
+                                        <h4>2단계: Modelfile 생성</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                                            <label style="font-weight: bold;">베이스 모델:</label>
+                                            <select id="base-model-select" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                                <option value="llama3.2:3b">llama3.2:3b (3B 파라미터, 빠름)</option>
+                                                <option value="llama3.2:1b">llama3.2:1b (1B 파라미터, 매우 빠름)</option>
+                                                <option value="llama3.1:8b">llama3.1:8b (8B 파라미터, 고성능)</option>
+                                                <option value="qwen2.5:3b">qwen2.5:3b (3B 파라미터, 다국어)</option>
+                                            </select>
+                                            <label style="font-weight: bold;">새 모델 이름:</label>
+                                            <input type="text" id="new-model-name-input" placeholder="예: bim-selector-ft" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                                            <button id="generate-modelfile-btn" class="secondary-button">
+                                                📝 Modelfile 생성
+                                            </button>
+                                        </div>
+                                        <div style="margin-bottom: 10px;">
+                                            <label style="font-weight: bold; display: block; margin-bottom: 5px;">시스템 프롬프트 (선택사항):</label>
+                                            <textarea id="system-prompt-input" rows="3" placeholder="모델의 역할과 행동을 정의하는 시스템 프롬프트를 입력하세요..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 12px;"></textarea>
+                                        </div>
+                                        <div>
+                                            <label style="font-weight: bold; display: block; margin-bottom: 5px;">Modelfile 미리보기:</label>
+                                            <textarea id="modelfile-preview" rows="15" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; font-family: monospace; font-size: 12px; color: #333;"></textarea>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step 3: 파인튜닝 실행 -->
+                                    <div class="finetuning-step">
+                                        <h4>3단계: 파인튜닝 실행</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                            <button id="start-finetuning-btn" class="primary-button" disabled>
+                                                🚀 파인튜닝 시작
+                                            </button>
+                                            <button id="cancel-finetuning-btn" class="secondary-button" style="display: none;">
+                                                ⏹️ 중단
+                                            </button>
+                                        </div>
+                                        <div id="finetuning-progress-container" style="display: none; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+                                            <div style="margin-bottom: 10px;">
+                                                <strong>진행 상황:</strong>
+                                                <div style="margin-top: 5px; background: #e0e0e0; height: 20px; border-radius: 10px; overflow: hidden;">
+                                                    <div id="finetuning-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); transition: width 0.3s;"></div>
+                                                </div>
+                                                <span id="finetuning-progress-text" style="font-size: 12px; color: #666;">준비 중...</span>
+                                            </div>
+                                            <div>
+                                                <strong>로그:</strong>
+                                                <div id="finetuning-log" style="max-height: 200px; overflow-y: auto; background: #2e2e2e; color: #0f0; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; margin-top: 5px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div id="finetuning-result-container" style="display: none; padding: 15px; border: 1px solid #4caf50; border-radius: 4px; background: #e8f5e9; margin-top: 10px;">
+                                            <h5 style="margin: 0 0 10px 0; color: #2e7d32;">✅ 파인튜닝 완료!</h5>
+                                            <p style="margin: 5px 0;"><strong>새 모델 이름:</strong> <span id="result-model-name"></span></p>
+                                            <p style="margin: 5px 0; font-size: 12px; color: #666;">Ollama에서 사용 가능합니다. 채팅 시스템에서 이 모델을 선택하여 사용하세요.</p>
+                                            <div style="margin-top: 10px;">
+                                                <button id="test-finetuned-model-btn" class="primary-button">
+                                                    🧪 테스트해보기
+                                                </button>
+                                                <button id="set-as-default-btn" class="secondary-button">
+                                                    ⭐ 기본 모델로 설정
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step 4: 모델 관리 -->
+                                    <div class="finetuning-step">
+                                        <h4>4단계: 파인튜닝된 모델 관리</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                            <button id="list-finetuned-models-btn" class="secondary-button">
+                                                📋 모델 목록 조회
+                                            </button>
+                                        </div>
+                                        <div id="finetuned-models-container" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
+                                            <p style="color: #999;">"모델 목록 조회" 버튼을 클릭하여 Ollama에 등록된 모델을 확인하세요.</p>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ▲▲▲ [NEW] LLM 파인튜닝 탭 ▲▲▲ -->
+
                     </div>
                 </div>
                 <!-- ▼▼▼ [추가] 액티비티 관리 탭 ▼▼▼ -->
@@ -3056,6 +3173,7 @@
         <script src="{% static 'connections/three_d_viewer.js' %}?v=50"></script>
         <script src="{% static 'connections/navigation.js' %}?v=3"></script>
         <script src="{% static 'connections/ai_model_management.js' %}?v=2"></script>
+        <script src="{% static 'connections/llm_finetuning_handler.js' %}"></script>
         <script src="{% static 'connections/unit_price_management.js' %}"></script>
         <script src="{% static 'connections/schematic_estimation_handlers.js' %}"></script>
         <script src="{% static 'connections/websocket.js' %}"></script>
@@ -3091,7 +3209,7 @@
             const chatHeader = document.createElement('div');
             chatHeader.className = 'chat-header';
             chatHeader.style.cssText = 'padding: 12px 15px; background: #1976d2; color: white; font-weight: bold; border-bottom: 1px solid #1565c0; display: flex; align-items: center; justify-content: space-between;';
-            chatHeader.innerHTML = '<span>💬 AI Assistant</span><button id="chat-toggle-btn" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; transition: all 0.3s;">◀</button>';
+            chatHeader.innerHTML = '<span>💬 AI Assistant</span><div style="display: flex; gap: 8px;"><button id="rebuild-embeddings-btn" title="임베딩 재구축 (학습된 객체 업데이트)" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; transition: all 0.3s;">🧠</button><button id="chat-refresh-btn" title="AI 어시스턴트 리프레시" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; transition: all 0.3s;">🔄</button><button id="chat-toggle-btn" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 18px; transition: all 0.3s;">◀</button></div>';
 
             // Chat messages area
             const chatMessages = document.createElement('div');
@@ -3470,9 +3588,15 @@
         })();
         </script>
 
-        <!-- ▼▼▼ [NEW] Chat Command Handler Script ▼▼▼ -->
+        <!-- ▼▼▼ AI Query System Scripts ▼▼▼ -->
+        <script src="{% static 'connections/ai_index_builder.js' %}"></script>
+        <script src="{% static 'connections/ai_query_processor.js' %}"></script>
+        <script src="{% static 'connections/ai_select_handler.js' %}"></script>
+        <!-- ▼▼▼ NEW: AI v2 Learning-based System ▼▼▼ -->
+        <script src="{% static 'connections/ai_handler_v2.js' %}"></script>
+        <!-- ▲▲▲ NEW: AI v2 Learning-based System ▲▲▲ -->
         <script src="{% static 'connections/chat_command_handler.js' %}"></script>
-        <!-- ▲▲▲ [NEW] Chat Command Handler Script ▲▲▲ -->
+        <!-- ▲▲▲ AI Query System Scripts ▲▲▲ -->
 
         <script src="{% static 'connections/app_core.js' %}?v=2"></script>
         <script src="{% static 'connections/boq_detailed_estimation_handlers.js' %}"></script>

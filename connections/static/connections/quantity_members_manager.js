@@ -148,6 +148,10 @@ async function loadQuantityMembers() {
         renderActiveQmView();
 
         populateQmFieldSelection(loadedQuantityMembers);
+
+        // ▼▼▼ AI 인덱스 재빌드를 위한 이벤트 발생 ▼▼▼
+        window.dispatchEvent(new Event('quantity-members-loaded'));
+        console.log('[QM Manager] Dispatched quantity-members-loaded event for AI indexing');
     } catch (error) {
         console.error('Error loading quantity members:', error);
         showToast(error.message, 'error');

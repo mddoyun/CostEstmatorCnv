@@ -179,4 +179,33 @@ urlpatterns = [
     # ▼▼▼ [NEW] Home Dashboard API ▼▼▼
     path('api/dashboard/<uuid:project_id>/', views.home_dashboard_api, name='home_dashboard_api'),
     # ▲▲▲ [NEW] Home Dashboard API End ▲▲▲
+
+    # ▼▼▼ [NEW] AI Feedback API ▼▼▼
+    path('api/ai-feedback/save/', views.save_ai_feedback, name='save_ai_feedback'),
+    path('api/ai-feedback/<uuid:project_id>/', views.get_ai_feedbacks, name='get_ai_feedbacks'),
+    path('api/ai-feedback/few-shot/<uuid:project_id>/', views.get_ai_few_shot_examples, name='get_ai_few_shot_examples'),
+    # ▲▲▲ [NEW] AI Feedback API End ▲▲▲
+
+    # ▼▼▼ [NEW] AI Learning Rules API ▼▼▼
+    path('api/ai-rules/generate/<uuid:feedback_id>/', views.auto_generate_rule_from_feedback, name='auto_generate_rule'),
+    path('api/ai-rules/<uuid:project_id>/', views.get_ai_selection_rules, name='get_ai_selection_rules'),
+    # ▲▲▲ [NEW] AI Learning Rules API End ▲▲▲
+
+    # ▼▼▼ [NEW] AI Embedding System API ▼▼▼
+    path('api/ai-embeddings/rebuild/<uuid:project_id>/', views.rebuild_project_embeddings, name='rebuild_project_embeddings'),
+    path('api/ai-embeddings/search/<uuid:project_id>/', views.search_by_semantic_similarity, name='search_by_semantic_similarity'),
+    # ▲▲▲ [NEW] AI Embedding System API End ▲▲▲
+
+    # ▼▼▼ [NEW] Ollama LLM Fine-tuning API ▼▼▼
+    path('api/ai-feedback/list/<uuid:project_id>/', views.list_ai_feedback, name='list_ai_feedback'),
+    path('api/ollama-finetuning/create/', views.create_ollama_model, name='create_ollama_model'),
+    path('api/ollama-finetuning/list/', views.list_ollama_models, name='list_ollama_models'),
+    path('api/ollama-finetuning/delete/', views.delete_ollama_model, name='delete_ollama_model'),
+    # ▲▲▲ [NEW] Ollama LLM Fine-tuning API End ▲▲▲
+
+    # ▼▼▼ [NEW] v2 학습 기반 AI 시스템 API ▼▼▼
+    path('api/v2/ai/predict-function/', views.ai_predict_function_v2, name='ai_predict_function_v2'),
+    path('api/v2/ai/predict-objects/', views.ai_predict_objects_v2, name='ai_predict_objects_v2'),
+    path('api/v2/ai/save-feedback/', views.ai_save_feedback_v2, name='ai_save_feedback_v2'),
+    # ▲▲▲ [NEW] v2 학습 기반 AI 시스템 API End ▲▲▲
 ]

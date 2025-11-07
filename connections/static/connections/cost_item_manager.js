@@ -157,6 +157,10 @@ async function loadCostItems() {
         renderCostItemsTable(window.loadedCostItems);
 
         populateCiFieldSelection(window.loadedCostItems);
+
+        // ▼▼▼ AI 인덱스 재빌드를 위한 이벤트 발생 ▼▼▼
+        window.dispatchEvent(new Event('cost-items-loaded'));
+        console.log('[Cost Item Manager] Dispatched cost-items-loaded event for AI indexing');
     } catch (error) {
         console.error('Error loading cost items:', error);
         showToast(error.message, 'error');

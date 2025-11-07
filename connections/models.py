@@ -1260,3 +1260,338 @@ def invalidate_splits_on_bim_change(sender, instance, **kwargs):
         except RawElement.DoesNotExist:
             # 객체가 존재하지 않으면 무시 (새로 생성되는 경우)
             pass
+
+
+# -----------------------------------------------------------------------------
+# AI 학습 데이터
+# -----------------------------------------------------------------------------
+class AISelectionFeedback(models.Model):
+    """AI 객체 선택 결과에 대한 사용자 피드백 저장"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_feedbacks')
+
+    # 쿼리 정보
+    query = models.CharField(max_length=500)  # 사용자 질문
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    # AI 선택 결과
+    ai_selected_ids = models.JSONField(default=list)  # AI가 선택한 RawElement ID 리스트
+    ai_confidence = models.FloatField(default=0.0)  # AI 확신도
+
+    # 사용자 정답
+    user_corrected_ids = models.JSONField(default=list)  # 사용자가 선택한 정답 ID 리스트
+    was_correct = models.BooleanField(default=False)  # AI가 정확했는지 여부
+
+    # 차이 분석
+    false_positives = models.JSONField(default=list)  # AI가 잘못 선택한 ID들
+    false_negatives = models.JSONField(default=list)  # AI가 누락한 ID들
+
+    # 메타데이터
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']  # 최신순
+        indexes = [
+            models.Index(fields=['project', '-created_at']),
+            models.Index(fields=['was_correct']),
+        ]
+
+    def __str__(self):
+        return f"{self.query} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
+
+
+class AISelectionRule(models.Model):
+    """
+    AI 객체 선택 학습 룰셋
+    사용자 피드백을 분석하여 자동 생성되는 패턴 기반 규칙
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_selection_rules')
+
+    # 룰 식별
+    name = models.CharField(max_length=200)  # 예: "개구부_선택_룰"
+    query_pattern = models.CharField(max_length=200)  # 쿼리 패턴 (예: "개구부")
+
+    # 학습된 속성 패턴
+    category_patterns = models.JSONField(default=list)  # ["Windows", "Doors"]
+    family_patterns = models.JSONField(default=list)  # ["M_Fixed", "Single-Flush"]
+    type_patterns = models.JSONField(default=list)  # 특정 Type 패턴
+    parameter_patterns = models.JSONField(default=dict)  # {"Mark": ["D-1", "W-1"], ...}
+    keyword_patterns = models.JSONField(default=list)  # ["개구부", "문", "창호"]
+
+    # 신뢰도 및 통계
+    confidence = models.FloatField(default=0.0)  # 0.0 ~ 1.0
+    success_count = models.IntegerField(default=0)  # 성공 횟수
+    total_usage = models.IntegerField(default=0)  # 총 사용 횟수
+
+    # 우선순위
+    priority = models.IntegerField(default=0)  # 높을수록 우선 적용
+
+    # 메타데이터
+    is_active = models.BooleanField(default=True)
+    created_from_feedback = models.ForeignKey(
+        AISelectionFeedback,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='generated_rules'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-priority', '-confidence', '-created_at']
+        indexes = [
+            models.Index(fields=['project', 'query_pattern']),
+            models.Index(fields=['is_active', '-priority']),
+        ]
+        unique_together = [['project', 'name']]
+
+    def __str__(self):
+        return f"{self.name} (신뢰도: {self.confidence:.2f}, 사용: {self.success_count}/{self.total_usage})"
+
+    def update_confidence(self):
+        """사용 통계 기반으로 신뢰도 재계산"""
+        if self.total_usage > 0:
+            self.confidence = self.success_count / self.total_usage
+        else:
+            self.confidence = 0.0
+
+
+class ObjectEmbedding(models.Model):
+    """
+    객체 임베딩 벡터 저장
+    - Ollama 임베딩 API로 생성된 벡터
+    - 빠른 유사도 검색을 위한 캐시
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='object_embeddings')
+    raw_element = models.ForeignKey(RawElement, on_delete=models.CASCADE, related_name='embeddings')
+
+    # 임베딩할 텍스트 (캐시용)
+    text_representation = models.TextField()  # "Name: 건축_마감_외부벽마감 Category: Walls ..."
+
+    # 임베딩 벡터 (JSON 배열로 저장)
+    embedding_vector = models.JSONField()  # [0.123, -0.456, ...]
+
+    # 벡터 차원 (nomic-embed-text는 768차원)
+    vector_dimension = models.IntegerField(default=768)
+
+    # 임베딩 모델 정보
+    model_name = models.CharField(max_length=100, default='nomic-embed-text')
+
+    # 메타데이터
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['project', 'raw_element']),
+        ]
+        unique_together = [['raw_element', 'model_name']]  # 요소당 모델당 하나의 임베딩
+
+    def __str__(self):
+        return f"Embedding for {self.raw_element.id} (dim: {self.vector_dimension})"
+
+
+class QueryEmbedding(models.Model):
+    """
+    사용자 쿼리 임베딩 저장 (캐시)
+    - 같은 쿼리 반복 시 재계산 방지
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='query_embeddings')
+
+    # 쿼리 텍스트
+    query_text = models.CharField(max_length=500)
+
+    # 임베딩 벡터
+    embedding_vector = models.JSONField()
+
+    # 벡터 차원
+    vector_dimension = models.IntegerField(default=768)
+
+    # 임베딩 모델 정보
+    model_name = models.CharField(max_length=100, default='nomic-embed-text')
+
+    # 메타데이터
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['project', 'query_text']),
+        ]
+        unique_together = [['project', 'query_text', 'model_name']]
+
+    def __str__(self):
+        return f"Query: {self.query_text[:50]}"
+
+
+# -----------------------------------------------------------------------------
+# AI 학습 기반 시스템 모델 (2025-11-07)
+# -----------------------------------------------------------------------------
+
+class AITrainingData(models.Model):
+    """
+    AI 학습 데이터 수집
+    - 사용자 프롬프트와 정답 객체 ID 매핑
+    - 피드백 기반 학습 데이터 축적
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_training_data')
+
+    # 사용자 입력
+    prompt = models.TextField(help_text="사용자가 입력한 프롬프트")
+
+    # 함수 선택
+    function_name = models.CharField(max_length=100, help_text="예측된 함수 이름 (select_objects, calculate_quantity 등)")
+
+    # 객체 선택 결과
+    ai_selected_ids = models.JSONField(default=list, help_text="AI가 선택한 객체 ID 리스트")
+    correct_ids = models.JSONField(default=list, help_text="사용자가 수정한 정답 객체 ID 리스트")
+
+    # 오류 분석
+    false_positive_ids = models.JSONField(default=list, help_text="AI가 잘못 선택한 객체 ID")
+    false_negative_ids = models.JSONField(default=list, help_text="AI가 놓친 객체 ID")
+
+    # 객체 피처 저장 (학습용)
+    object_features = models.JSONField(default=dict, help_text="각 객체의 features (name, description, classification 등)")
+
+    # 메타데이터
+    was_correct = models.BooleanField(default=False, help_text="AI 예측이 정확했는지 여부")
+    confidence = models.FloatField(default=0.0, help_text="AI 예측 신뢰도 (0.0~1.0)")
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    # 학습 사용 여부
+    used_for_training = models.BooleanField(default=False, help_text="Fine-tuning에 사용되었는지")
+    training_version = models.IntegerField(default=0, help_text="어떤 모델 버전 학습에 사용되었는지")
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['project', 'function_name']),
+            models.Index(fields=['project', 'was_correct']),
+            models.Index(fields=['used_for_training']),
+        ]
+
+    def __str__(self):
+        status = "✓" if self.was_correct else "✗"
+        return f"{status} [{self.function_name}] {self.prompt[:50]}"
+
+
+class AIFunctionModel(models.Model):
+    """
+    함수 선택 모델 버전 관리
+    - 프롬프트 → 함수 이름 예측 모델
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_function_models')
+
+    # 모델 정보
+    version = models.IntegerField(help_text="모델 버전 번호")
+    model_type = models.CharField(max_length=50, default='function_classifier', help_text="모델 타입")
+
+    # 학습 정보
+    trained_at = models.DateTimeField(auto_now_add=True)
+    training_data_count = models.IntegerField(help_text="학습에 사용된 데이터 개수")
+
+    # 성능 지표
+    accuracy = models.FloatField(default=0.0, help_text="검증 정확도")
+    precision = models.FloatField(default=0.0, help_text="정밀도")
+    recall = models.FloatField(default=0.0, help_text="재현율")
+
+    # 모델 파일 (pickle 또는 JSON)
+    model_data = models.BinaryField(null=True, blank=True, help_text="직렬화된 모델 데이터")
+    model_config = models.JSONField(default=dict, help_text="모델 설정 (하이퍼파라미터 등)")
+
+    # 활성화 상태
+    is_active = models.BooleanField(default=False, help_text="현재 사용 중인 모델")
+
+    class Meta:
+        ordering = ['-version']
+        unique_together = [['project', 'version']]
+
+    def __str__(self):
+        status = "🟢 Active" if self.is_active else "⚪ Inactive"
+        return f"{status} v{self.version} (Acc: {self.accuracy:.1%})"
+
+
+class AIObjectRetrievalModel(models.Model):
+    """
+    객체 선택 모델 버전 관리
+    - 프롬프트 + 객체 피처 → 선택/비선택 예측 모델
+    - Embedding 기반 유사도 모델
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_object_models')
+
+    # 모델 정보
+    version = models.IntegerField(help_text="모델 버전 번호")
+    model_type = models.CharField(max_length=50, default='embedding_retriever',
+                                   help_text="모델 타입 (embedding_retriever, classifier 등)")
+
+    # Embedding 모델 정보
+    base_model_name = models.CharField(max_length=200,
+                                       default='paraphrase-multilingual-MiniLM-L12-v2',
+                                       help_text="사용된 베이스 임베딩 모델")
+
+    # 학습 정보
+    trained_at = models.DateTimeField(auto_now_add=True)
+    training_data_count = models.IntegerField(help_text="학습에 사용된 데이터 개수")
+    positive_samples = models.IntegerField(default=0, help_text="정답 샘플 개수")
+    negative_samples = models.IntegerField(default=0, help_text="오답 샘플 개수")
+
+    # 성능 지표
+    accuracy = models.FloatField(default=0.0)
+    precision = models.FloatField(default=0.0)
+    recall = models.FloatField(default=0.0)
+    f1_score = models.FloatField(default=0.0)
+
+    # Fine-tuned 모델 파일
+    model_path = models.CharField(max_length=500, blank=True, null=True,
+                                  help_text="Fine-tuned 모델 경로 (파일시스템)")
+    model_config = models.JSONField(default=dict, help_text="모델 설정")
+
+    # 활성화 상태
+    is_active = models.BooleanField(default=False, help_text="현재 사용 중인 모델")
+
+    class Meta:
+        ordering = ['-version']
+        unique_together = [['project', 'version']]
+
+    def __str__(self):
+        status = "🟢 Active" if self.is_active else "⚪ Inactive"
+        return f"{status} v{self.version} (F1: {self.f1_score:.1%})"
+
+
+class AISynonymDictionary(models.Model):
+    """
+    유사어 사전
+    - 자동으로 학습되거나 사용자가 수동으로 추가
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_synonyms')
+
+    # 기준 단어
+    canonical_word = models.CharField(max_length=100, help_text="기준이 되는 단어")
+
+    # 유사어 리스트
+    synonyms = models.JSONField(default=list, help_text="유사어 리스트")
+
+    # 학습 방식
+    source = models.CharField(max_length=50, default='user',
+                             help_text="출처 (user, learned, word2vec 등)")
+
+    # 메타데이터
+    usage_count = models.IntegerField(default=0, help_text="사용된 횟수")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['canonical_word']
+        unique_together = [['project', 'canonical_word']]
+
+    def __str__(self):
+        return f"{self.canonical_word} → {', '.join(self.synonyms[:3])}"

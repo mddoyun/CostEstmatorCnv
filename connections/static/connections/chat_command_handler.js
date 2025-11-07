@@ -626,6 +626,25 @@
     async function processUserMessage(message) {
         console.log('[Chat] ===== Processing user message:', message, '=====');
 
+        // ▼▼▼ 새 AI v2 시스템 통합 (2025-11-07) ▼▼▼
+        // "선택" 키워드가 포함되면 새 AI v2 선택 시스템 사용
+        if ((message.includes('선택') || message.includes('보여줘') || message.includes('찾아줘')) &&
+            typeof window.handleAiCommandV2 === 'function') {
+            console.log('[Chat] Using new AI v2 system');
+
+            try {
+                await window.handleAiCommandV2(message);
+                return {
+                    type: 'ai_select_v2',
+                    message: '✅ AI v2 시스템을 사용했습니다. 3D 뷰포트를 확인하세요.'
+                };
+            } catch (error) {
+                console.error('[Chat] AI v2 system error:', error);
+                // 실패하면 기존 시스템으로 폴백
+            }
+        }
+        // ▲▲▲ 새 AI 시스템 통합 ▲▲▲
+
         // 도움말 처리
         if (message === '도움말' || message.toLowerCase() === 'help') {
             return {
@@ -717,6 +736,8 @@
         console.log('[Chat] Setting up event listeners...');
         const chatInput = document.getElementById('chat-input');
         const chatSendBtn = document.getElementById('chat-send-btn');
+        const chatRefreshBtn = document.getElementById('chat-refresh-btn');
+        const rebuildEmbeddingsBtn = document.getElementById('rebuild-embeddings-btn');
 
         if (!chatInput || !chatSendBtn) {
             console.error('[Chat] Chat input elements not found!');
@@ -724,6 +745,74 @@
         }
 
         console.log('[Chat] Event listeners attached successfully');
+
+        // ▼▼▼ [NEW] 임베딩 재구축 버튼 클릭 ▼▼▼
+        if (rebuildEmbeddingsBtn) {
+            rebuildEmbeddingsBtn.addEventListener('click', async () => {
+                console.log('[Chat] Rebuild embeddings button clicked');
+
+                if (!window.currentProjectId) {
+                    addChatMessage('❌ 프로젝트를 먼저 선택해주세요.', 'system');
+                    return;
+                }
+
+                // 로딩 메시지
+                const loadingMsg = addChatMessage('🧠 임베딩 재구축 중... 시간이 걸릴 수 있습니다.', 'system');
+
+                try {
+                    const response = await fetch(`/connections/api/ai-embeddings/rebuild/${window.currentProjectId}/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const result = await response.json();
+
+                    // 로딩 메시지 제거
+                    if (loadingMsg && loadingMsg.parentNode) {
+                        loadingMsg.parentNode.removeChild(loadingMsg);
+                    }
+
+                    if (result.success) {
+                        addChatMessage(`✅ 임베딩 재구축 완료!\n생성: ${result.created}개, 업데이트: ${result.updated}개, 실패: ${result.failed}개`, 'system');
+                        console.log('[Chat] Embeddings rebuilt:', result);
+                    } else {
+                        addChatMessage(`❌ 임베딩 재구축 실패: ${result.error}`, 'system');
+                        console.error('[Chat] Rebuild failed:', result.error);
+                    }
+                } catch (error) {
+                    // 로딩 메시지 제거
+                    if (loadingMsg && loadingMsg.parentNode) {
+                        loadingMsg.parentNode.removeChild(loadingMsg);
+                    }
+
+                    addChatMessage(`❌ 임베딩 재구축 중 오류: ${error.message}`, 'system');
+                    console.error('[Chat] Rebuild error:', error);
+                }
+            });
+        }
+        // ▲▲▲ [NEW] 임베딩 재구축 버튼 클릭 ▲▲▲
+
+        // 리프레시 버튼 클릭
+        if (chatRefreshBtn) {
+            chatRefreshBtn.addEventListener('click', () => {
+                console.log('[Chat] Refresh button clicked - reloading AI system');
+
+                // AI 인덱스 재빌드
+                if (window.aiIndexBuilder) {
+                    window.aiIndexBuilder.buildAll().then(() => {
+                        addChatMessage('🔄 AI 어시스턴트가 리프레시되었습니다.', 'system');
+                        console.log('[Chat] AI index rebuilt successfully');
+                    }).catch(err => {
+                        addChatMessage('❌ AI 리프레시 중 오류 발생: ' + err.message, 'system');
+                        console.error('[Chat] AI refresh error:', err);
+                    });
+                } else {
+                    addChatMessage('❌ AI 인덱스 빌더를 찾을 수 없습니다.', 'system');
+                }
+            });
+        }
 
         // 전송 버튼 클릭
         chatSendBtn.addEventListener('click', async () => {

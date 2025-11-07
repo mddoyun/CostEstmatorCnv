@@ -12193,6 +12193,35 @@
             return;
         }
 
+        // ▼▼▼ Debug: Count all meshes and check userData ▼▼▼
+        let totalMeshes = 0;
+        let meshesWithUserData = 0;
+        let meshesWithRawElementId = 0;
+        const sampleRawElementIds = [];
+
+        scene.traverse((child) => {
+            if (child.isMesh) {
+                totalMeshes++;
+                if (child.userData) {
+                    meshesWithUserData++;
+                    if (child.userData.rawElementId) {
+                        meshesWithRawElementId++;
+                        if (sampleRawElementIds.length < 5) {
+                            sampleRawElementIds.push(child.userData.rawElementId);
+                        }
+                    }
+                }
+            }
+        });
+
+        console.log(`[3D Viewer API] Scene stats:`, {
+            totalMeshes,
+            meshesWithUserData,
+            meshesWithRawElementId,
+            sampleRawElementIds: sampleRawElementIds.slice(0, 3)
+        });
+        // ▲▲▲ Debug end ▲▲▲
+
         const meshesToSelect = [];
         // scene.children을 순회하여 meshes 찾기
         scene.traverse((child) => {
@@ -12209,7 +12238,33 @@
             console.log(`[3D Viewer API] Selected ${meshesToSelect.length} objects in viewer`);
         } else {
             console.warn('[3D Viewer API] No meshes found to select');
+            console.warn('[3D Viewer API] Looking for IDs:', rawElementIds.slice(0, 3));
         }
+    };
+
+    // ▼▼▼ [추가] 선택된 객체 ID 가져오기 (AI 피드백용) ▼▼▼
+    window.getSelectedObjectIds = function() {
+        const selectedIds = [];
+
+        // 단일 선택된 객체
+        if (selectedObject && selectedObject.userData && selectedObject.userData.rawElementId) {
+            selectedIds.push(selectedObject.userData.rawElementId);
+        }
+
+        // 복수 선택된 객체들
+        if (selectedObjects && selectedObjects.length > 0) {
+            selectedObjects.forEach(obj => {
+                if (obj.userData && obj.userData.rawElementId) {
+                    const id = obj.userData.rawElementId;
+                    if (!selectedIds.includes(id)) {
+                        selectedIds.push(id);
+                    }
+                }
+            });
+        }
+
+        console.log(`[3D Viewer API] getSelectedObjectIds: ${selectedIds.length} IDs`, selectedIds);
+        return selectedIds;
     };
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -13034,11 +13089,11 @@
     // ============================================================
 
     /**
-     * 채팅 명령으로부터 객체 선택
+     * 채팅 명령으로부터 객체 선택 (UniqueId 기반)
      * @param {Array} objects - 선택할 객체 배열 (allRevitData 항목들)
      */
-    window.selectObjectsInViewer = function(objects) {
-        console.log('[3D Viewer] Selecting objects from chat command:', objects.length);
+    window.selectObjectsByUniqueId = function(objects) {
+        console.log('[3D Viewer] Selecting objects by UniqueId from chat command:', objects.length);
 
         if (!objects || objects.length === 0) {
             selectedObjects = [];

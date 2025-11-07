@@ -7924,3 +7924,1360 @@ def home_dashboard_api(request, project_id):
         }, status=500)
 
 # ▲▲▲ [NEW] Home Dashboard API End ▲▲▲
+
+
+# =============================================================================
+# AI 학습 피드백 API
+# =============================================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_ai_feedback(request):
+    """AI 선택 결과 피드백 저장"""
+    try:
+        data = json.loads(request.body)
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return JsonResponse({'success': False, 'error': 'project_id required'}, status=400)
+
+        project = get_object_or_404(Project, id=project_id)
+
+        from .models import AISelectionFeedback
+
+        feedback = AISelectionFeedback.objects.create(
+            project=project,
+            query=data.get('query'),
+            ai_selected_ids=data.get('aiSelectedIds', []),
+            ai_confidence=data.get('confidence', 0.0),
+            user_corrected_ids=data.get('userCorrectedIds', []),
+            was_correct=data.get('wasCorrect', False),
+            false_positives=data.get('falsePositives', []),
+            false_negatives=data.get('falseNegatives', [])
+        )
+
+        print(f"[AI Feedback] Saved to DB: {feedback.query} (ID: {feedback.id})")
+
+        # === 자동 임베딩 생성 ===
+        # 사용자가 수정한 정답 객체들에 대해 임베딩을 자동 생성
+        # (백그라운드에서 실행하여 응답 지연 방지)
+        user_corrected_ids = data.get('userCorrectedIds', [])
+        if user_corrected_ids and len(user_corrected_ids) > 0:
+            print(f"[AI Feedback] Auto-generating embeddings for {len(user_corrected_ids)} corrected objects...")
+
+            from .models import ObjectEmbedding
+
+            elements = RawElement.objects.filter(id__in=user_corrected_ids)
+
+            embeddings_created = 0
+            embeddings_failed = 0
+
+            for element in elements:
+                # 임베딩이 이미 있는지 확인
+                existing = ObjectEmbedding.objects.filter(
+                    raw_element=element,
+                    model_name='nomic-embed-text'
+                ).exists()
+
+                if not existing:
+                    # 임베딩 생성
+                    text = create_object_text_representation(element)
+                    embedding_vector = generate_embedding(text)
+
+                    if embedding_vector:
+                        ObjectEmbedding.objects.create(
+                            project=project,
+                            raw_element=element,
+                            text_representation=text,
+                            embedding_vector=embedding_vector,
+                            vector_dimension=len(embedding_vector),
+                            model_name='nomic-embed-text'
+                        )
+                        embeddings_created += 1
+                    else:
+                        embeddings_failed += 1
+
+            print(f"[AI Feedback] Auto-embedding result: {embeddings_created} created, {embeddings_failed} failed")
+
+        return JsonResponse({
+            'success': True,
+            'feedback_id': str(feedback.id),
+            'message': '피드백이 저장되었습니다.'
+        })
+
+    except Exception as e:
+        print(f"[AI Feedback] Error saving feedback: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_ai_feedbacks(request, project_id):
+    """프로젝트의 AI 피드백 목록 조회"""
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        from .models import AISelectionFeedback
+
+        # 최신 100개만 조회
+        feedbacks = AISelectionFeedback.objects.filter(project=project)[:100]
+
+        feedback_list = [{
+            'id': str(fb.id),
+            'query': fb.query,
+            'aiSelectedIds': fb.ai_selected_ids,
+            'userCorrectedIds': fb.user_corrected_ids,
+            'wasCorrect': fb.was_correct,
+            'falsePositives': fb.false_positives,
+            'falseNegatives': fb.false_negatives,
+            'confidence': fb.ai_confidence,
+            'timestamp': fb.created_at.isoformat()
+        } for fb in feedbacks]
+
+        return JsonResponse({
+            'success': True,
+            'feedbacks': feedback_list,
+            'total': len(feedback_list)
+        })
+
+    except Exception as e:
+        print(f"[AI Feedback] Error loading feedbacks: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_ai_few_shot_examples(request, project_id):
+    """
+    Few-shot 학습용 정답 피드백 조회
+    - 중복 제거 (같은 쿼리는 최신 것만)
+    - 품질 필터링 (선택된 객체가 1개 이상)
+    - 다양성 확보 (최대 10개, 다양한 쿼리)
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        from .models import AISelectionFeedback
+
+        # 정답 피드백 가져오기 (was_correct=True)
+        all_feedbacks = AISelectionFeedback.objects.filter(
+            project=project,
+            was_correct=True
+        ).order_by('-created_at')
+
+        # 중복 제거: 같은 쿼리는 최신 것만
+        seen_queries = set()
+        unique_feedbacks = []
+
+        for fb in all_feedbacks:
+            query_normalized = fb.query.strip().lower()
+
+            # 품질 필터링: 선택된 객체가 있어야 함
+            if not fb.user_corrected_ids or len(fb.user_corrected_ids) == 0:
+                continue
+
+            # 중복 제거
+            if query_normalized not in seen_queries:
+                seen_queries.add(query_normalized)
+                unique_feedbacks.append(fb)
+
+                # 최대 10개까지
+                if len(unique_feedbacks) >= 10:
+                    break
+
+        # RawElement 정보 포함하여 반환
+        examples = []
+        for fb in unique_feedbacks:
+            # 선택된 객체들의 간단한 정보 추출
+            elements = RawElement.objects.filter(
+                id__in=fb.user_corrected_ids[:5]  # 최대 5개만
+            )
+
+            element_info = []
+            for elem in elements:
+                raw_data = elem.raw_data or {}
+                element_info.append({
+                    'name': raw_data.get('Name', ''),
+                    'category': raw_data.get('Category', ''),
+                    'family': raw_data.get('Family', '')
+                })
+
+            examples.append({
+                'query': fb.query,
+                'correctIds': fb.user_corrected_ids,
+                'count': len(fb.user_corrected_ids),
+                'elements': element_info  # 객체 정보 포함
+            })
+
+        print(f"[AI Few-shot] Loaded {len(examples)} unique examples for project {project.name}")
+
+        return JsonResponse({
+            'success': True,
+            'examples': examples
+        })
+
+    except Exception as e:
+        print(f"[AI Feedback] Error loading few-shot examples: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# -----------------------------------------------------------------------------
+# AI 학습 룰셋 자동 생성
+# -----------------------------------------------------------------------------
+def extract_common_patterns(element_ids, project):
+    """
+    선택된 객체들의 공통 패턴 추출 (판별력 있는 패턴 우선)
+
+    Args:
+        element_ids: RawElement ID 리스트 (정답 객체들)
+        project: Project 객체
+
+    Returns:
+        {
+            'category_patterns': ['Windows', 'Doors'],
+            'family_patterns': ['M_Fixed'],
+            'type_patterns': [...],
+            'parameter_patterns': {'Mark': ['D-1', 'W-1']},
+            'keyword_patterns': ['개구부', '문']  # 판별력 높은 키워드 우선
+        }
+    """
+    from collections import Counter
+
+    # 정답 객체들
+    correct_elements = RawElement.objects.filter(id__in=element_ids, project=project)
+
+    if not correct_elements.exists():
+        return None
+
+    # 프로젝트의 모든 객체 (비교를 위해)
+    all_project_elements = RawElement.objects.filter(project=project)
+
+    # 정답 객체의 속성 수집
+    categories = []
+    families = []
+    types = []
+    all_keywords = []  # 정답 객체의 모든 키워드
+    param_values = {}  # {param_name: [values]}
+
+    for elem in correct_elements:
+        raw_data = elem.raw_data or {}
+
+        # Category, Family, Type
+        if 'Category' in raw_data:
+            categories.append(raw_data['Category'])
+        if 'Family' in raw_data:
+            families.append(raw_data['Family'])
+        if 'Type' in raw_data:
+            types.append(raw_data['Type'])
+
+        # Parameters에서 공통 키워드 추출
+        params = raw_data.get('Parameters', {})
+        for key, value in params.items():
+            if isinstance(value, str) and value.strip():
+                if key not in param_values:
+                    param_values[key] = []
+                param_values[key].append(value)
+                all_keywords.append(value.strip())
+
+        # Name 파싱: 분류 체계에서 의미있는 부분 추출
+        if 'Name' in raw_data and raw_data['Name']:
+            name = str(raw_data['Name']).strip()
+            all_keywords.append(name)  # 전체 이름도 추가
+
+            # 이름을 '_' 또는 '__'로 분리하여 개별 키워드 추출
+            # 예: "건축_마감_외부벽마감__10T 노출콘크리트패널_T5"
+            # → ["건축", "마감", "외부벽마감", "10T 노출콘크리트패널", "T5"]
+            parts = name.replace('__', '_').split('_')
+            for part in parts:
+                part = part.strip()
+                if part and len(part) >= 2:  # 2자 이상만
+                    all_keywords.append(part)
+
+    # 빈도 분석
+    category_counter = Counter(categories)
+    family_counter = Counter(families)
+    type_counter = Counter(types)
+    keyword_counter = Counter(all_keywords)
+
+    # === 판별력 계산: 키워드가 얼마나 정답 객체에 특화되어 있는가? ===
+    # 각 키워드에 대해 (정답 객체 매칭률) - (전체 객체 매칭률) 계산
+    keyword_scores = {}
+
+    for kw in keyword_counter.keys():
+        # 필터링: 너무 짧거나 긴 키워드, 숫자만 있는 키워드 제외
+        if not kw or len(kw) < 3 or len(kw) >= 30 or kw.replace('.', '').replace('-', '').isdigit():
+            continue
+
+        # 정답 객체 중 이 키워드를 포함하는 비율
+        correct_match_count = 0
+        for elem in correct_elements:
+            elem_text = str(elem.raw_data.get('Name', ''))
+            if kw.lower() in elem_text.lower():
+                correct_match_count += 1
+
+        correct_match_ratio = correct_match_count / len(element_ids) if len(element_ids) > 0 else 0
+
+        # 전체 객체 중 이 키워드를 포함하는 비율
+        all_match_count = 0
+        total_elements = all_project_elements.count()
+
+        for elem in all_project_elements:
+            elem_text = str(elem.raw_data.get('Name', ''))
+            if kw.lower() in elem_text.lower():
+                all_match_count += 1
+
+        all_match_ratio = all_match_count / total_elements if total_elements > 0 else 0
+
+        # 판별력 점수 = (정답 매칭률) - (전체 매칭률) + 키워드 길이 보너스
+        # 높을수록 정답 객체에 특화된 키워드
+        discriminative_score = correct_match_ratio - all_match_ratio + (len(kw) * 0.01)
+
+        keyword_scores[kw] = {
+            'score': discriminative_score,
+            'correct_ratio': correct_match_ratio,
+            'all_ratio': all_match_ratio,
+            'length': len(kw)
+        }
+
+    # 판별력 점수 순으로 정렬하여 상위 키워드 선택
+    sorted_keywords = sorted(keyword_scores.items(), key=lambda x: x[1]['score'], reverse=True)
+
+    # 상위 10개 키워드만 선택 (판별력 높은 것들)
+    discriminative_keywords = [kw for kw, info in sorted_keywords[:10] if info['score'] > 0]
+
+    # 패턴 구성
+    patterns = {
+        'category_patterns': [cat for cat, count in category_counter.items() if cat],
+        'family_patterns': [fam for fam, count in family_counter.items() if fam],
+        'type_patterns': [typ for typ, count in type_counter.items() if typ],
+        'keyword_patterns': discriminative_keywords,  # 판별력 높은 키워드만
+        'parameter_patterns': {}
+    }
+
+    # 파라메터 패턴
+    for param_name, values in param_values.items():
+        if len(values) > 0:
+            unique_values = list(set(values))
+            filtered_values = [v for v in unique_values if len(str(v)) < 30]
+            if filtered_values:
+                patterns['parameter_patterns'][param_name] = filtered_values
+
+    print(f"[AI Learning] Extracted patterns from {len(element_ids)} elements:")
+    print(f"  - Categories: {patterns['category_patterns']}")
+    print(f"  - Families: {patterns['family_patterns']}")
+    print(f"  - Types: {patterns['type_patterns'][:3]}...")
+    print(f"  - Discriminative Keywords: {patterns['keyword_patterns'][:5]}...")
+    if len(sorted_keywords) > 0:
+        print(f"  - Top keyword scores:")
+        for kw, info in sorted_keywords[:5]:
+            print(f"    '{kw}': score={info['score']:.3f} (correct={info['correct_ratio']:.2f}, all={info['all_ratio']:.2f})")
+    print(f"  - Parameters: {list(patterns['parameter_patterns'].keys())}")
+
+    return patterns
+
+
+# ============================================================================
+# 임베딩 시스템: Ollama API를 활용한 벡터 검색
+# ============================================================================
+
+def generate_embedding(text, model_name='nomic-embed-text'):
+    """
+    Ollama API를 호출하여 텍스트의 임베딩 벡터 생성
+
+    Args:
+        text: 임베딩할 텍스트
+        model_name: 사용할 Ollama 임베딩 모델
+
+    Returns:
+        list: 768차원 임베딩 벡터 또는 None (실패 시)
+    """
+    try:
+        import requests
+
+        # Ollama API 엔드포인트
+        url = 'http://localhost:11434/api/embeddings'
+
+        payload = {
+            'model': model_name,
+            'prompt': text
+        }
+
+        response = requests.post(url, json=payload, timeout=30)
+
+        if response.status_code == 200:
+            data = response.json()
+            embedding = data.get('embedding')
+
+            if embedding and len(embedding) > 0:
+                print(f"[Embedding] Generated {len(embedding)}-dim vector for text: {text[:50]}...")
+                return embedding
+            else:
+                print(f"[Embedding] Empty embedding returned for: {text[:50]}")
+                return None
+        else:
+            print(f"[Embedding] API error {response.status_code}: {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"[Embedding] Error generating embedding: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return None
+
+
+def cosine_similarity(vec1, vec2):
+    """
+    두 벡터 간의 코사인 유사도 계산
+
+    Args:
+        vec1: 첫 번째 벡터 (list)
+        vec2: 두 번째 벡터 (list)
+
+    Returns:
+        float: 코사인 유사도 (-1 ~ 1, 1에 가까울수록 유사)
+    """
+    try:
+        import math
+
+        if not vec1 or not vec2:
+            return 0.0
+
+        if len(vec1) != len(vec2):
+            print(f"[Similarity] Vector dimension mismatch: {len(vec1)} vs {len(vec2)}")
+            return 0.0
+
+        # 내적 계산
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+
+        # 크기 계산
+        magnitude1 = math.sqrt(sum(a * a for a in vec1))
+        magnitude2 = math.sqrt(sum(b * b for b in vec2))
+
+        if magnitude1 == 0 or magnitude2 == 0:
+            return 0.0
+
+        # 코사인 유사도
+        similarity = dot_product / (magnitude1 * magnitude2)
+
+        return similarity
+
+    except Exception as e:
+        print(f"[Similarity] Error calculating cosine similarity: {str(e)}")
+        return 0.0
+
+
+def create_object_text_representation(raw_element):
+    """
+    RawElement 객체를 임베딩용 텍스트로 변환
+
+    BIM 객체의 의미를 담은 텍스트 표현 생성:
+    - Name 필드 (분류 체계 포함)
+    - Category, Family, Type
+    - 주요 파라메터들
+
+    Args:
+        raw_element: RawElement 인스턴스
+
+    Returns:
+        str: 임베딩용 텍스트
+    """
+    try:
+        raw_data = raw_element.raw_data or {}
+
+        parts = []
+
+        # Name 필드 (가장 중요)
+        name = raw_data.get('Name', '').strip()
+        if name:
+            parts.append(f"이름: {name}")
+
+        # Category, Family, Type
+        category = raw_data.get('Category', '').strip()
+        if category:
+            parts.append(f"카테고리: {category}")
+
+        family = raw_data.get('Family', '').strip()
+        if family:
+            parts.append(f"패밀리: {family}")
+
+        element_type = raw_data.get('Type', '').strip()
+        if element_type:
+            parts.append(f"타입: {element_type}")
+
+        # Parameters에서 의미있는 속성들 추가
+        params = raw_data.get('Parameters', {})
+        if isinstance(params, dict):
+            # 중요한 파라메터들 (길이, 면적, 부피, 레벨 등)
+            important_params = ['Level', 'Height', 'Width', 'Length', 'Area', 'Volume',
+                              'Mark', 'Comments', 'Description']
+
+            for param_name in important_params:
+                if param_name in params and params[param_name]:
+                    value = str(params[param_name]).strip()
+                    if value and len(value) < 50:  # 너무 긴 값 제외
+                        parts.append(f"{param_name}: {value}")
+
+        # 텍스트 조합
+        text = ". ".join(parts)
+
+        return text if text else "Unknown BIM Object"
+
+    except Exception as e:
+        print(f"[Embedding] Error creating text representation: {str(e)}")
+        return "Unknown BIM Object"
+
+
+def create_or_update_object_embedding(raw_element, model_name='nomic-embed-text'):
+    """
+    RawElement의 임베딩 생성 또는 업데이트
+
+    Args:
+        raw_element: RawElement 인스턴스
+        model_name: 임베딩 모델 이름
+
+    Returns:
+        ObjectEmbedding 인스턴스 또는 None
+    """
+    from .models import ObjectEmbedding
+
+    try:
+        # 텍스트 표현 생성
+        text = create_object_text_representation(raw_element)
+
+        # 임베딩 벡터 생성
+        embedding_vector = generate_embedding(text, model_name)
+
+        if not embedding_vector:
+            print(f"[Embedding] Failed to generate embedding for element {raw_element.id}")
+            return None
+
+        # DB에 저장 또는 업데이트
+        obj_embedding, created = ObjectEmbedding.objects.update_or_create(
+            raw_element=raw_element,
+            model_name=model_name,
+            defaults={
+                'project': raw_element.project,
+                'text_representation': text,
+                'embedding_vector': embedding_vector,
+                'vector_dimension': len(embedding_vector)
+            }
+        )
+
+        action = "Created" if created else "Updated"
+        print(f"[Embedding] {action} embedding for element {raw_element.id}")
+
+        return obj_embedding
+
+    except Exception as e:
+        print(f"[Embedding] Error creating/updating object embedding: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return None
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def rebuild_project_embeddings(request, project_id):
+    """
+    프로젝트의 모든 객체에 대한 임베딩 재구축
+
+    사용 시나리오:
+    - 최초 임베딩 생성
+    - 대량의 피드백 데이터 반영 후
+    - 임베딩 모델 변경 시
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        from .models import ObjectEmbedding
+
+        # 프로젝트의 모든 RawElement 가져오기
+        elements = RawElement.objects.filter(
+            project=project
+        )
+
+        total = elements.count()
+        success_count = 0
+        fail_count = 0
+
+        print(f"[Embedding Rebuild] Starting for {total} elements in project {project.name}")
+
+        for idx, element in enumerate(elements, 1):
+            # 텍스트 표현 생성
+            text = create_object_text_representation(element)
+
+            # 임베딩 벡터 생성
+            embedding_vector = generate_embedding(text)
+
+            if embedding_vector:
+                # DB에 저장
+                ObjectEmbedding.objects.update_or_create(
+                    raw_element=element,
+                    model_name='nomic-embed-text',
+                    defaults={
+                        'project': project,
+                        'text_representation': text,
+                        'embedding_vector': embedding_vector,
+                        'vector_dimension': len(embedding_vector)
+                    }
+                )
+                success_count += 1
+            else:
+                fail_count += 1
+
+            # 진행 상황 출력 (10%마다)
+            if idx % max(1, total // 10) == 0:
+                progress = (idx / total) * 100
+                print(f"[Embedding Rebuild] Progress: {progress:.1f}% ({idx}/{total})")
+
+        print(f"[Embedding Rebuild] Completed: {success_count} success, {fail_count} failed")
+
+        return JsonResponse({
+            'success': True,
+            'total': total,
+            'success_count': success_count,
+            'fail_count': fail_count
+        })
+
+    except Exception as e:
+        print(f"[Embedding Rebuild] Error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def search_by_semantic_similarity(request, project_id):
+    """
+    임베딩 기반 의미론적 유사도 검색
+
+    사용자 쿼리를 임베딩하고, 모든 객체 임베딩과 코사인 유사도 계산
+
+    Request Body:
+        {
+            "query": "개구부 선택해줘",
+            "top_k": 10,  // 상위 K개 반환 (optional)
+            "threshold": 0.5  // 최소 유사도 임계값 (optional)
+        }
+
+    Response:
+        {
+            "success": true,
+            "results": [
+                {
+                    "element_id": "uuid",
+                    "similarity": 0.85,
+                    "text": "이름: 건축_개구부_창호..."
+                }
+            ]
+        }
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        from .models import ObjectEmbedding, QueryEmbedding
+
+        data = json.loads(request.body)
+        query = data.get('query', '').strip()
+        top_k = data.get('top_k', 10)
+        threshold = data.get('threshold', 0.5)
+
+        if not query:
+            return JsonResponse({'success': False, 'error': 'Query is required'}, status=400)
+
+        print(f"[Semantic Search] Query: '{query}', top_k: {top_k}, threshold: {threshold}")
+
+        # 쿼리 임베딩 생성 (캐시 확인)
+        query_embedding_obj = QueryEmbedding.objects.filter(
+            project=project,
+            query_text=query,
+            model_name='nomic-embed-text'
+        ).first()
+
+        if query_embedding_obj:
+            print(f"[Semantic Search] Using cached query embedding")
+            query_vector = query_embedding_obj.embedding_vector
+        else:
+            print(f"[Semantic Search] Generating new query embedding")
+            query_vector = generate_embedding(query)
+
+            if not query_vector:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Failed to generate query embedding'
+                }, status=500)
+
+            # 쿼리 임베딩 캐시 저장
+            QueryEmbedding.objects.create(
+                project=project,
+                query_text=query,
+                embedding_vector=query_vector,
+                vector_dimension=len(query_vector),
+                model_name='nomic-embed-text'
+            )
+
+        # 모든 객체 임베딩 가져오기
+        object_embeddings = ObjectEmbedding.objects.filter(
+            project=project,
+            model_name='nomic-embed-text'
+        ).select_related('raw_element')
+
+        if not object_embeddings.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No object embeddings found. Please rebuild embeddings first.'
+            }, status=400)
+
+        # 유사도 계산
+        results = []
+        for obj_emb in object_embeddings:
+            similarity = cosine_similarity(query_vector, obj_emb.embedding_vector)
+
+            if similarity >= threshold:
+                results.append({
+                    'element_id': str(obj_emb.raw_element.id),
+                    'similarity': similarity,
+                    'text': obj_emb.text_representation
+                })
+
+        # 유사도 내림차순 정렬
+        results.sort(key=lambda x: x['similarity'], reverse=True)
+
+        # 상위 K개만 반환
+        results = results[:top_k]
+
+        print(f"[Semantic Search] Found {len(results)} results above threshold {threshold}")
+
+        return JsonResponse({
+            'success': True,
+            'results': results,
+            'total_checked': object_embeddings.count(),
+            'query': query
+        })
+
+    except Exception as e:
+        print(f"[Semantic Search] Error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def auto_generate_rule_from_feedback(request, feedback_id):
+    """
+    피드백 데이터를 분석하여 자동으로 룰셋 생성
+    """
+    try:
+        from .models import AISelectionFeedback, AISelectionRule
+
+        feedback = get_object_or_404(AISelectionFeedback, id=feedback_id)
+
+        # 사용자가 수정한 정답 객체들 분석
+        if not feedback.user_corrected_ids:
+            return JsonResponse({
+                'success': False,
+                'error': '정답 객체가 없습니다.'
+            }, status=400)
+
+        # 패턴 추출
+        patterns = extract_common_patterns(
+            feedback.user_corrected_ids,
+            feedback.project
+        )
+
+        if not patterns:
+            return JsonResponse({
+                'success': False,
+                'error': '패턴을 추출할 수 없습니다.'
+            }, status=400)
+
+        # 쿼리에서 키워드 추출 (간단한 방식)
+        query_keywords = [word for word in feedback.query.split() if len(word) > 1]
+
+        # 룰셋 이름 생성
+        rule_name = f"{feedback.query[:20]}_룰"
+
+        # 기존 룰셋이 있으면 업데이트, 없으면 생성
+        rule, created = AISelectionRule.objects.get_or_create(
+            project=feedback.project,
+            name=rule_name,
+            defaults={
+                'query_pattern': feedback.query,
+                'category_patterns': patterns['category_patterns'],
+                'family_patterns': patterns['family_patterns'],
+                'type_patterns': patterns['type_patterns'],
+                'parameter_patterns': patterns['parameter_patterns'],
+                'keyword_patterns': patterns['keyword_patterns'] + query_keywords,
+                'confidence': 1.0,  # 초기 신뢰도
+                'success_count': 1,
+                'total_usage': 1,
+                'priority': 10,  # 새로운 룰은 우선순위 높게
+                'created_from_feedback': feedback
+            }
+        )
+
+        if not created:
+            # 기존 룰셋 업데이트: 패턴 병합
+            rule.category_patterns = list(set(rule.category_patterns + patterns['category_patterns']))
+            rule.family_patterns = list(set(rule.family_patterns + patterns['family_patterns']))
+            rule.type_patterns = list(set(rule.type_patterns + patterns['type_patterns']))
+            rule.keyword_patterns = list(set(rule.keyword_patterns + patterns['keyword_patterns'] + query_keywords))
+
+            # 파라메터 패턴 병합
+            for key, values in patterns['parameter_patterns'].items():
+                if key in rule.parameter_patterns:
+                    rule.parameter_patterns[key] = list(set(rule.parameter_patterns[key] + values))
+                else:
+                    rule.parameter_patterns[key] = values
+
+            # 통계 업데이트
+            rule.success_count += 1
+            rule.total_usage += 1
+            rule.update_confidence()
+
+            rule.save()
+
+        print(f"[AI Learning] {'Created' if created else 'Updated'} rule: {rule.name}")
+        print(f"  - Confidence: {rule.confidence:.2f}")
+        print(f"  - Usage: {rule.success_count}/{rule.total_usage}")
+
+        return JsonResponse({
+            'success': True,
+            'rule_id': str(rule.id),
+            'rule_name': rule.name,
+            'created': created,
+            'confidence': rule.confidence,
+            'patterns': patterns
+        })
+
+    except Exception as e:
+        print(f"[AI Learning] Error generating rule: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_ai_selection_rules(request, project_id):
+    """
+    프로젝트의 AI 학습 룰셋 조회 (신뢰도/우선순위 순)
+    """
+    try:
+        from .models import AISelectionRule
+
+        project = get_object_or_404(Project, id=project_id)
+
+        rules = AISelectionRule.objects.filter(
+            project=project,
+            is_active=True
+        ).order_by('-priority', '-confidence', '-created_at')
+
+        rules_data = []
+        for rule in rules:
+            rules_data.append({
+                'id': str(rule.id),
+                'name': rule.name,
+                'query_pattern': rule.query_pattern,
+                'category_patterns': rule.category_patterns,
+                'family_patterns': rule.family_patterns,
+                'type_patterns': rule.type_patterns,
+                'parameter_patterns': rule.parameter_patterns,
+                'keyword_patterns': rule.keyword_patterns,
+                'confidence': rule.confidence,
+                'success_count': rule.success_count,
+                'total_usage': rule.total_usage,
+                'priority': rule.priority,
+                'created_at': rule.created_at.isoformat(),
+                'updated_at': rule.updated_at.isoformat()
+            })
+
+        return JsonResponse({
+            'success': True,
+            'rules': rules_data,
+            'count': len(rules_data)
+        })
+
+    except Exception as e:
+        print(f"[AI Learning] Error loading rules: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# ▼▼▼ [NEW] Ollama LLM Fine-tuning API ▼▼▼
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def list_ai_feedback(request, project_id):
+    """
+    프로젝트의 모든 AI 피드백 목록 조회
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        from .models import AISelectionFeedback
+        
+        feedbacks = AISelectionFeedback.objects.filter(project=project).order_by('-timestamp')
+        
+        feedbacks_data = []
+        for feedback in feedbacks:
+            feedbacks_data.append({
+                'id': str(feedback.id),
+                'user_query': feedback.user_query,
+                'normalized_query': feedback.normalized_query,
+                'ai_selected_ids': feedback.ai_selected_ids,
+                'user_corrected_ids': feedback.user_corrected_ids,
+                'timestamp': feedback.timestamp.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'feedbacks': feedbacks_data,
+            'count': len(feedbacks_data)
+        })
+        
+    except Exception as e:
+        print(f"[Fine-tuning] Error loading feedbacks: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_ollama_model(request):
+    """
+    Ollama 모델 생성 (Modelfile 기반 파인튜닝)
+    """
+    try:
+        import requests
+        import json as json_module
+        
+        data = json_module.loads(request.body)
+        model_name = data.get('model_name')
+        modelfile = data.get('modelfile')
+        
+        if not model_name or not modelfile:
+            return JsonResponse({
+                'success': False,
+                'error': 'model_name and modelfile are required'
+            }, status=400)
+        
+        print(f"[Fine-tuning] Creating Ollama model: {model_name}")
+        print(f"[Fine-tuning] Modelfile length: {len(modelfile)} characters")
+        
+        # Ollama create API 호출
+        url = 'http://localhost:11434/api/create'
+        payload = {
+            'name': model_name,
+            'modelfile': modelfile
+        }
+        
+        response = requests.post(url, json=payload, stream=True, timeout=300)
+        
+        if response.status_code == 200:
+            # 스트리밍 응답 처리
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        status = json_module.loads(line)
+                        print(f"[Fine-tuning] Status: {status}")
+                    except:
+                        pass
+            
+            print(f"[Fine-tuning] Model created successfully: {model_name}")
+            return JsonResponse({
+                'success': True,
+                'model_name': model_name,
+                'message': 'Model created successfully'
+            })
+        else:
+            error_msg = response.text
+            print(f"[Fine-tuning] Ollama API error {response.status_code}: {error_msg}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Ollama API error: {error_msg}'
+            }, status=500)
+            
+    except Exception as e:
+        print(f"[Fine-tuning] Error creating model: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def list_ollama_models(request):
+    """
+    Ollama 모델 목록 조회
+    """
+    try:
+        import requests
+        
+        url = 'http://localhost:11434/api/tags'
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get('models', [])
+            
+            return JsonResponse({
+                'success': True,
+                'models': models,
+                'count': len(models)
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': f'Ollama API error: {response.status_code}'
+            }, status=500)
+            
+    except Exception as e:
+        print(f"[Fine-tuning] Error listing models: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def delete_ollama_model(request):
+    """
+    Ollama 모델 삭제
+    """
+    try:
+        import requests
+        import json as json_module
+        
+        data = json_module.loads(request.body)
+        model_name = data.get('model_name')
+        
+        if not model_name:
+            return JsonResponse({
+                'success': False,
+                'error': 'model_name is required'
+            }, status=400)
+        
+        print(f"[Fine-tuning] Deleting Ollama model: {model_name}")
+        
+        # Ollama delete API 호출
+        url = 'http://localhost:11434/api/delete'
+        payload = {'name': model_name}
+        
+        response = requests.delete(url, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            print(f"[Fine-tuning] Model deleted successfully: {model_name}")
+            return JsonResponse({
+                'success': True,
+                'model_name': model_name,
+                'message': 'Model deleted successfully'
+            })
+        else:
+            error_msg = response.text
+            print(f"[Fine-tuning] Ollama API error {response.status_code}: {error_msg}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Ollama API error: {error_msg}'
+            }, status=500)
+            
+    except Exception as e:
+        print(f"[Fine-tuning] Error deleting model: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# =============================================================================
+# 새로운 학습 기반 AI 시스템 API (2025-11-07)
+# =============================================================================
+
+from .ai_utils import (
+    predict_function,
+    predict_objects,
+    extract_object_features,
+    encode_text,
+    compute_similarity
+)
+
+
+@require_http_methods(["POST"])
+def ai_predict_function_v2(request):
+    """
+    함수 선택 예측 API (v2 - 학습 기반)
+
+    Request:
+        {
+            "prompt": "마감 객체를 선택해줘",
+            "project_id": "uuid"
+        }
+
+    Response:
+        {
+            "success": true,
+            "function": "select_objects",
+            "confidence": 0.92
+        }
+    """
+    try:
+        data = json.loads(request.body)
+        prompt = data.get('prompt', '')
+        project_id = data.get('project_id')
+
+        if not prompt:
+            return JsonResponse({'success': False, 'error': 'prompt is required'}, status=400)
+
+        print(f'[AI v2] predict_function: "{prompt}"')
+
+        # 학습 데이터 로드
+        training_data_qs = AITrainingData.objects.filter(
+            project_id=project_id
+        ).order_by('-timestamp')[:100]
+
+        training_data = [
+            {
+                'prompt': td.prompt,
+                'function_name': td.function_name
+            }
+            for td in training_data_qs
+        ]
+
+        print(f'[AI v2] Loaded {len(training_data)} training samples')
+
+        # 함수 예측
+        function_name, confidence = predict_function(prompt, training_data)
+
+        print(f'[AI v2] Predicted function: {function_name} (confidence={confidence:.2f})')
+
+        return JsonResponse({
+            'success': True,
+            'function': function_name,
+            'confidence': confidence,
+            'training_data_count': len(training_data)
+        })
+
+    except Exception as e:
+        print(f'[AI v2] Error in predict_function: {e}')
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def ai_predict_objects_v2(request):
+    """
+    객체 선택 예측 API (v2 - Embedding 기반)
+
+    Request:
+        {
+            "prompt": "마감 객체를 선택해줘",
+            "project_id": "uuid",
+            "threshold": 0.3,
+            "top_k": 100
+        }
+
+    Response:
+        {
+            "success": true,
+            "selected_ids": ["uuid1", "uuid2", ...],
+            "confidence": 0.85,
+            "total_objects": 500
+        }
+    """
+    try:
+        data = json.loads(request.body)
+        prompt = data.get('prompt', '')
+        project_id = data.get('project_id')
+        threshold = data.get('threshold', 0.3)
+        top_k = data.get('top_k', 100)
+
+        if not prompt or not project_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'prompt and project_id are required'
+            }, status=400)
+
+        print(f'[AI v2] predict_objects: "{prompt}" (threshold={threshold}, top_k={top_k})')
+
+        # 모든 객체 가져오기
+        elements = RawElement.objects.filter(project_id=project_id)
+        qms = QuantityMember.objects.filter(project_id=project_id).select_related('classification_tag')
+
+        # 객체별 피처 생성
+        objects_with_features = []
+
+        for elem in elements:
+            # QM 정보 찾기
+            qm = qms.filter(raw_element_id=elem.id).first()
+            qm_data = None
+            if qm:
+                qm_data = {
+                    'classification_tag_name': qm.classification_tag.name if qm.classification_tag else None,
+                    'properties': qm.properties
+                }
+
+            # 피처 추출
+            features = extract_object_features(elem.raw_data, qm_data)
+
+            objects_with_features.append({
+                'id': str(elem.id),
+                'features': features
+            })
+
+        print(f'[AI v2] Collected features for {len(objects_with_features)} objects')
+
+        # 학습 데이터 로드
+        training_data_qs = AITrainingData.objects.filter(
+            project_id=project_id,
+            function_name='select_objects'
+        ).order_by('-timestamp')[:50]
+
+        training_data = [
+            {
+                'prompt': td.prompt,
+                'correct_ids': td.correct_ids
+            }
+            for td in training_data_qs
+        ]
+
+        print(f'[AI v2] Loaded {len(training_data)} training samples')
+
+        # 객체 예측
+        selected_ids = predict_objects(
+            prompt,
+            objects_with_features,
+            training_data,
+            threshold=threshold,
+            top_k=top_k
+        )
+
+        confidence = 0.9 if len(training_data) >= 10 else 0.5
+
+        print(f'[AI v2] Selected {len(selected_ids)} objects')
+
+        return JsonResponse({
+            'success': True,
+            'selected_ids': selected_ids,
+            'confidence': confidence,
+            'total_objects': len(objects_with_features),
+            'training_data_count': len(training_data)
+        })
+
+    except Exception as e:
+        print(f'[AI v2] Error in predict_objects: {e}')
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def ai_save_feedback_v2(request):
+    """
+    사용자 피드백 저장 API (v2 - 학습 데이터 수집)
+
+    Request:
+        {
+            "project_id": "uuid",
+            "prompt": "마감 객체를 선택해줘",
+            "function_name": "select_objects",
+            "ai_selected_ids": ["uuid1", "uuid2", ...],
+            "correct_ids": ["uuid1", "uuid3", ...],
+            "confidence": 0.85
+        }
+
+    Response:
+        {
+            "success": true,
+            "training_data_id": "uuid",
+            "message": "Feedback saved successfully"
+        }
+    """
+    try:
+        data = json.loads(request.body)
+        project_id = data.get('project_id')
+        prompt = data.get('prompt', '')
+        function_name = data.get('function_name', 'select_objects')
+        ai_selected_ids = data.get('ai_selected_ids', [])
+        correct_ids = data.get('correct_ids', [])
+        confidence = data.get('confidence', 0.0)
+
+        if not project_id or not prompt:
+            return JsonResponse({
+                'success': False,
+                'error': 'project_id and prompt are required'
+            }, status=400)
+
+        print(f'[AI v2] save_feedback: "{prompt}"')
+        print(f'[AI v2]   AI selected: {len(ai_selected_ids)}, Correct: {len(correct_ids)}')
+
+        # False positives/negatives 계산
+        ai_set = set(ai_selected_ids)
+        correct_set = set(correct_ids)
+
+        false_positive_ids = list(ai_set - correct_set)
+        false_negative_ids = list(correct_set - ai_set)
+
+        was_correct = (ai_set == correct_set)
+
+        print(f'[AI v2]   False positives: {len(false_positive_ids)}, False negatives: {len(false_negative_ids)}')
+        print(f'[AI v2]   Was correct: {was_correct}')
+
+        # 객체 피처 수집
+        all_ids = list(ai_set | correct_set)
+        elements = RawElement.objects.filter(id__in=all_ids, project_id=project_id)
+        qms = QuantityMember.objects.filter(
+            raw_element_id__in=all_ids,
+            project_id=project_id
+        ).select_related('classification_tag')
+
+        object_features = {}
+        for elem in elements:
+            qm = qms.filter(raw_element_id=elem.id).first()
+            qm_data = None
+            if qm:
+                qm_data = {
+                    'classification_tag_name': qm.classification_tag.name if qm.classification_tag else None,
+                    'properties': qm.properties
+                }
+
+            features = extract_object_features(elem.raw_data, qm_data)
+            object_features[str(elem.id)] = {
+                'name': elem.raw_data.get('Name', ''),
+                'category': elem.raw_data.get('Category', ''),
+                'features': features
+            }
+
+        # 학습 데이터 저장
+        training_data = AITrainingData.objects.create(
+            project_id=project_id,
+            prompt=prompt,
+            function_name=function_name,
+            ai_selected_ids=ai_selected_ids,
+            correct_ids=correct_ids,
+            false_positive_ids=false_positive_ids,
+            false_negative_ids=false_negative_ids,
+            object_features=object_features,
+            was_correct=was_correct,
+            confidence=confidence
+        )
+
+        print(f'[AI v2] ✓ Feedback saved: {training_data.id}')
+
+        # 학습 데이터 개수 확인
+        total_training_data = AITrainingData.objects.filter(project_id=project_id).count()
+        print(f'[AI v2] Total training data: {total_training_data}')
+
+        return JsonResponse({
+            'success': True,
+            'training_data_id': str(training_data.id),
+            'message': 'Feedback saved successfully',
+            'total_training_data': total_training_data
+        })
+
+    except Exception as e:
+        print(f'[AI v2] Error saving feedback: {e}')
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# ▲▲▲ [NEW] Ollama LLM Fine-tuning API ▲▲▲

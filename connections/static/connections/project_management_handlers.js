@@ -138,6 +138,17 @@ function handleProjectChange(e) {
         }
         // --- 3D 뷰어용 데이터 로드 끝 ---
 
+        // --- AI 시스템 초기화 ---
+        // 학습된 룰셋 로드 (AI 선택 시스템용)
+        if (window.aiQueryProcessor && typeof window.aiQueryProcessor.loadLearnedRules === 'function') {
+            window.aiQueryProcessor.loadLearnedRules();
+        }
+        // AI 인덱스 빌더 초기화 (데이터 로드 후 자동으로 빌드됨)
+        if (window.aiIndexBuilder && typeof window.aiIndexBuilder.buildAll === 'function') {
+            // 인덱스는 allRevitData가 로드된 후 ai_select_handler.js에서 자동 빌드됨
+        }
+        // --- AI 시스템 초기화 끝 ---
+
         // --- 홈 탭 UI 업데이트 ---
         if (typeof updateHomeProjectListSelection === 'function') {
             updateHomeProjectListSelection(currentProjectId);
