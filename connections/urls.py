@@ -215,4 +215,8 @@ urlpatterns = [
     path('api/v2/ai/delete-model/', views.ai_delete_finetuned_model, name='ai_delete_finetuned_model'),
     path('api/v2/ai/training-data/<uuid:project_id>/', views.ai_get_training_data, name='ai_get_training_data'),
     # ▲▲▲ [NEW] v2 학습 기반 AI 시스템 API End ▲▲▲
+
+    # 3D Viewer Filter
+    path('api/filter/data/<uuid:project_id>/', views.get_filter_data, name='get_filter_data'),
+    path('api/filter/apply/<uuid:project_id>/', views.apply_filter_to_viewer, name='apply_filter_to_viewer'),
 ]

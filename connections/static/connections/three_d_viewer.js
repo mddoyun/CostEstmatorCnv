@@ -13221,4 +13221,74 @@
 
     // ▲▲▲ [NEW] Chat Command Integration Functions End ▲▲▲
 
+    // ▼▼▼ [NEW] Filter Functions ▼▼▼
+
+    /**
+     * 필터 적용 - 매칭된 객체만 표시
+     */
+    window.viewer = window.viewer || {};
+    window.viewer.applyFilter = function(matchedIds) {
+        if (!scene) {
+            console.warn('[3D Viewer] Scene not initialized');
+            return;
+        }
+
+        const matchedSet = new Set(matchedIds);
+        let hiddenCount = 0;
+        let visibleCount = 0;
+
+        scene.traverse((object) => {
+            if (object.isMesh && object.userData.rawData) {
+                const rawId = object.userData.rawData.id;
+
+                if (matchedSet.has(rawId)) {
+                    // 매칭됨 - 표시
+                    object.visible = true;
+                    hiddenObjectIds.delete(rawId);
+                    visibleCount++;
+                } else {
+                    // 매칭 안됨 - 숨김
+                    object.visible = false;
+                    hiddenObjectIds.add(rawId);
+                    hiddenCount++;
+                }
+            }
+        });
+
+        console.log(`[3D Viewer Filter] Visible: ${visibleCount}, Hidden: ${hiddenCount}`);
+
+        // Show All 버튼 활성화
+        const showAllBtn = document.getElementById('show-all-btn');
+        if (showAllBtn) {
+            showAllBtn.disabled = false;
+        }
+    };
+
+    /**
+     * 필터 제거 - 모든 객체 표시
+     */
+    window.viewer.clearFilter = function() {
+        if (!scene) {
+            console.warn('[3D Viewer] Scene not initialized');
+            return;
+        }
+
+        scene.traverse((object) => {
+            if (object.isMesh && object.userData.rawData) {
+                object.visible = true;
+            }
+        });
+
+        hiddenObjectIds.clear();
+        console.log('[3D Viewer Filter] Filter cleared, all objects visible');
+
+        // Show All 버튼 비활성화
+        const showAllBtn = document.getElementById('show-all-btn');
+        if (showAllBtn) {
+            showAllBtn.disabled = true;
+        }
+    };
+
+    // ▲▲▲ [NEW] Filter Functions End ▲▲▲
+
 })();

@@ -58,6 +58,35 @@
                         <button id="hide-selection-btn" disabled title="선택된 객체 숨기기">선택숨김</button>
                         <button id="show-all-btn" disabled title="모든 객체 표시">전체보기</button>
                     </div>
+
+                    <!-- 필터링 그룹 -->
+                    <div class="button-group">
+                        <button id="open-filter-panel-btn" title="룰셋 기반 필터링">🔍 필터</button>
+                    </div>
+                </div>
+
+                <!-- 필터 패널 (토글) -->
+                <div id="filter-panel" class="filter-panel" style="display: none;">
+                    <div class="filter-panel-header">
+                        <h3>3D 뷰어 필터</h3>
+                        <button id="close-filter-panel-btn" class="close-btn">✕</button>
+                    </div>
+                    <div class="filter-panel-content">
+                        <div class="filter-section">
+                            <label>필터 조건</label>
+                            <div id="filter-conditions-builder" class="conditions-builder">
+                                <!-- 조건들이 동적으로 추가됨 -->
+                            </div>
+                            <button id="add-filter-condition-btn" class="add-condition-btn">+ 조건 추가</button>
+                        </div>
+                        <div class="filter-actions">
+                            <button id="apply-filter-btn" class="primary-btn">필터 적용</button>
+                            <button id="clear-filter-btn" class="secondary-btn">필터 초기화</button>
+                        </div>
+                        <div class="filter-result-info" id="filter-result-info" style="display: none;">
+                            <span id="filter-result-text"></span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 우측 세로 버튼 그룹 (단면/측정) -->

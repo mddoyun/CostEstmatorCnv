@@ -4682,3 +4682,186 @@ div[id$='-grouping-controls'] {
 
 /* ▲▲▲ [NEW] Chat Panel Styles End ▲▲▲ */
 
+/* ▼▼▼ [NEW] 3D Viewer Filter Panel Styles ▼▼▼ */
+.filter-panel {
+    position: absolute;
+    top: 60px;
+    left: 120px;
+    width: 400px;
+    max-height: 600px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+
+.filter-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    border-radius: 8px 8px 0 0;
+}
+
+.filter-panel-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.filter-panel-header .close-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #666;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.filter-panel-header .close-btn:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.filter-panel-content {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.filter-section {
+    margin-bottom: 16px;
+}
+
+.filter-section label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #555;
+    font-size: 13px;
+}
+
+.conditions-builder {
+    margin-bottom: 12px;
+}
+
+.filter-condition-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.filter-property-select,
+.filter-operator-select,
+.filter-value-input {
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.filter-property-select {
+    flex: 2;
+}
+
+.filter-operator-select {
+    flex: 1;
+}
+
+.filter-value-input {
+    flex: 1.5;
+}
+
+.filter-remove-btn {
+    background: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 14px;
+    min-width: 30px;
+}
+
+.filter-remove-btn:hover {
+    background: #d32f2f;
+}
+
+.add-condition-btn {
+    background: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    width: 100%;
+    font-weight: bold;
+}
+
+.add-condition-btn:hover {
+    background: #45a049;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.primary-btn,
+.secondary-btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.primary-btn {
+    background: #1976d2;
+    color: white;
+}
+
+.primary-btn:hover {
+    background: #1565c0;
+}
+
+.secondary-btn {
+    background: #757575;
+    color: white;
+}
+
+.secondary-btn:hover {
+    background: #616161;
+}
+
+.filter-result-info {
+    margin-top: 12px;
+    padding: 10px;
+    background: #e3f2fd;
+    border: 1px solid #1976d2;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #1976d2;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* ▲▲▲ [NEW] 3D Viewer Filter Panel Styles End ▲▲▲ */
+

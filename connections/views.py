@@ -9576,3 +9576,358 @@ def ai_delete_finetuned_model(request):
 
 
 # ▲▲▲ [NEW] Ollama LLM Fine-tuning API ▲▲▲
+
+
+# ▼▼▼ [NEW] 3D Viewer Filter API ▼▼▼
+@require_http_methods(["GET"])
+def get_filter_data(request, project_id):
+    """
+    3D 뷰어 필터링을 위한 통합 데이터 조회
+    RawElement + QuantityMember + CostItem + ActivityObject의 모든 속성 반환
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+
+        # RawElement 조회
+        raw_elements = RawElement.objects.filter(project=project, is_active=True)
+
+        result = []
+
+        for elem in raw_elements:
+            elem_data = {
+                'raw_element_id': str(elem.id),
+                'BIM': elem.raw_data or {},  # BIM 속성
+                'QM': [],  # QuantityMembers
+                'CI': [],  # CostItems
+                'AO': []   # ActivityObjects
+            }
+
+            # QuantityMembers 조회
+            qms = QuantityMember.objects.filter(
+                raw_elements=elem
+            ).select_related(
+                'classification_tag',
+                'member_mark',
+                'space'
+            ).prefetch_related(
+                'cost_codes'
+            )
+
+            for qm in qms:
+                qm_data = {
+                    'System': {
+                        'id': str(qm.id),
+                        'name': qm.name,
+                        'quantity': float(qm.quantity) if qm.quantity else 0,
+                        'classification_tag': qm.classification_tag.name if qm.classification_tag else None,
+                        'classification_tag_name': qm.classification_tag_name,
+                    },
+                    'Properties': qm.properties or {},
+                    'MM': {},
+                    'SC': {},
+                    'CI': [],
+                }
+
+                # MemberMark 정보
+                if qm.member_mark:
+                    qm_data['MM'] = {
+                        'System': {
+                            'id': str(qm.member_mark.id),
+                            'mark': qm.member_mark.mark,
+                            'description': qm.member_mark.description,
+                        },
+                        'Properties': qm.member_mark.properties or {}
+                    }
+
+                # Space 정보
+                if qm.space:
+                    qm_data['SC'] = {
+                        'System': {
+                            'id': str(qm.space.id),
+                            'name': qm.space.name,
+                            'classification_code': qm.space.classification_code,
+                            'level': qm.space.level,
+                        }
+                    }
+
+                # CostItems 조회
+                cost_items = CostItem.objects.filter(
+                    quantity_members=qm
+                ).select_related('cost_code').prefetch_related('cost_codes')
+
+                for ci in cost_items:
+                    ci_data = {
+                        'System': {
+                            'id': str(ci.id),
+                            'description': ci.description,
+                            'quantity': float(ci.quantity) if ci.quantity else 0,
+                            'unit': ci.unit,
+                        },
+                        'CC': {},
+                        'AO': [],
+                    }
+
+                    # CostCode 정보 (다대다 관계)
+                    cost_codes = ci.cost_codes.all()
+                    if cost_codes.exists():
+                        # 첫 번째 cost_code 사용 (룰셋에서는 여러 개 가능)
+                        cc = cost_codes.first()
+                        ci_data['CC'] = {
+                            'System': {
+                                'id': str(cc.id),
+                                'code': cc.code,
+                                'name': cc.name,
+                                'detail_code': cc.detail_code,
+                                'unit': cc.unit,
+                            }
+                        }
+
+                    # ActivityObjects 조회
+                    activity_objects = ActivityObject.objects.filter(
+                        cost_item=ci
+                    ).select_related('activity')
+
+                    for ao in activity_objects:
+                        ao_data = {
+                            'System': {
+                                'id': str(ao.id),
+                                'quantity': float(ao.quantity) if ao.quantity else 0,
+                                'start_date': ao.start_date.isoformat() if ao.start_date else None,
+                                'end_date': ao.end_date.isoformat() if ao.end_date else None,
+                            },
+                            'AC': {},
+                        }
+
+                        # Activity 정보
+                        if ao.activity:
+                            ao_data['AC'] = {
+                                'System': {
+                                    'id': str(ao.activity.id),
+                                    'code': ao.activity.code,
+                                    'name': ao.activity.name,
+                                    'duration': float(ao.activity.duration) if ao.activity.duration else 0,
+                                }
+                            }
+
+                        ci_data['AO'].append(ao_data)
+
+                    qm_data['CI'].append(ci_data)
+
+                elem_data['QM'].append(qm_data)
+
+            result.append(elem_data)
+
+        return JsonResponse({
+            'status': 'success',
+            'data': result,
+            'count': len(result)
+        })
+
+    except Exception as e:
+        print(f'[Filter] Error getting filter data: {e}')
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def apply_filter_to_viewer(request, project_id):
+    """
+    필터 조건을 평가하여 매칭되는 RawElement ID 리스트 반환
+    """
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        data = json.loads(request.body)
+        conditions = data.get('conditions', [])
+
+        if not conditions:
+            return JsonResponse({
+                'status': 'success',
+                'matched_ids': [],
+                'total_count': 0
+            })
+
+        # 모든 필터 데이터 가져오기 (내부적으로 동일한 로직 재사용)
+        raw_elements = RawElement.objects.filter(project=project, is_active=True)
+        matched_ids = []
+
+        for elem in raw_elements:
+            # 컨텍스트 빌드
+            context = build_filter_context(elem)
+
+            # 모든 조건 평가
+            all_match = True
+            for cond in conditions:
+                if not evaluate_filter_condition(cond, context):
+                    all_match = False
+                    break
+
+            if all_match:
+                matched_ids.append(str(elem.id))
+
+        return JsonResponse({
+            'status': 'success',
+            'matched_ids': matched_ids,
+            'total_count': len(matched_ids)
+        })
+
+    except Exception as e:
+        print(f'[Filter] Error applying filter: {e}')
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+def build_filter_context(raw_element):
+    """RawElement의 모든 연관 데이터를 컨텍스트로 빌드"""
+    context = {
+        'BIM': raw_element.raw_data or {},
+        'QM': [],
+        'CI': [],
+        'AO': [],
+    }
+
+    qms = QuantityMember.objects.filter(
+        raw_elements=raw_element
+    ).select_related('classification_tag', 'member_mark', 'space')
+
+    for qm in qms:
+        qm_ctx = {
+            'System': {
+                'id': str(qm.id),
+                'name': qm.name,
+                'quantity': float(qm.quantity) if qm.quantity else 0,
+                'classification_tag': qm.classification_tag.name if qm.classification_tag else None,
+                'classification_tag_name': qm.classification_tag_name,
+            },
+            'Properties': qm.properties or {},
+            'MM': {},
+            'SC': {},
+        }
+
+        if qm.member_mark:
+            qm_ctx['MM'] = {
+                'System': {
+                    'mark': qm.member_mark.mark,
+                    'description': qm.member_mark.description,
+                },
+                'Properties': qm.member_mark.properties or {}
+            }
+
+        if qm.space:
+            qm_ctx['SC'] = {
+                'System': {
+                    'name': qm.space.name,
+                    'classification_code': qm.space.classification_code,
+                }
+            }
+
+        context['QM'].append(qm_ctx)
+
+        # CostItems
+        cost_items = CostItem.objects.filter(quantity_members=qm).prefetch_related('cost_codes')
+        for ci in cost_items:
+            ci_ctx = {
+                'System': {
+                    'id': str(ci.id),
+                    'description': ci.description,
+                    'quantity': float(ci.quantity) if ci.quantity else 0,
+                },
+                'CC': {},
+            }
+
+            cost_codes = ci.cost_codes.all()
+            if cost_codes.exists():
+                cc = cost_codes.first()
+                ci_ctx['CC'] = {
+                    'System': {
+                        'code': cc.code,
+                        'name': cc.name,
+                    }
+                }
+
+            context['CI'].append(ci_ctx)
+
+            # ActivityObjects
+            activity_objects = ActivityObject.objects.filter(cost_item=ci).select_related('activity')
+            for ao in activity_objects:
+                ao_ctx = {
+                    'System': {
+                        'id': str(ao.id),
+                        'quantity': float(ao.quantity) if ao.quantity else 0,
+                    },
+                    'AC': {},
+                }
+
+                if ao.activity:
+                    ao_ctx['AC'] = {
+                        'System': {
+                            'code': ao.activity.code,
+                            'name': ao.activity.name,
+                        }
+                    }
+
+                context['AO'].append(ao_ctx)
+
+    return context
+
+
+def evaluate_filter_condition(condition, context):
+    """필터 조건을 평가"""
+    property_path = condition.get('property', '')
+    operator = condition.get('operator', '==')
+    value = condition.get('value', '')
+
+    if not property_path:
+        return True
+
+    # 속성 경로 파싱 (예: "QM.System.name", "BIM.Category")
+    try:
+        actual_value = get_nested_value(context, property_path)
+
+        # 연산자에 따른 평가
+        if operator == '==':
+            return str(actual_value).lower() == str(value).lower()
+        elif operator == '!=':
+            return str(actual_value).lower() != str(value).lower()
+        elif operator == 'contains':
+            return str(value).lower() in str(actual_value).lower()
+        elif operator == 'startsWith':
+            return str(actual_value).lower().startswith(str(value).lower())
+        elif operator == 'endsWith':
+            return str(actual_value).lower().endswith(str(value).lower())
+        elif operator == '>':
+            return float(actual_value) > float(value)
+        elif operator == '<':
+            return float(actual_value) < float(value)
+        elif operator == '>=':
+            return float(actual_value) >= float(value)
+        elif operator == '<=':
+            return float(actual_value) <= float(value)
+        else:
+            return False
+    except Exception as e:
+        print(f'[Filter] Error evaluating condition: {e}')
+        return False
+
+
+def get_nested_value(obj, path):
+    """중첩된 경로에서 값 가져오기 (예: "QM.System.name")"""
+    parts = path.split('.')
+    current = obj
+
+    for part in parts:
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, list) and len(current) > 0:
+            # 리스트인 경우 첫 번째 항목 사용
+            current = current[0].get(part) if isinstance(current[0], dict) else None
+        else:
+            return None
+
+        if current is None:
+            return None
+
+    return current
+
+# ▲▲▲ [NEW] 3D Viewer Filter API ▲▲▲
