@@ -207,5 +207,12 @@ urlpatterns = [
     path('api/v2/ai/predict-function/', views.ai_predict_function_v2, name='ai_predict_function_v2'),
     path('api/v2/ai/predict-objects/', views.ai_predict_objects_v2, name='ai_predict_objects_v2'),
     path('api/v2/ai/save-feedback/', views.ai_save_feedback_v2, name='ai_save_feedback_v2'),
+
+    # Embedding Model Fine-tuning
+    path('api/v2/ai/finetune-model/', views.ai_finetune_embedding_model, name='ai_finetune_embedding_model'),
+    path('api/v2/ai/list-models/', views.ai_list_finetuned_models, name='ai_list_finetuned_models'),
+    path('api/v2/ai/use-model/', views.ai_use_finetuned_model, name='ai_use_finetuned_model'),
+    path('api/v2/ai/delete-model/', views.ai_delete_finetuned_model, name='ai_delete_finetuned_model'),
+    path('api/v2/ai/training-data/<uuid:project_id>/', views.ai_get_training_data, name='ai_get_training_data'),
     # ▲▲▲ [NEW] v2 학습 기반 AI 시스템 API End ▲▲▲
 ]

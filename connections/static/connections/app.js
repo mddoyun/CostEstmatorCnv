@@ -343,6 +343,31 @@ function setupAiModelManagementListeners() {
             }
         });
 
+    // Embedding Fine-tuning Listeners
+    document
+        .getElementById("load-training-data-btn")
+        ?.addEventListener("click", loadTrainingDataForEmbedding);
+
+    document
+        .getElementById("start-embedding-finetuning-btn")
+        ?.addEventListener("click", startEmbeddingFinetuning);
+
+    document
+        .getElementById("reset-embedding-finetuning-btn")
+        ?.addEventListener("click", resetEmbeddingFinetuningUI);
+
+    document
+        .getElementById("refresh-embedding-models-btn")
+        ?.addEventListener("click", refreshEmbeddingModels);
+
+    document
+        .getElementById("activate-finetuned-embedding-btn")
+        ?.addEventListener("click", () => activateEmbeddingModel(null));
+
+    document
+        .getElementById("embedding-models-tbody")
+        ?.addEventListener("click", handleEmbeddingModelsTableActions);
+
 }
 
 // ▲▲▲ [교체] 여기까지 ▲▲▲

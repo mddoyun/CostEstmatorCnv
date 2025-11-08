@@ -2209,6 +2209,12 @@
                         >
                             🧠 LLM 파인튜닝
                         </button>
+                        <button
+                            class="inner-tab-button"
+                            data-inner-tab="embedding-finetuning"
+                        >
+                            🔤 Embedding 파인튜닝
+                        </button>
                     </nav>
 
                     <div class="inner-tab-content-container">
@@ -2740,6 +2746,140 @@
                         </div>
                         <!-- ▲▲▲ [NEW] LLM 파인튜닝 탭 ▲▲▲ -->
 
+                        <!-- ▼▼▼ [NEW] Embedding 파인튜닝 탭 ▼▼▼ -->
+                        <div id="embedding-finetuning" class="inner-tab-content">
+                            <div class="embedding-finetuning-section panel-box">
+                                <div class="panel-header">
+                                    <h3>🔤 Embedding 모델 파인튜닝</h3>
+                                    <p style="font-size: 12px; color: #666; margin: 5px 0 0 0;">
+                                        사용자 피드백 데이터를 활용하여 Sentence Transformer 모델을 파인튜닝합니다.
+                                    </p>
+                                </div>
+                                <div class="panel-content" style="display: flex; flex-direction: column; gap: 20px;">
+
+                                    <!-- Step 1: 학습 데이터 확인 -->
+                                    <div class="finetuning-step">
+                                        <h4>1단계: 학습 데이터 확인</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                                            <button id="load-training-data-btn" class="primary-button">
+                                                📊 학습 데이터 불러오기
+                                            </button>
+                                            <span id="training-data-count" style="padding: 8px; color: #666;"></span>
+                                        </div>
+                                        <div id="training-data-preview" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
+                                            <p style="color: #999;">프로젝트를 선택하고 "학습 데이터 불러오기" 버튼을 클릭하세요.</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step 2: 파인튜닝 설정 -->
+                                    <div class="finetuning-step">
+                                        <h4>2단계: 파인튜닝 설정</h4>
+                                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                                            <div>
+                                                <label style="font-weight: bold; display: block; margin-bottom: 5px;">베이스 모델:</label>
+                                                <select id="embedding-base-model" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                                    <option value="paraphrase-multilingual-MiniLM-L12-v2">paraphrase-multilingual-MiniLM-L12-v2 (추천)</option>
+                                                    <option value="distiluse-base-multilingual-cased-v2">distiluse-base-multilingual-cased-v2</option>
+                                                    <option value="xlm-roberta-base">xlm-roberta-base (대용량)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label style="font-weight: bold; display: block; margin-bottom: 5px;">모델 이름:</label>
+                                                <input type="text" id="embedding-model-name" placeholder="예: bim_selector_v1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                                            </div>
+                                            <div>
+                                                <label style="font-weight: bold; display: block; margin-bottom: 5px;">에포크 수:</label>
+                                                <input type="number" id="embedding-epochs" value="3" min="1" max="20" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                                            </div>
+                                            <div>
+                                                <label style="font-weight: bold; display: block; margin-bottom: 5px;">배치 크기:</label>
+                                                <input type="number" id="embedding-batch-size" value="16" min="4" max="64" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step 3: 파인튜닝 실행 -->
+                                    <div class="finetuning-step">
+                                        <h4>3단계: 파인튜닝 실행</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                            <button id="start-embedding-finetuning-btn" class="primary-button">
+                                                🚀 파인튜닝 시작
+                                            </button>
+                                            <button id="reset-embedding-finetuning-btn" class="secondary-button">
+                                                🔄 설정 초기화
+                                            </button>
+                                        </div>
+                                        <div id="embedding-finetuning-progress" style="display: none; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+                                            <div style="margin-bottom: 10px;">
+                                                <strong>진행 상황:</strong>
+                                                <div id="embedding-progress-text" style="margin-top: 5px; color: #666;">준비 중...</div>
+                                            </div>
+                                            <div style="margin-bottom: 10px;">
+                                                <div style="background: #e0e0e0; height: 20px; border-radius: 10px; overflow: hidden;">
+                                                    <div id="embedding-progress-bar" style="background: linear-gradient(90deg, #4caf50, #8bc34a); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                                                </div>
+                                            </div>
+                                            <div id="embedding-progress-details" style="font-size: 12px; color: #666; font-family: monospace; max-height: 200px; overflow-y: auto; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                                <!-- 진행 상황 로그 -->
+                                            </div>
+                                        </div>
+                                        <div id="embedding-finetuning-result" style="display: none; padding: 15px; border: 1px solid #4caf50; border-radius: 4px; background: #e8f5e9; margin-top: 10px;">
+                                            <h5 style="margin: 0 0 10px 0; color: #2e7d32;">✅ 파인튜닝 완료!</h5>
+                                            <div id="embedding-result-details">
+                                                <!-- 결과 통계 표시 -->
+                                            </div>
+                                            <div style="margin-top: 10px;">
+                                                <button id="activate-finetuned-embedding-btn" class="primary-button">
+                                                    ⭐ 이 모델 활성화
+                                                </button>
+                                                <button id="download-finetuned-embedding-btn" class="secondary-button">
+                                                    💾 모델 다운로드
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step 4: 모델 관리 -->
+                                    <div class="finetuning-step">
+                                        <h4>4단계: 파인튜닝된 모델 관리</h4>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                                            <button id="refresh-embedding-models-btn" class="secondary-button">
+                                                🔄 모델 목록 새로고침
+                                            </button>
+                                            <span id="active-embedding-model-label" style="padding: 8px; color: #666; background: #e3f2fd; border-radius: 4px; font-weight: bold;">
+                                                현재 활성: <span id="active-embedding-model-name">paraphrase-multilingual-MiniLM-L12-v2 (기본)</span>
+                                            </span>
+                                        </div>
+                                        <div id="embedding-models-table-container" style="border: 1px solid #ddd; border-radius: 4px; overflow-x: auto;">
+                                            <table id="embedding-models-table" style="width: 100%; border-collapse: collapse;">
+                                                <thead>
+                                                    <tr style="background: #f5f5f5;">
+                                                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">모델 이름</th>
+                                                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">베이스 모델</th>
+                                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">학습 샘플</th>
+                                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">학습 예시</th>
+                                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">에포크</th>
+                                                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">생성일</th>
+                                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">활성</th>
+                                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">액션</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="embedding-models-tbody">
+                                                    <tr>
+                                                        <td colspan="8" style="padding: 20px; text-align: center; color: #999;">
+                                                            모델 목록을 불러오려면 "모델 목록 새로고침" 버튼을 클릭하세요.
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ▲▲▲ [NEW] Embedding 파인튜닝 탭 ▲▲▲ -->
+
                     </div>
                 </div>
                 <!-- ▼▼▼ [추가] 액티비티 관리 탭 ▼▼▼ -->
@@ -3174,6 +3314,7 @@
         <script src="{% static 'connections/navigation.js' %}?v=3"></script>
         <script src="{% static 'connections/ai_model_management.js' %}?v=2"></script>
         <script src="{% static 'connections/llm_finetuning_handler.js' %}"></script>
+        <script src="{% static 'connections/embedding_finetuning_handler.js' %}"></script>
         <script src="{% static 'connections/unit_price_management.js' %}"></script>
         <script src="{% static 'connections/schematic_estimation_handlers.js' %}"></script>
         <script src="{% static 'connections/websocket.js' %}"></script>
@@ -3593,7 +3734,7 @@
         <script src="{% static 'connections/ai_query_processor.js' %}"></script>
         <script src="{% static 'connections/ai_select_handler.js' %}"></script>
         <!-- ▼▼▼ NEW: AI v2 Learning-based System ▼▼▼ -->
-        <script src="{% static 'connections/ai_handler_v2.js' %}"></script>
+        <script src="{% static 'connections/ai_handler_v2.js' %}?v=2"></script>
         <!-- ▲▲▲ NEW: AI v2 Learning-based System ▲▲▲ -->
         <script src="{% static 'connections/chat_command_handler.js' %}"></script>
         <!-- ▲▲▲ AI Query System Scripts ▲▲▲ -->

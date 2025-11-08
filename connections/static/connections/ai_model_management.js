@@ -54,6 +54,17 @@ function loadDataForAiInnerTab(innerTabId) {
             `[DEBUG][loadDataForAiInnerTab] Initializing AI training UI.`
         ); // 디버깅
         resetTrainingUI(); // 학습 UI 초기 상태로 설정
+    } else if (innerTabId === 'embedding-finetuning') {
+        console.log(
+            `[DEBUG][loadDataForAiInnerTab] Initializing Embedding Fine-tuning UI.`
+        ); // 디버깅
+        // Load training data and models when tab is opened
+        if (typeof loadTrainingDataForEmbedding === 'function') {
+            loadTrainingDataForEmbedding();
+        }
+        if (typeof refreshEmbeddingModels === 'function') {
+            refreshEmbeddingModels();
+        }
     } else {
         console.warn(
             `[WARN][loadDataForAiInnerTab] Unknown inner tab ID: ${innerTabId}`

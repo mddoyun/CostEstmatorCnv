@@ -14,3 +14,7 @@ venv/
 node_modules/
 references/
 *.exe
+
+# AI Models (too large for git)
+ai_models/
+checkpoints/

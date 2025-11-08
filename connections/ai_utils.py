@@ -20,12 +20,24 @@ _model_name = 'paraphrase-multilingual-MiniLM-L12-v2'
 
 def get_embedding_model():
     """Embedding 모델 싱글톤 인스턴스"""
-    global _embedding_model
+    global _embedding_model, _model_name
     if _embedding_model is None:
         print(f'[AI Utils] Loading embedding model: {_model_name}')
         _embedding_model = SentenceTransformer(_model_name)
         print('[AI Utils] ✓ Embedding model loaded successfully')
     return _embedding_model
+
+
+def set_embedding_model(model_path):
+    """Set a custom embedding model"""
+    global _embedding_model, _model_name
+    from sentence_transformers import SentenceTransformer
+
+    print(f'[AI Utils] Setting embedding model: {model_path}')
+    _embedding_model = SentenceTransformer(model_path)
+    _model_name = model_path
+    print(f'[AI Utils] ✓ Embedding model activated: {model_path}')
+    return True
 
 
 def encode_text(text: str) -> np.ndarray:
@@ -191,7 +203,7 @@ def compute_learned_weight(prompt: str, object_id: str, training_data: List[Dict
         training_data: 학습 데이터
 
     Returns:
-        가중치 (0.5 ~ 2.0)
+        가중치 (0.2 ~ 2.5) - Increased penalty range for better learning convergence
     """
     if len(training_data) == 0:
         return 1.0
@@ -209,7 +221,8 @@ def compute_learned_weight(prompt: str, object_id: str, training_data: List[Dict
 
     for data in training_data:
         train_words = data['prompt'].lower().split()
-        if len(train_words) > 0 and first_word in train_words:
+        # 첫 단어가 정확히 일치하는 경우만 매칭
+        if len(train_words) > 0 and train_words[0] == first_word:
             similar_count += 1
             if object_id in data.get('correct_ids', []):
                 correct_count += 1
@@ -217,9 +230,15 @@ def compute_learned_weight(prompt: str, object_id: str, training_data: List[Dict
     if similar_count == 0:
         return 1.0
 
-    # 가중치 계산
+    # 가중치 계산 - Stronger penalties (0.2x) and rewards (2.5x)
     ratio = correct_count / similar_count
-    weight = max(0.5, min(2.0, ratio * 2))
+    weight = max(0.2, min(2.5, ratio * 2.5))
+
+    # 디버그: 가중치 계산 과정 출력 (first 5 objects)
+    if similar_count > 0:
+        import random
+        if random.random() < 0.02:  # 2% 확률로 출력 (너무 많은 로그 방지)
+            print(f'[AI Weight] obj={object_id[:8]} similar={similar_count} correct={correct_count} ratio={ratio:.2f} weight={weight:.2f}')
 
     return weight
 

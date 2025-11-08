@@ -113,7 +113,7 @@ async function predictObjects(prompt) {
         body: JSON.stringify({
             prompt: prompt,
             project_id: currentProjectId,
-            threshold: 0.3,
+            threshold: 0.15,  // Lowered from 0.3 to allow stronger filtering with learned weights
             top_k: 100
         })
     });

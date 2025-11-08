@@ -60,7 +60,11 @@ from .models import (
     ActivityDependency,  # <--- 액티비티 의존성 모델 추가
     WorkCalendar,  # <--- 작업 캘린더 모델 추가
     ActivityAssignmentRule,  # <--- 액티비티 할당 룰셋 모델 추가
-    ActivityObject  # <--- 액티비티 객체 모델 추가
+    ActivityObject,  # <--- 액티비티 객체 모델 추가
+    AITrainingData,  # <--- AI 학습 데이터 모델 추가
+    AIFunctionModel,  # <--- AI 함수 모델 추가
+    AIObjectRetrievalModel,  # <--- AI 객체 검색 모델 추가
+    AISynonymDictionary  # <--- AI 유사어 사전 추가
 
 )
 from tensorflow.keras import models # <<< models 임포트 추가
@@ -9126,11 +9130,32 @@ def ai_predict_objects_v2(request):
 
         print(f'[AI v2] Collected features for {len(objects_with_features)} objects')
 
-        # 학습 데이터 로드
-        training_data_qs = AITrainingData.objects.filter(
+        # 학습 데이터 로드 (스마트 필터링)
+        print(f'[AI v2 DEBUG] Querying training data for project: {project_id}, function: select_objects')
+
+        # 프롬프트의 첫 단어 추출
+        prompt_words = prompt.lower().split()
+        first_word = prompt_words[0] if len(prompt_words) > 0 else ''
+
+        # 1) 유사한 프롬프트 우선 (첫 단어가 같은 것) - 최대 100개
+        similar_qs = AITrainingData.objects.filter(
+            project_id=project_id,
+            function_name='select_objects',
+            prompt__istartswith=first_word  # 첫 단어로 시작
+        ).order_by('-timestamp')[:100]
+
+        # 2) 나머지 학습 데이터 - 최대 100개
+        other_qs = AITrainingData.objects.filter(
             project_id=project_id,
             function_name='select_objects'
-        ).order_by('-timestamp')[:50]
+        ).exclude(
+            id__in=[td.id for td in similar_qs]
+        ).order_by('-timestamp')[:100]
+
+        # 합치기
+        training_data_qs = list(similar_qs) + list(other_qs)
+
+        print(f'[AI v2 DEBUG] Total training data: {len(training_data_qs)} (similar: {len(similar_qs)}, other: {len(other_qs)})')
 
         training_data = [
             {
@@ -9279,5 +9304,275 @@ def ai_save_feedback_v2(request):
         import traceback
         print(traceback.format_exc())
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Embedding Model Fine-tuning API
+# ═══════════════════════════════════════════════════════════════════════════
+
+@require_http_methods(["POST"])
+def ai_finetune_embedding_model(request):
+    """
+    Embedding 모델 파인튜닝 API
+
+    Request:
+        {
+            "project_id": "uuid",
+            "epochs": 3,
+            "batch_size": 16,
+            "model_name": "custom_model_v1"  // optional
+        }
+
+    Response:
+        {
+            "success": true,
+            "model_path": "ai_models/embedding_finetuned_20251107_153000",
+            "stats": {...}
+        }
+    """
+    try:
+        from connections.embedding_finetuner import finetune_embedding_model
+
+        data = json.loads(request.body)
+        project_id = data.get('project_id')
+        epochs = data.get('epochs', 3)
+        batch_size = data.get('batch_size', 16)
+        model_name = data.get('model_name', None)
+
+        if not project_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'project_id is required'
+            }, status=400)
+
+        print(f'[Fine-tuning] Starting for project: {project_id}')
+
+        # 1. 학습 데이터 로드
+        training_data_qs = AITrainingData.objects.filter(
+            project_id=project_id,
+            function_name='select_objects'
+        ).order_by('-timestamp')
+
+        if training_data_qs.count() < 10:
+            return JsonResponse({
+                'success': False,
+                'error': f'Insufficient training data: {training_data_qs.count()} (need at least 10)'
+            }, status=400)
+
+        training_data = [
+            {
+                'prompt': td.prompt,
+                'correct_ids': td.correct_ids,
+                'ai_selected_ids': td.ai_selected_ids
+            }
+            for td in training_data_qs
+        ]
+
+        # 2. 객체 피처 수집
+        objects_with_features = {}
+        for td in training_data_qs:
+            for obj_id, obj_data in td.object_features.items():
+                if obj_id not in objects_with_features:
+                    objects_with_features[obj_id] = obj_data.get('features', '')
+
+        print(f'[Fine-tuning] Training data: {len(training_data)} samples')
+        print(f'[Fine-tuning] Object features: {len(objects_with_features)} objects')
+
+        # 3. 파인튜닝 실행
+        output_path = f'ai_models/embedding_finetuned_{model_name}' if model_name else None
+
+        model_path, stats = finetune_embedding_model(
+            training_data=training_data,
+            objects_with_features=objects_with_features,
+            output_path=output_path,
+            epochs=epochs,
+            batch_size=batch_size
+        )
+
+        print(f'[Fine-tuning] ✓ Model saved to: {model_path}')
+
+        return JsonResponse({
+            'success': True,
+            'model_path': model_path,
+            'stats': stats
+        })
+
+    except Exception as e:
+        print(f'[Fine-tuning] Error: {e}')
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def ai_list_finetuned_models(request):
+    """
+    파인튜닝된 모델 목록 조회
+
+    Response:
+        {
+            "success": true,
+            "active_model": "ai_models/...",
+            "models": [
+                {
+                    "name": "embedding_finetuned_20251107_153000",
+                    "path": "ai_models/...",
+                    "training_samples": 56,
+                    "timestamp": "2025-11-07T15:30:00",
+                    ...
+                }
+            ]
+        }
+    """
+    try:
+        from connections.embedding_finetuner import list_finetuned_models
+        from connections.ai_utils import _model_name
+
+        models = list_finetuned_models()
+
+        # Get currently active model name
+        active_model = _model_name if _model_name else 'paraphrase-multilingual-MiniLM-L12-v2'
+
+        return JsonResponse({
+            'success': True,
+            'active_model': active_model,
+            'models': models
+        })
+
+    except Exception as e:
+        print(f'[Fine-tuning] Error listing models: {e}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def ai_use_finetuned_model(request):
+    """
+    파인튜닝된 모델 사용 설정
+
+    Request:
+        {
+            "model_path": "ai_models/embedding_finetuned_20251107_153000"
+        }
+
+    Response:
+        {
+            "success": true,
+            "message": "Model activated"
+        }
+    """
+    try:
+        data = json.loads(request.body)
+        model_path = data.get('model_path')
+
+        if not model_path:
+            return JsonResponse({
+                'success': False,
+                'error': 'model_path is required'
+            }, status=400)
+
+        # Use the new set_embedding_model function
+        from connections.ai_utils import set_embedding_model
+
+        set_embedding_model(model_path)
+
+        print(f'[Fine-tuning] ✓ Activated model: {model_path}')
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Model activated: {model_path}'
+        })
+
+    except Exception as e:
+        print(f'[Fine-tuning] Error activating model: {e}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def ai_get_training_data(request, project_id):
+    """
+    학습 데이터 조회 API
+
+    Response:
+        {
+            "success": true,
+            "training_data": [...]
+        }
+    """
+    try:
+        training_data_qs = AITrainingData.objects.filter(
+            project_id=project_id,
+            function_name='select_objects'
+        ).order_by('-timestamp')
+
+        training_data = [
+            {
+                'id': str(td.id),
+                'prompt': td.prompt,
+                'correct_ids': td.correct_ids,
+                'ai_selected_ids': td.ai_selected_ids,
+                'timestamp': td.timestamp.isoformat()
+            }
+            for td in training_data_qs
+        ]
+
+        return JsonResponse({
+            'success': True,
+            'training_data': training_data
+        })
+
+    except Exception as e:
+        print(f'[Training Data] Error: {e}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def ai_delete_finetuned_model(request):
+    """
+    파인튜닝된 모델 삭제
+
+    Request:
+        {
+            "model_path": "ai_models/embedding_finetuned_20251107_153000"
+        }
+
+    Response:
+        {
+            "success": true,
+            "message": "Model deleted"
+        }
+    """
+    try:
+        import shutil
+
+        data = json.loads(request.body)
+        model_path = data.get('model_path')
+
+        if not model_path:
+            return JsonResponse({
+                'success': False,
+                'error': 'model_path is required'
+            }, status=400)
+
+        # Check if directory exists
+        if not os.path.exists(model_path):
+            return JsonResponse({
+                'success': False,
+                'error': f'Model not found: {model_path}'
+            }, status=404)
+
+        # Delete the directory
+        shutil.rmtree(model_path)
+
+        print(f'[Fine-tuning] ✓ Deleted model: {model_path}')
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Model deleted: {model_path}'
+        })
+
+    except Exception as e:
+        print(f'[Fine-tuning] Error deleting model: {e}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 # ▲▲▲ [NEW] Ollama LLM Fine-tuning API ▲▲▲
