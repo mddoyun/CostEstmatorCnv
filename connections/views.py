@@ -2760,7 +2760,13 @@ def generate_boq_report_api(request, project_id):
 
     # ▼▼▼ [수정] Django가 인식 가능한 필드만 .values()에 전달 (2025-11-06) ▼▼▼
     # Direct Django fields that can be used in .values()
-    direct_fields = {'id', 'quantity', 'cost_code_id', 'unit_price_type_id', 'cost_code__name', 'quantity_member_id'}
+    direct_fields = {
+        'id', 'quantity', 'cost_code_id', 'unit_price_type_id', 'quantity_member_id',
+        # CostCode 모든 필드 추가 (그룹핑 및 표시용)
+        'cost_code__code', 'cost_code__name', 'cost_code__description', 'cost_code__detail_code',
+        'cost_code__category', 'cost_code__product_name', 'cost_code__spec',
+        'cost_code__unit', 'cost_code__note', 'cost_code__ai_sd_enabled', 'cost_code__dd_enabled'
+    }
 
     # Additional Django-queryable fields (not custom processed)
     queryable_fields = {
@@ -2887,7 +2893,20 @@ def generate_boq_report_api(request, project_id):
 
         processed_item['id'] = db_item['id']
         processed_item['quantity'] = Decimal(str(db_item.get('quantity', 0.0) or 0.0))
+
+        # CostCode 모든 필드 추가
+        processed_item['cost_code_code'] = db_item.get('cost_code__code')
         processed_item['cost_code_name'] = db_item.get('cost_code__name')
+        processed_item['cost_code_description'] = db_item.get('cost_code__description')
+        processed_item['cost_code_detail_code'] = db_item.get('cost_code__detail_code')
+        processed_item['cost_code_category'] = db_item.get('cost_code__category')
+        processed_item['cost_code_product_name'] = db_item.get('cost_code__product_name')
+        processed_item['cost_code_spec'] = db_item.get('cost_code__spec')
+        processed_item['cost_code_unit'] = db_item.get('cost_code__unit')
+        processed_item['cost_code_note'] = db_item.get('cost_code__note')
+        processed_item['cost_code_ai_sd_enabled'] = db_item.get('cost_code__ai_sd_enabled')
+        processed_item['cost_code_dd_enabled'] = db_item.get('cost_code__dd_enabled')
+
         qm_id = db_item.get('quantity_member_id')
         processed_item['quantity_member_id'] = str(qm_id) if qm_id else None
         
@@ -9586,14 +9605,18 @@ def get_filter_data(request, project_id):
     RawElement + QuantityMember + CostItem + ActivityObject의 모든 속성 반환
     """
     try:
+        print(f'[Filter DEBUG] get_filter_data called for project: {project_id}')
         project = get_object_or_404(Project, id=project_id)
+        print(f'[Filter DEBUG] Project found: {project.name}')
 
         # RawElement 조회
-        raw_elements = RawElement.objects.filter(project=project, is_active=True)
+        raw_elements = RawElement.objects.filter(project=project)
+        print(f'[Filter DEBUG] Found {raw_elements.count()} RawElements')
 
         result = []
 
         for elem in raw_elements:
+            print(f'[Filter DEBUG] Processing RawElement: {elem.id}')
             elem_data = {
                 'raw_element_id': str(elem.id),
                 'BIM': elem.raw_data or {},  # BIM 속성
@@ -9603,24 +9626,33 @@ def get_filter_data(request, project_id):
             }
 
             # QuantityMembers 조회
-            qms = QuantityMember.objects.filter(
-                raw_elements=elem
-            ).select_related(
-                'classification_tag',
-                'member_mark',
-                'space'
-            ).prefetch_related(
-                'cost_codes'
-            )
+            print(f'[Filter DEBUG] Querying QuantityMembers for RawElement: {elem.id}')
+            try:
+                qms = QuantityMember.objects.filter(
+                    raw_element=elem
+                ).select_related(
+                    'classification_tag',
+                    'member_mark',
+                    'activity'
+                ).prefetch_related(
+                    'cost_codes',
+                    'space_classifications'
+                )
+                print(f'[Filter DEBUG] Found {qms.count()} QuantityMembers')
+            except Exception as qm_err:
+                print(f'[Filter DEBUG ERROR] Failed to query QuantityMembers: {qm_err}')
+                import traceback
+                traceback.print_exc()
+                raise
 
             for qm in qms:
+                print(f'[Filter DEBUG] Processing QuantityMember: {qm.id}')
                 qm_data = {
                     'System': {
                         'id': str(qm.id),
                         'name': qm.name,
-                        'quantity': float(qm.quantity) if qm.quantity else 0,
                         'classification_tag': qm.classification_tag.name if qm.classification_tag else None,
-                        'classification_tag_name': qm.classification_tag_name,
+                        'is_active': qm.is_active,
                     },
                     'Properties': qm.properties or {},
                     'MM': {},
@@ -9639,21 +9671,32 @@ def get_filter_data(request, project_id):
                         'Properties': qm.member_mark.properties or {}
                     }
 
-                # Space 정보
-                if qm.space:
+                # Space 정보 (SpaceClassification - ManyToMany)
+                space_classifications = qm.space_classifications.all()
+                if space_classifications.exists():
+                    # 첫 번째 space classification 사용
+                    first_space = space_classifications.first()
                     qm_data['SC'] = {
                         'System': {
-                            'id': str(qm.space.id),
-                            'name': qm.space.name,
-                            'classification_code': qm.space.classification_code,
-                            'level': qm.space.level,
+                            'id': str(first_space.id),
+                            'code': first_space.code,
+                            'name': first_space.name,
+                            'description': first_space.description,
                         }
                     }
 
                 # CostItems 조회
-                cost_items = CostItem.objects.filter(
-                    quantity_members=qm
-                ).select_related('cost_code').prefetch_related('cost_codes')
+                print(f'[Filter DEBUG] Querying CostItems for QuantityMember: {qm.id}')
+                try:
+                    cost_items = CostItem.objects.filter(
+                        quantity_member=qm
+                    ).select_related('cost_code', 'unit_price_type')
+                    print(f'[Filter DEBUG] Found {cost_items.count()} CostItems')
+                except Exception as ci_err:
+                    print(f'[Filter DEBUG ERROR] Failed to query CostItems: {ci_err}')
+                    import traceback
+                    traceback.print_exc()
+                    raise
 
                 for ci in cost_items:
                     ci_data = {
@@ -9661,24 +9704,21 @@ def get_filter_data(request, project_id):
                             'id': str(ci.id),
                             'description': ci.description,
                             'quantity': float(ci.quantity) if ci.quantity else 0,
-                            'unit': ci.unit,
+                            'unit': ci.cost_code.unit if ci.cost_code else None,  # FIXED: get from cost_code
                         },
                         'CC': {},
                         'AO': [],
                     }
 
-                    # CostCode 정보 (다대다 관계)
-                    cost_codes = ci.cost_codes.all()
-                    if cost_codes.exists():
-                        # 첫 번째 cost_code 사용 (룰셋에서는 여러 개 가능)
-                        cc = cost_codes.first()
+                    # CostCode 정보 (ForeignKey 관계)
+                    if ci.cost_code:  # FIXED: single cost_code, not cost_codes
                         ci_data['CC'] = {
                             'System': {
-                                'id': str(cc.id),
-                                'code': cc.code,
-                                'name': cc.name,
-                                'detail_code': cc.detail_code,
-                                'unit': cc.unit,
+                                'id': str(ci.cost_code.id),
+                                'code': ci.cost_code.code,
+                                'name': ci.cost_code.name,
+                                'detail_code': ci.cost_code.detail_code,
+                                'unit': ci.cost_code.unit,
                             }
                         }
 
@@ -9705,7 +9745,7 @@ def get_filter_data(request, project_id):
                                     'id': str(ao.activity.id),
                                     'code': ao.activity.code,
                                     'name': ao.activity.name,
-                                    'duration': float(ao.activity.duration) if ao.activity.duration else 0,
+                                    'duration_per_unit': float(ao.activity.duration_per_unit) if ao.activity.duration_per_unit else 0,  # FIXED: Activity has duration_per_unit, not duration
                                 }
                             }
 
@@ -9748,7 +9788,7 @@ def apply_filter_to_viewer(request, project_id):
             })
 
         # 모든 필터 데이터 가져오기 (내부적으로 동일한 로직 재사용)
-        raw_elements = RawElement.objects.filter(project=project, is_active=True)
+        raw_elements = RawElement.objects.filter(project=project)
         matched_ids = []
 
         for elem in raw_elements:
@@ -9788,17 +9828,16 @@ def build_filter_context(raw_element):
     }
 
     qms = QuantityMember.objects.filter(
-        raw_elements=raw_element
-    ).select_related('classification_tag', 'member_mark', 'space')
+        raw_element=raw_element  # FIXED: singular, not plural
+    ).select_related('classification_tag', 'member_mark', 'activity').prefetch_related('space_classifications')  # FIXED: no 'space' FK, use ManyToMany
 
     for qm in qms:
         qm_ctx = {
             'System': {
                 'id': str(qm.id),
                 'name': qm.name,
-                'quantity': float(qm.quantity) if qm.quantity else 0,
                 'classification_tag': qm.classification_tag.name if qm.classification_tag else None,
-                'classification_tag_name': qm.classification_tag_name,
+                # REMOVED: quantity, classification_tag_name - fields don't exist
             },
             'Properties': qm.properties or {},
             'MM': {},
@@ -9814,18 +9853,23 @@ def build_filter_context(raw_element):
                 'Properties': qm.member_mark.properties or {}
             }
 
-        if qm.space:
+        # FIXED: Use space_classifications (ManyToMany)
+        space_classifications = qm.space_classifications.all()
+        if space_classifications.exists():
+            first_space = space_classifications.first()
             qm_ctx['SC'] = {
                 'System': {
-                    'name': qm.space.name,
-                    'classification_code': qm.space.classification_code,
+                    'id': str(first_space.id),
+                    'code': first_space.code,
+                    'name': first_space.name,
+                    'description': first_space.description,
                 }
             }
 
         context['QM'].append(qm_ctx)
 
         # CostItems
-        cost_items = CostItem.objects.filter(quantity_members=qm).prefetch_related('cost_codes')
+        cost_items = CostItem.objects.filter(quantity_member=qm).select_related('cost_code', 'unit_price_type')  # FIXED: singular field name
         for ci in cost_items:
             ci_ctx = {
                 'System': {
@@ -9836,13 +9880,12 @@ def build_filter_context(raw_element):
                 'CC': {},
             }
 
-            cost_codes = ci.cost_codes.all()
-            if cost_codes.exists():
-                cc = cost_codes.first()
+            # FIXED: CostItem has single cost_code ForeignKey, not cost_codes ManyToMany
+            if ci.cost_code:
                 ci_ctx['CC'] = {
                     'System': {
-                        'code': cc.code,
-                        'name': cc.name,
+                        'code': ci.cost_code.code,
+                        'name': ci.cost_code.name,
                     }
                 }
 

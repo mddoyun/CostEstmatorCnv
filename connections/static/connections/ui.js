@@ -3838,10 +3838,15 @@ function generateCIPropertyOptions() {
         { value: 'CC.System.id', label: 'CC.System.id' },
         { value: 'CC.System.code', label: 'CC.System.code' },
         { value: 'CC.System.name', label: 'CC.System.name' },
+        { value: 'CC.System.description', label: 'CC.System.description' },
         { value: 'CC.System.detail_code', label: 'CC.System.detail_code' },
+        { value: 'CC.System.product_name', label: 'CC.System.product_name' },
         { value: 'CC.System.note', label: 'CC.System.note' },
+        { value: 'CC.System.spec', label: 'CC.System.spec' },
         { value: 'CC.System.unit', label: 'CC.System.unit' },
-        { value: 'CC.System.is_sd_enabled', label: 'CC.System.is_sd_enabled' }
+        { value: 'CC.System.category', label: 'CC.System.category' },
+        { value: 'CC.System.ai_sd_enabled', label: 'CC.System.ai_sd_enabled' },
+        { value: 'CC.System.dd_enabled', label: 'CC.System.dd_enabled' }
     ];
 
     propertyOptions.push({
