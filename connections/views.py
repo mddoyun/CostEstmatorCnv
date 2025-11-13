@@ -61,6 +61,7 @@ from .models import (
     WorkCalendar,  # <--- 작업 캘린더 모델 추가
     ActivityAssignmentRule,  # <--- 액티비티 할당 룰셋 모델 추가
     ActivityObject,  # <--- 액티비티 객체 모델 추가
+    GeometryRelationRule,  # <--- Geometry 관계 룰셋 모델 추가
     AITrainingData,  # <--- AI 학습 데이터 모델 추가
     AIFunctionModel,  # <--- AI 함수 모델 추가
     AIObjectRetrievalModel,  # <--- AI 객체 검색 모델 추가
@@ -1848,6 +1849,267 @@ def apply_activity_assignment_rules_view(request, project_id):
         print(f"[ERROR] {error_msg}")
         print(traceback.format_exc())
         return JsonResponse({'status': 'error', 'message': error_msg, 'details': traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["GET", "POST", "DELETE"])
+def geometry_relation_rules_api(request, project_id, rule_id=None):
+    """Geometry 관계 룰셋 API - CRUD operations"""
+    print(f"\n[DEBUG] --- Geometry 관계 룰셋 API 요청 수신 ({request.method}) ---")
+
+    if request.method == 'GET':
+        try:
+            rules = GeometryRelationRule.objects.filter(project_id=project_id).order_by('priority', 'name')
+            rules_data = []
+            for rule in rules:
+                rules_data.append({
+                    'id': str(rule.id),
+                    'name': rule.name,
+                    'description': rule.description or '',
+                    'priority': rule.priority,
+                    'is_active': rule.is_active,
+                    'target_conditions': rule.target_conditions,
+                    'relation_config': rule.relation_config,
+                    'property_assignments': rule.property_assignments,
+                    'created_at': rule.created_at.isoformat(),
+                    'updated_at': rule.updated_at.isoformat(),
+                })
+            return JsonResponse({'status': 'success', 'rules': rules_data})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            print(f"[DEBUG] POST data: {data}")
+
+            if rule_id:
+                # Update existing rule
+                rule = GeometryRelationRule.objects.get(id=rule_id, project_id=project_id)
+                rule.name = data['name']
+                rule.description = data.get('description', '')
+                rule.priority = int(data.get('priority', 0))
+                rule.is_active = data.get('is_active', True)
+                rule.target_conditions = data.get('target_conditions', [])
+                rule.relation_config = data.get('relation_config', [])
+                rule.property_assignments = data.get('property_assignments', [])
+                rule.save()
+                print(f"[DEBUG] Updated GeometryRelationRule: {rule.name}")
+            else:
+                # Create new rule
+                rule = GeometryRelationRule.objects.create(
+                    project_id=project_id,
+                    name=data['name'],
+                    description=data.get('description', ''),
+                    priority=int(data.get('priority', 0)),
+                    is_active=data.get('is_active', True),
+                    target_conditions=data.get('target_conditions', []),
+                    relation_config=data.get('relation_config', []),
+                    property_assignments=data.get('property_assignments', [])
+                )
+                print(f"[DEBUG] Created new GeometryRelationRule: {rule.name}")
+
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Geometry 관계 룰셋이 저장되었습니다.',
+                'rule_id': str(rule.id)
+            })
+        except GeometryRelationRule.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '해당 룰셋을 찾을 수 없습니다.'}, status=404)
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] {str(e)}")
+            print(traceback.format_exc())
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+    elif request.method == 'DELETE':
+        try:
+            GeometryRelationRule.objects.get(id=rule_id, project_id=project_id).delete()
+            print(f"[DEBUG] Deleted GeometryRelationRule: {rule_id}")
+            return JsonResponse({'status': 'success', 'message': '룰셋이 삭제되었습니다.'})
+        except GeometryRelationRule.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': '룰셋을 찾을 수 없습니다.'}, status=404)
+
+
+@require_http_methods(["POST"])
+def apply_geometry_relation_rules_view(request, project_id):
+    """Geometry 관계 룰셋 일괄 적용 - receives analyzed relations from frontend"""
+    print("\n[DEBUG] --- 'Geometry 관계 룰셋 일괄적용' API 요청 수신 ---")
+    try:
+        data = json.loads(request.body)
+        relation_results = data.get('relation_results', [])
+
+        print(f"[DEBUG] Received {len(relation_results)} relation results from frontend")
+
+        if not relation_results:
+            return JsonResponse({'status': 'success', 'message': '적용할 관계 데이터가 없습니다.', 'updated_count': 0})
+
+        project = Project.objects.get(id=project_id)
+        updated_count = 0
+
+        # 룰셋 ID별로 그룹화
+        results_by_rule = {}
+        for result in relation_results:
+            rule_id = result['rule_id']
+            if rule_id not in results_by_rule:
+                results_by_rule[rule_id] = []
+            results_by_rule[rule_id].append(result)
+
+        # 각 룰셋별로 처리
+        for rule_id, results in results_by_rule.items():
+            try:
+                rule = GeometryRelationRule.objects.get(id=rule_id, project=project)
+                print(f"[DEBUG] Processing rule: {rule.name} (ID: {rule_id})")
+                print(f"  > {len(results)} QuantityMembers to update")
+
+                # 각 QuantityMember별로 속성 할당 처리
+                for result in results:
+                    qm_id = result['qm_id']
+                    relations = result['relations']
+
+                    try:
+                        qm = QuantityMember.objects.get(id=qm_id, project=project)
+
+                        # 기존 properties 가져오기 (없으면 빈 dict)
+                        if not qm.properties:
+                            qm.properties = {}
+
+                        # property_assignments 처리
+                        for assignment in rule.property_assignments:
+                            property_name = assignment.get('property_name', '').strip()
+                            conditions = assignment.get('conditions', [])
+
+                            if not property_name:
+                                continue
+
+                            # 조건 평가 - relations 데이터를 context로 사용
+                            context = {'relations': relations}
+
+                            # 조건 평가 로직
+                            if evaluate_geometry_conditions(context, conditions):
+                                # 조건 만족 시 속성 할당
+                                property_value = assignment.get('value', '')
+
+                                # 템플릿 표현식 처리 (예: {relations.top_cap.0.name})
+                                property_value = evaluate_geometry_template(property_value, context)
+
+                                qm.properties[property_name] = property_value
+                                print(f"[DEBUG] Assigned property '{property_name}' = '{property_value}' to QM {qm.name}")
+                                updated_count += 1
+
+                        # 변경사항 저장
+                        qm.save()
+
+                    except QuantityMember.DoesNotExist:
+                        print(f"[ERROR] QuantityMember not found: {qm_id}")
+                        continue
+
+            except GeometryRelationRule.DoesNotExist:
+                print(f"[ERROR] GeometryRelationRule not found: {rule_id}")
+                continue
+
+        message = f"Geometry 관계 룰셋 적용 완료: {updated_count}개의 속성이 할당되었습니다."
+        print(f"[DEBUG] {message}")
+        return JsonResponse({'status': 'success', 'message': message, 'updated_count': updated_count})
+
+    except Project.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '프로젝트를 찾을 수 없습니다.'}, status=404)
+    except Exception as e:
+        import traceback
+        error_msg = f'오류 발생: {str(e)}'
+        print(f"[ERROR] {error_msg}")
+        print(traceback.format_exc())
+        return JsonResponse({'status': 'error', 'message': error_msg, 'details': traceback.format_exc()}, status=500)
+
+
+def evaluate_geometry_conditions(context, conditions):
+    """
+    Geometry 관계 룰셋의 조건을 평가합니다.
+    context: {'relations': {...}} 형태
+    conditions: [{'property': 'relations.top_cap.count', 'operator': '>', 'value': '0'}, ...]
+    """
+    if not conditions:
+        return True
+
+    for cond in conditions:
+        property_path = cond.get('property', '').strip()
+        operator = cond.get('operator', '==')
+        expected_value = cond.get('value', '')
+
+        if not property_path:
+            continue
+
+        # property_path를 따라 context에서 값 추출 (예: relations.top_cap.count)
+        actual_value = get_nested_value(context, property_path)
+
+        # 조건 평가
+        if not evaluate_single_condition(actual_value, operator, expected_value):
+            return False
+
+    return True
+
+
+def evaluate_geometry_template(template, context):
+    """
+    템플릿 표현식을 평가합니다.
+    예: "{relations.top_cap.0.name}" → "600x600 슬라브"
+    """
+    if not isinstance(template, str):
+        return template
+
+    import re
+
+    # {property.path} 형태의 플레이스홀더 찾기
+    placeholders = re.findall(r'\{([^}]+)\}', template)
+
+    result = template
+    for placeholder in placeholders:
+        value = get_nested_value(context, placeholder)
+        if value is not None:
+            result = result.replace(f'{{{placeholder}}}', str(value))
+        else:
+            result = result.replace(f'{{{placeholder}}}', '')
+
+    return result
+
+
+def get_nested_value(data, path):
+    """
+    중첩된 경로를 따라 값을 추출합니다.
+    예: get_nested_value({'relations': {'top_cap': [{'name': 'A'}]}}, 'relations.top_cap.0.name') → 'A'
+    """
+    if not path:
+        return None
+
+    keys = path.split('.')
+    current = data
+
+    for key in keys:
+        if current is None:
+            return None
+
+        # 배열 인덱스 처리
+        if key.isdigit():
+            try:
+                current = current[int(key)]
+            except (IndexError, KeyError, TypeError):
+                return None
+        # 딕셔너리 키 처리
+        elif isinstance(current, dict):
+            current = current.get(key)
+        # 리스트의 경우 'count' 같은 특수 키 처리
+        elif isinstance(current, list):
+            if key == 'count':
+                return len(current)
+            elif key == 'first' and len(current) > 0:
+                current = current[0]
+            elif key == 'last' and len(current) > 0:
+                current = current[-1]
+            else:
+                return None
+        else:
+            return None
+
+    return current
 
 
 def evaluate_expression_for_cost_item(expression, quantity_member):

@@ -338,10 +338,13 @@ class RevitConsumer(AsyncWebsocketConsumer):
 
             # ▼▼▼ [DEBUG] System.Geometry.materials 확인 ▼▼▼
             for elem in elements_data:
-                if elem.get("System", {}).get("Geometry", {}).get("materials"):
-                    mat = elem["System"]["Geometry"]["materials"]
-                    print(f"[DEBUG] Received element {elem.get('UniqueId')} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
-                    break  # 하나만 출력
+                if elem and elem.get("System"):  # elem이 None이 아니고 System이 있는지 확인
+                    geom = elem.get("System", {}).get("Geometry", {})
+                    if geom:
+                        mat = geom.get("materials")
+                        if mat:
+                            print(f"[DEBUG] Received element {elem.get('UniqueId')} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
+                            break  # 하나만 출력
             # ▲▲▲ [DEBUG] 끝 ▲▲▲
 
             chunk_uids = {item['UniqueId'] for item in elements_data if item and 'UniqueId' in item}
@@ -468,9 +471,10 @@ class RevitConsumer(AsyncWebsocketConsumer):
 
                 # ▼▼▼ [DEBUG] 생성된 객체의 materials 확인 ▼▼▼
                 for elem in created_objs[:1]:  # 첫 번째 객체만 확인
-                    if elem.raw_data.get("System", {}).get("Geometry", {}).get("materials"):
-                        mat = elem.raw_data["System"]["Geometry"]["materials"]
-                        print(f"[DEBUG] DB saved element {elem.element_unique_id} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
+                    if elem.raw_data and elem.raw_data.get("System"):  # raw_data가 None이 아니고 System이 있는지 확인
+                        mat = elem.raw_data.get("System", {}).get("Geometry", {}).get("materials")
+                        if mat:
+                            print(f"[DEBUG] DB saved element {elem.element_unique_id} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
                 # ▲▲▲ [DEBUG] 끝 ▲▲▲
 
                 # Geometry volume 계산 및 업데이트

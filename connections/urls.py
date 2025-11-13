@@ -117,6 +117,12 @@ urlpatterns = [
     path('api/rules/activity-assignment/<uuid:project_id>/import/', views.import_activity_assignment_rules, name='import_activity_assignment_rules'),
     # ▲▲▲ [추가] 여기까지 ▲▲▲
 
+    # ▼▼▼ [추가] Geometry 관계 룰셋 API ▼▼▼
+    path('api/rules/geometry-relation/<uuid:project_id>/', views.geometry_relation_rules_api, name='geometry_relation_rules_api'),
+    path('api/rules/geometry-relation/<uuid:project_id>/<uuid:rule_id>/', views.geometry_relation_rules_api, name='geometry_relation_rule_detail_api'),
+    path('api/rules/geometry-relation/apply/<uuid:project_id>/', views.apply_geometry_relation_rules_view, name='apply_geometry_relation_rules'),
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
     # --- 프로젝트 가져오기/내보내기 ---
     path('export-project/<uuid:project_id>/', views.export_project, name='export_project'),
     path('import-project/', views.import_project, name='import_project'),

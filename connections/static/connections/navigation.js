@@ -780,6 +780,9 @@ window.loadSpecificRuleset = async function loadSpecificRuleset(rulesetType) {
             await loadActivities(); // 액티비티 목록 먼저 로드하고 기다림
             await loadActivityAssignmentRules();
             break;
+        case 'geometry-relation-ruleset':
+            await loadGeometryRelationRules();
+            break;
         default:
             console.error(
                 `[ERROR][loadSpecificRuleset] Unknown ruleset type: ${rulesetType}`

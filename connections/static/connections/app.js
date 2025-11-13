@@ -175,6 +175,19 @@ function setupRulesetManagementListeners() {
         .getElementById("apply-activity-rules-from-assignment-tab")
         ?.addEventListener("click", applyActivityAssignmentRules);
     // ▲▲▲ [추가] 여기까지 ▲▲▲
+    // ▼▼▼ [추가] Geometry 관계 룰셋 이벤트 리스너 ▼▼▼
+    document
+        .getElementById("geometry-relation-ruleset-table-container")
+        ?.addEventListener("click", handleGeometryRelationRuleActions);
+    document
+        .getElementById("add-geometry-relation-rule-btn")
+        ?.addEventListener("click", () =>
+            renderGeometryRelationRulesTable(loadedGeometryRelationRules, "new")
+        );
+    document
+        .getElementById("apply-geometry-relation-rules-btn")
+        ?.addEventListener("click", applyGeometryRelationRules);
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
     // CSV 가져오기/내보내기 버튼 (동적 설정)
     setupRulesetCsvButtons();
 }

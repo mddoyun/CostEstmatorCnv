@@ -520,8 +520,11 @@
                                 <button id="apply-filter-btn" title="입력한 필터 조건을 적용하여 테이블을 다시 표시합니다." style="width: 100%; margin-bottom: 8px;">
                                     🔍 필터 적용
                                 </button>
-                                <button id="clear-filter-btn" title="모든 필터 조건을 초기화합니다." style="width: 100%;">
+                                <button id="clear-filter-btn" title="모든 필터 조건을 초기화합니다." style="width: 100%; margin-bottom: 8px;">
                                     ✕ 필터 초기화
+                                </button>
+                                <button id="dm-clear-selection-btn" title="선택한 모든 행의 선택을 해제합니다." style="width: 100%;">
+                                    ◻️ 선택 해제
                                 </button>
                             </div>
                         </div>
@@ -778,6 +781,18 @@
                                     >
                                 </button>
                                 <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
+                                <!-- ▼▼▼ [추가] Geometry 관계 룰셋 버튼 ▼▼▼ -->
+                                <button
+                                    class="ruleset-nav-button"
+                                    data-ruleset="geometry-relation-ruleset"
+                                >
+                                    <span class="ruleset-icon">📐</span>
+                                    <span class="ruleset-text"
+                                        ><strong>공간관계 룰셋</strong
+                                        ><small>Geometry 기반 속성 할당</small></span
+                                    >
+                                </button>
+                                <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
                                 <button
                                     class="ruleset-nav-button"
                                     data-ruleset="space-classification-ruleset"
@@ -1015,6 +1030,69 @@
                                 >
                                     <p>
                                         CostItem 속성 기반으로 액티비티를 자동 할당하는
+                                        규칙을 관리합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
+                            <!-- ▼▼▼ [추가] Geometry 관계 룰셋 섹션 ▼▼▼ -->
+                            <div
+                                id="geometry-relation-ruleset"
+                                class="ruleset-content"
+                            >
+                                <div class="ruleset-header">
+                                    <h2>공간관계 룰셋 관리 (Geometry-based)</h2>
+                                    <div class="ruleset-actions">
+                                        <button
+                                            id="add-geometry-relation-rule-btn"
+                                        >
+                                            새 룰셋 추가
+                                        </button>
+                                        <button
+                                            id="apply-geometry-relation-rules-btn"
+                                            class="primary-btn"
+                                            title="Geometry 관계 룰셋을 모든 수량산출부재에 일괄 적용합니다."
+                                        >
+                                            룰셋 일괄적용
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="ruleset-description">
+                                    <p>
+                                        <strong>3D Geometry 형상 분석</strong>을 기반으로
+                                        <strong>수량산출부재(QuantityMember)</strong>에 속성을 자동 할당하는 룰셋입니다.
+                                    </p>
+                                    <p><strong>작동 방식:</strong></p>
+                                    <ul>
+                                        <li>
+                                            <strong>대상조건</strong>: 분석할 QuantityMember 필터링
+                                            (예: 분류태그가 "기둥"인 객체만)
+                                        </li>
+                                        <li>
+                                            <strong>관계분석</strong>: 3D 공간에서 접촉하는 다른 객체 탐지
+                                            <ul>
+                                                <li>접촉방향: top_cap (상단캡), side_top (측상단), bottom (하부), side_all (측면전체)</li>
+                                                <li>탐색모드: highest (가장 높은), lowest (가장 낮은), nearest (가장 가까운), all (모두)</li>
+                                                <li>대상필터: 탐색할 객체의 분류태그 조건</li>
+                                            </ul>
+                                        </li>
+                                        <li>
+                                            <strong>속성할당</strong>: 탐지된 관계 기반으로 조건부 속성 설정
+                                            (예: 상단에 슬라브 접촉 시 "상단부분슬라브두께" 속성 할당)
+                                        </li>
+                                    </ul>
+                                    <p><strong>성능 최적화:</strong></p>
+                                    <ul>
+                                        <li>Stage 1: 바운딩박스 기반 고속 필터링</li>
+                                        <li>Stage 2: 후보군에 대해 정밀한 Ray Casting 분석</li>
+                                    </ul>
+                                </div>
+                                <div
+                                    class="ruleset-table-container"
+                                    id="geometry-relation-ruleset-table-container"
+                                >
+                                    <p>
+                                        Geometry 형상 분석 기반으로 수량산출부재에 속성을 할당하는
                                         규칙을 관리합니다.
                                     </p>
                                 </div>
@@ -3306,12 +3384,14 @@
         <script src="{% static 'connections/activity_management_handlers.js' %}?v=6"></script>
         <script src="{% static 'connections/calendar_management_handlers.js' %}?v=2"></script>
         <script src="{% static 'connections/activity_assignment_handlers.js' %}?v=9"></script>
+        <script src="{% static 'connections/geometry_relation_analyzer.js' %}"></script>
+        <script src="{% static 'connections/geometry_relation_handlers.js' %}"></script>
         <script src="{% static 'connections/gantt_chart_handlers.js' %}?v=23"></script>
         <script src="{% static 'connections/data_management_handlers.js' %}"></script>
         <script src="{% static 'connections/space_management_handlers.js' %}"></script>
         <script src="{% static 'connections/project_management_handlers.js' %}?v=2"></script>
-        <script src="{% static 'connections/three_d_viewer.js' %}?v=51"></script>
-        <script src="{% static 'connections/three_d_viewer_filter.js' %}"></script>
+        <script src="{% static 'connections/three_d_viewer.js' %}?v=53"></script>
+        <script src="{% static 'connections/three_d_viewer_filter.js' %}?v=13"></script>
         <script src="{% static 'connections/navigation.js' %}?v=3"></script>
         <script src="{% static 'connections/ai_model_management.js' %}?v=2"></script>
         <script src="{% static 'connections/llm_finetuning_handler.js' %}"></script>

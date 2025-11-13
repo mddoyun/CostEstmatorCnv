@@ -344,6 +344,21 @@ async function generateBoqReport(preserveColumnOrder = false) {
             console.log(
                 `[DEBUG] loadedDdCostItems 업데이트 완료 (${loadedDdCostItems.length}개 항목).`
             );
+            // [DEBUG] CostCode 정보 확인
+            if (loadedDdCostItems.length > 0) {
+                console.log('[DEBUG] Sample CostItem with CostCode fields:', loadedDdCostItems[0]);
+                console.log('[DEBUG] CostCode fields in sample:', {
+                    code: loadedDdCostItems[0].cost_code_code,
+                    name: loadedDdCostItems[0].cost_code_name,
+                    description: loadedDdCostItems[0].cost_code_description,
+                    detail_code: loadedDdCostItems[0].cost_code_detail_code,
+                    work_type: loadedDdCostItems[0].cost_code_work_type,
+                    item_name: loadedDdCostItems[0].cost_code_item_name,
+                    specification: loadedDdCostItems[0].cost_code_specification,
+                    unit: loadedDdCostItems[0].cost_code_unit,
+                    note: loadedDdCostItems[0].cost_code_note
+                });
+            }
         } else {
             loadedDdCostItems = [];
         }
@@ -1589,21 +1604,26 @@ function resetBoqColumnsAndRegenerate(skipConfirmation = false) {
 
     if (
         !skipConfirmation &&
-        !confirm("테이블의 열 순서와 이름을 기본값으로 초기화하시겠습니까?")
+        !confirm("테이블의 열 순서, 이름, 필드 선택을 기본값으로 초기화하시겠습니까?")
     ) {
         return;
     }
 
-    localStorage.removeItem("boqColumnSettings");
+    localStorage.removeItem(`boqColumnSettings_${currentProjectId}`);
 
     currentBoqColumns = [];
     boqColumnAliases = {};
+    window.currentBoqDisplayColumns = [];  // ✅ 필드 선택 상태도 초기화
     console.log(
-        "[DEBUG] 열 상태(currentBoqColumns, boqColumnAliases) 초기화됨."
+        "[DEBUG] 열 상태(currentBoqColumns, boqColumnAliases, displayFields) 초기화됨."
     );
 
     loadBoqColumnSettings();
-    showToast("열 상태를 초기화하고 집계표를 다시 생성합니다.", "info");
+
+    // ✅ 필드 선택 체크박스 UI도 초기화
+    renderBoqDisplayFieldsCheckboxes();
+
+    showToast("열 상태와 필드 선택을 초기화하고 집계표를 다시 생성합니다.", "info");
     generateBoqReport();
 }
 
@@ -1711,14 +1731,21 @@ function updateDdBoqColumns() {
 function saveBoqColumnSettings() {
     if (!currentProjectId) return;
     try {
+        // Collect currently selected display fields from checkboxes
+        const selectedDisplayFields = Array.from(
+            document.querySelectorAll(".boq-display-field-cb:checked")
+        ).map(cb => cb.value);
+
         const settings = {
             columns: currentBoqColumns,
             aliases: boqColumnAliases,
+            displayFields: selectedDisplayFields,  // ✅ 필드 선택 상태 저장
         };
         localStorage.setItem(
             `boqColumnSettings_${currentProjectId}`,
             JSON.stringify(settings)
         );
+        console.log("[DEBUG] Saved BOQ settings with", selectedDisplayFields.length, "display fields");
     } catch (e) {
         console.error("Failed to save BOQ column settings to localStorage:", e);
         showToast(
@@ -1742,6 +1769,15 @@ function loadBoqColumnSettings() {
             const settings = JSON.parse(savedSettings);
             currentBoqColumns = settings.columns || [];
             boqColumnAliases = settings.aliases || {};
+
+            // ✅ 필드 선택 상태 복원
+            if (settings.displayFields && Array.isArray(settings.displayFields)) {
+                window.currentBoqDisplayColumns = settings.displayFields;
+                console.log("[DEBUG] Loaded", settings.displayFields.length, "display fields from localStorage");
+            } else {
+                window.currentBoqDisplayColumns = [];
+            }
+
             console.log(
                 "[DEBUG] Loaded BOQ column settings from localStorage."
             );
@@ -1820,6 +1856,7 @@ function loadBoqColumnSettings() {
                 },
             ];
             boqColumnAliases = {};
+            window.currentBoqDisplayColumns = [];  // ✅ 기본값 초기화
         }
     } catch (e) {
         console.error(
@@ -1891,6 +1928,7 @@ function loadBoqColumnSettings() {
             },
         ];
         boqColumnAliases = {};
+        window.currentBoqDisplayColumns = [];  // ✅ 에러 시에도 초기화
     }
 }
 
@@ -2405,6 +2443,9 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
             },
         });
     }
+
+    // ✅ 테이블 렌더링 완료 후 설정 저장
+    saveBoqColumnSettings();
 }
 
 // ▼▼▼ [추가] 3D 뷰어 연동 함수들 ▼▼▼

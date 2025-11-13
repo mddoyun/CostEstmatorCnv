@@ -55,10 +55,19 @@ function setupDataManagementListeners() {
         ?.addEventListener('click', clearTagsFromSelection);
     document
         .getElementById('apply-filter-btn')
-        ?.addEventListener('click', () => applyTableFilter('data-management'));
+        ?.addEventListener('click', () => {
+            console.log('[DEBUG] apply-filter-btn clicked');
+            applyTableFilter('data-management');
+        });
     document
         .getElementById('clear-filter-btn')
-        ?.addEventListener('click', () => clearTableFilter('data-management'));
+        ?.addEventListener('click', () => {
+            console.log('[DEBUG] clear-filter-btn clicked');
+            clearTableFilter('data-management');
+        });
+    document
+        .getElementById('dm-clear-selection-btn')
+        ?.addEventListener('click', clearDmSelection);
     const dmTableContainer = document.getElementById(
         'data-management-data-table-container'
     );
@@ -662,7 +671,33 @@ function renderRawDataHelperPanel() {
  * @param {string} contextPrefix - 컨텍스트 접두사 (예: 'data-management')
  */
 function applyTableFilter(contextPrefix) {
+    console.log('[DEBUG] applyTableFilter called with contextPrefix:', contextPrefix);
+    const state = viewerStates[contextPrefix];
+    if (!state) {
+        console.log('[DEBUG] state not found for contextPrefix:', contextPrefix);
+        return;
+    }
+
+    // 테이블 컨테이너에서 모든 필터 입력 필드를 찾아서 값 수집
     const containerId = `${contextPrefix}-data-table-container`;
+    const container = document.getElementById(containerId);
+    console.log('[DEBUG] container:', container);
+    if (container) {
+        const filterInputs = container.querySelectorAll('.column-filter');
+        console.log('[DEBUG] filterInputs found:', filterInputs.length);
+        filterInputs.forEach(input => {
+            const field = input.dataset.field;
+            const value = (input.value || '').toLowerCase();
+            console.log('[DEBUG] field:', field, 'value:', value);
+            if (value) {
+                state.columnFilters[field] = value;
+            } else {
+                delete state.columnFilters[field];
+            }
+        });
+    }
+    console.log('[DEBUG] state.columnFilters:', state.columnFilters);
+
     renderDataTable(containerId, contextPrefix);
     showToast('필터가 적용되었습니다.', 'success');
 }
@@ -760,4 +795,18 @@ function selectIn3DViewer() {
     window.selectObjectsIn3DViewer(selectedIds);
 
     showToast(`3D 뷰포트에서 ${selectedIds.length}개 객체를 선택했습니다.`, 'success');
+}
+
+// 선택 해제
+function clearDmSelection() {
+    const state = viewerStates['data-management'];
+    if (!state) return;
+
+    state.selectedElementIds.clear();
+
+    // 현재 활성화된 뷰에 따라 테이블 다시 렌더링
+    const containerId = 'data-management-data-table-container';
+    renderDataTable(containerId, 'data-management');
+
+    showToast('선택이 해제되었습니다.', 'success');
 }

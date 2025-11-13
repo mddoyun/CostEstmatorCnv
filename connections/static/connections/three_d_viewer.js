@@ -13237,9 +13237,14 @@
         let hiddenCount = 0;
         let visibleCount = 0;
 
+        console.log('[3D Viewer Filter] Received matched IDs:', matchedIds.slice(0, 3));
+
         scene.traverse((object) => {
-            if (object.isMesh && object.userData.rawData) {
-                const rawId = object.userData.rawData.id;
+            if (object.isMesh && object.userData) {
+                // FIXED: rawData.id가 아니라 rawElementId 또는 bimObjectId 사용
+                const rawId = object.userData.rawElementId || object.userData.bimObjectId;
+
+                if (!rawId) return;  // ID가 없으면 건너뛰기
 
                 if (matchedSet.has(rawId)) {
                     // 매칭됨 - 표시
