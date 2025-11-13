@@ -1043,6 +1043,101 @@ class ActivityAssignmentRule(models.Model):
     def __str__(self):
         return f"{self.name} (→ {self.target_activity.code})"
 
+
+class GeometryRelationRule(models.Model):
+    """Geometry 기반 공간 관계 분석 룰셋
+
+    수량산출부재 객체 간의 3D geometry 접촉/인접 관계를 분석하여
+    자동으로 속성을 할당합니다.
+
+    예시:
+    - 기둥 상단에 접촉한 슬라브의 두께를 기둥의 '상단부분슬라브두께' 속성으로 할당
+    - 접촉 유형(상단캡/측면상단)에 따라 '기둥위계구분' 속성 값 결정
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='geometry_relation_rules')
+    name = models.CharField(max_length=255, help_text="룰셋 이름 (예: 기둥-슬라브 관계 분석)")
+    description = models.TextField(blank=True, null=True, help_text="룰셋 설명")
+    priority = models.IntegerField(default=0, help_text="우선순위 (낮을수록 먼저 실행)")
+    is_active = models.BooleanField(default=True, help_text="활성화 여부")
+
+    # 대상 객체 조건 (어떤 객체에 이 룰을 적용할지)
+    target_conditions = models.JSONField(
+        default=dict,
+        help_text="대상 QuantityMember 조건 (기존 조건 빌더 형식)"
+    )
+    # 예: {"property": "classification_tag", "operator": "equals", "value": "기둥"}
+
+    # 관계 분석 설정 (어떤 관계를 찾을지)
+    relation_config = models.JSONField(
+        default=dict,
+        help_text="공간 관계 분석 설정"
+    )
+    # 예:
+    # {
+    #     "relations": [
+    #         {
+    #             "id": "top_slab",
+    #             "name": "상단 슬라브 접촉",
+    #             "related_classification": "슬라브",
+    #             "contact_type": "top_cap",  # or "side_top", "bottom", "side_all"
+    #             "tolerance": 0.001,  # 1mm
+    #             "find_mode": "highest"  # or "lowest", "nearest", "all"
+    #         },
+    #         {
+    #             "id": "side_beam",
+    #             "name": "측면 보 접촉",
+    #             "related_classification": "보",
+    #             "contact_type": "side_top",
+    #             "tolerance": 0.001,
+    #             "find_mode": "nearest"
+    #         }
+    #     ]
+    # }
+
+    # 속성 할당 규칙 (찾은 관계로부터 어떤 속성을 할당할지)
+    property_assignments = models.JSONField(
+        default=dict,
+        help_text="조건부 속성 할당 규칙"
+    )
+    # 예:
+    # {
+    #     "rules": [
+    #         {
+    #             "condition": "top_slab.exists == true",
+    #             "properties": {
+    #                 "기둥위계구분": "슬라브하부기준기둥",
+    #                 "상단부분슬라브두께": "{top_slab.두께}",
+    #                 "상단부분슬라브레벨": "{top_slab.Level}"
+    #             }
+    #         },
+    #         {
+    #             "condition": "top_slab.exists == false",
+    #             "properties": {
+    #                 "기둥위계구분": "층고기준기둥"
+    #             }
+    #         },
+    #         {
+    #             "condition": "side_beam.exists == true",
+    #             "properties": {
+    #                 "상단부분보두께": "{side_beam.깊이}"
+    #             }
+    #         }
+    #     ]
+    # }
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['priority', 'name']
+        verbose_name = "Geometry 관계 룰셋"
+        verbose_name_plural = "Geometry 관계 룰셋"
+
+    def __str__(self):
+        return f"{self.name} ({'활성' if self.is_active else '비활성'})"
+
+
 # -----------------------------------------------------------------------------
 # 3D 객체 분할 관리
 # -----------------------------------------------------------------------------
