@@ -3770,22 +3770,28 @@ function generateQMPropertyOptions() {
     ];
 
     // MM.Properties.* 동적 수집
-    if (window.currentMemberMarks && window.currentMemberMarks.length > 0) {
-        const mmPropertiesSet = new Set();
-        window.currentMemberMarks.forEach(mm => {
-            if (mm.properties && typeof mm.properties === 'object') {
-                Object.keys(mm.properties).forEach(key => {
-                    mmPropertiesSet.add(key);
-                });
-            }
-        });
+    // ▼▼▼ [수정] window.loadedMemberMarks도 확인하여 더 많은 속성 수집 ▼▼▼
+    const mmPropertiesSet = new Set();
+    const mmSources = [window.currentMemberMarks, window.loadedMemberMarks];
 
-        if (mmPropertiesSet.size > 0) {
-            mmPropertiesSet.forEach(prop => {
-                mmFields.push({ value: `MM.Properties.${prop}`, label: `MM.Properties.${prop}` });
+    mmSources.forEach(mmList => {
+        if (mmList && mmList.length > 0) {
+            mmList.forEach(mm => {
+                if (mm.properties && typeof mm.properties === 'object') {
+                    Object.keys(mm.properties).forEach(key => {
+                        mmPropertiesSet.add(key);
+                    });
+                }
             });
         }
+    });
+
+    if (mmPropertiesSet.size > 0) {
+        mmPropertiesSet.forEach(prop => {
+            mmFields.push({ value: `MM.Properties.${prop}`, label: `MM.Properties.${prop}` });
+        });
     }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     propertyOptions.push({
         group: 'MM 일람부호 속성',

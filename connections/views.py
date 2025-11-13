@@ -641,6 +641,14 @@ def evaluate_conditions(data_dict, conditions):
         # 3. 원본 키가 없으면 변환된 내부 필드명으로 찾아봅니다
         elif internal_field in data_dict:
             actual_value = data_dict.get(internal_field)
+        # ▼▼▼ [추가] MM.Properties.* -> [속성명] 매핑 지원 (2025-11-13) ▼▼▼
+        # MM.Properties.속성명 -> [속성명] 형태로 변환하여 찾기
+        elif p.startswith('MM.Properties.'):
+            prop_name = p[14:]  # 'MM.Properties.' 제거
+            bracket_key = f'[{prop_name}]'  # [속성명] 형태로 변환
+            actual_value = data_dict.get(bracket_key)
+            print(f"[DEBUG][evaluate_conditions] MM.Properties.* mapping: '{p}' -> '{bracket_key}' = {actual_value}")
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
         # ▼▼▼ [추가] CC.System.* -> CostCode.* 매핑 지원 (2025-11-05) ▼▼▼
         # CC.System.detail_code -> CostCode.detail_code
         elif p.startswith('CC.System.'):
@@ -696,9 +704,6 @@ def apply_classification_rules_view(request, project_id):
     try:
         project = Project.objects.get(id=project_id)
         rules = ClassificationRule.objects.filter(project=project).order_by('id').select_related('target_tag')
-
-        # ElementClassificationAssignment 모델 import
-        from connections.models import ElementClassificationAssignment
 
         # [수정] 대용량 데이터를 처리하기 위해 iterator 사용
         all_elements_qs = RawElement.objects.filter(project=project)
