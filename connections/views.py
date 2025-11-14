@@ -3130,7 +3130,7 @@ def generate_boq_report_api(request, project_id):
     # ▼▼▼ [수정] Django가 인식 가능한 필드만 .values()에 전달 (2025-11-06) ▼▼▼
     # Direct Django fields that can be used in .values()
     direct_fields = {
-        'id', 'quantity', 'cost_code_id', 'unit_price_type_id', 'quantity_member_id',
+        'id', 'quantity', 'secondary_quantity', 'cost_code_id', 'unit_price_type_id', 'quantity_member_id',  # ✅ secondary_quantity 추가 (2025-11-14)
         # CostCode 모든 필드 추가 (그룹핑 및 표시용)
         'cost_code__code', 'cost_code__name', 'cost_code__description', 'cost_code__detail_code',
         'cost_code__category', 'cost_code__product_name', 'cost_code__spec',
@@ -3262,6 +3262,9 @@ def generate_boq_report_api(request, project_id):
 
         processed_item['id'] = db_item['id']
         processed_item['quantity'] = Decimal(str(db_item.get('quantity', 0.0) or 0.0))
+        # ▼▼▼ [추가] 2차 수량 추가 (2025-11-14) ▼▼▼
+        processed_item['secondary_quantity'] = Decimal(str(db_item.get('secondary_quantity', 0.0) or 0.0))
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
         # CostCode 모든 필드 추가
         processed_item['cost_code_code'] = db_item.get('cost_code__code')
@@ -3334,7 +3337,7 @@ def generate_boq_report_api(request, project_id):
         items.append(processed_item)
 
     root = {
-        'name': 'Total', 'quantity': ZERO_DECIMAL, 'count': 0, 'children': {},
+        'name': 'Total', 'quantity': ZERO_DECIMAL, 'secondary_quantity': ZERO_DECIMAL, 'count': 0, 'children': {},  # ✅ secondary_quantity 추가 (2025-11-14)
         'display_values': {}, 'item_ids': [],
         'material_cost_unit': ZERO_DECIMAL, 'material_cost_total': ZERO_DECIMAL,
         'labor_cost_unit': ZERO_DECIMAL, 'labor_cost_total': ZERO_DECIMAL,
@@ -3347,6 +3350,7 @@ def generate_boq_report_api(request, project_id):
 
     for item in items:
         root['quantity'] += item['quantity']
+        root['secondary_quantity'] += item['secondary_quantity']  # ✅ 2차 수량 집계 (2025-11-14)
         root['total_cost_total'] += item['total_cost_total']
         root['item_ids'].append(item['id'])
         if item['unit_price_type_id']:
@@ -3371,7 +3375,7 @@ def generate_boq_report_api(request, project_id):
 
             if key_str not in current_level['children']:
                 current_level['children'][key_str] = {
-                    'name': key_str, 'quantity': ZERO_DECIMAL, 'count': 0, 'level': i,
+                    'name': key_str, 'quantity': ZERO_DECIMAL, 'secondary_quantity': ZERO_DECIMAL, 'count': 0, 'level': i,  # ✅ secondary_quantity 추가 (2025-11-14)
                     'children': {}, 'display_values': {}, 'item_ids': [],
                     'material_cost_total': ZERO_DECIMAL,
                     'labor_cost_total': ZERO_DECIMAL,
@@ -3389,6 +3393,7 @@ def generate_boq_report_api(request, project_id):
             current_level = child_node
 
             current_level['quantity'] += item['quantity']
+            current_level['secondary_quantity'] += item['secondary_quantity']  # ✅ 2차 수량 집계 (2025-11-14)
             current_level['count'] += 1
             current_level['item_ids'].append(item['id'])
 
@@ -3435,6 +3440,7 @@ def generate_boq_report_api(request, project_id):
             child_list_item = {
                 'name': child_node['name'],
                 'quantity': format_quantity(child_node['quantity']),
+                'secondary_quantity': format_quantity(child_node['secondary_quantity']),  # ✅ 2차 수량 포맷팅 (2025-11-14)
                 'count': child_node['count'],
                 'level': child_node['level'],
                 'display_values': final_display_values,
@@ -3474,6 +3480,7 @@ def generate_boq_report_api(request, project_id):
 
     total_summary = {
         'quantity': format_quantity(sum((item['quantity'] for item in items), start=ZERO_DECIMAL)),
+        'secondary_quantity': format_quantity(sum((item['secondary_quantity'] for item in items), start=ZERO_DECIMAL)),  # ✅ 2차 수량 합계 (2025-11-14)
         'count': len(items),
         'material_cost_total': format_cost(sum((item['material_cost_total'] for item in items), start=ZERO_DECIMAL)),
         'labor_cost_total': format_cost(sum((item['labor_cost_total'] for item in items), start=ZERO_DECIMAL)),
@@ -3494,6 +3501,10 @@ def generate_boq_report_api(request, project_id):
         # 수량 필드 포맷팅 (소수점 4자리)
         if 'quantity' in item and isinstance(item['quantity'], Decimal):
             item['quantity'] = format_quantity(item['quantity'])
+        # ▼▼▼ [추가] 2차 수량 포맷팅 (2025-11-14) ▼▼▼
+        if 'secondary_quantity' in item and isinstance(item['secondary_quantity'], Decimal):
+            item['secondary_quantity'] = format_quantity(item['secondary_quantity'])
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     # 모든 단가 타입 정보도 함께 전달 (프론트엔드 드롭다운 채우기용)
     unit_price_types = list(UnitPriceType.objects.filter(project_id=project_id).values('id', 'name'))

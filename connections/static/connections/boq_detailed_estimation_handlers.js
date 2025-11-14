@@ -149,6 +149,11 @@ function setupDetailedEstimationListeners() {
     document
         .getElementById("boq-filter-dd")
         ?.addEventListener("change", () => generateBoqReport());
+    // ▼▼▼ [추가] 2차 수량 표시 체크박스 (2025-11-14) ▼▼▼
+    document
+        .getElementById("boq-show-secondary-quantity-cb")
+        ?.addEventListener("change", () => generateBoqReport());
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
     // DD 탭 UI 초기화 (토글 버튼, 탭 등)
     initializeBoqUI(); // 패널 토글, 상세 탭 리스너 설정
 }
@@ -2145,6 +2150,10 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
         };
     });
 
+    // ▼▼▼ [추가] 2차 수량 표시 여부 확인 (2025-11-14) ▼▼▼
+    const showSecondaryQuantity = document.getElementById('boq-show-secondary-quantity-cb')?.checked || false;
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
+
     let finalColumns = [
         { id: "name", label: "구분", isDynamic: false, align: "left" },
         {
@@ -2155,6 +2164,9 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
             width: "150px",
         },
         { id: "quantity", label: "수량", isDynamic: false, align: "right" },
+        // ▼▼▼ [추가] 2차 수량 컬럼 (2025-11-14) ▼▼▼
+        ...(showSecondaryQuantity ? [{ id: "secondary_quantity", label: "2차수량", isDynamic: false, align: "right" }] : []),
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
         { id: "count", label: "항목 수", isDynamic: false, align: "right" },
         {
             id: "total_cost_unit",
