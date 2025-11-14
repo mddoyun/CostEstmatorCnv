@@ -149,10 +149,10 @@ function setupDetailedEstimationListeners() {
     document
         .getElementById("boq-filter-dd")
         ?.addEventListener("change", () => generateBoqReport());
-    // ▼▼▼ [추가] 2차 수량 표시 체크박스 (2025-11-14) ▼▼▼
-    document
-        .getElementById("boq-show-secondary-quantity-cb")
-        ?.addEventListener("change", () => generateBoqReport());
+    // ▼▼▼ [추가] 컬럼 표시 설정 체크박스들 (2025-11-14) ▼▼▼
+    document.querySelectorAll('.boq-column-toggle').forEach(checkbox => {
+        checkbox.addEventListener('change', () => generateBoqReport());
+    });
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     // DD 탭 UI 초기화 (토글 버튼, 탭 등)
     initializeBoqUI(); // 패널 토글, 상세 탭 리스너 설정
@@ -2150,73 +2150,78 @@ function renderBoqTable(reportData, summaryData, unitPriceTypes, containerId) {
         };
     });
 
-    // ▼▼▼ [추가] 2차 수량 표시 여부 확인 (2025-11-14) ▼▼▼
-    const showSecondaryQuantity = document.getElementById('boq-show-secondary-quantity-cb')?.checked || false;
-    // ▲▲▲ [추가] 여기까지 ▲▲▲
+    // ▼▼▼ [수정] 컬럼 표시 설정 읽기 (2025-11-14) ▼▼▼
+    const getColumnVisibility = (columnId) => {
+        const checkbox = document.querySelector(`.boq-column-toggle[data-column="${columnId}"]`);
+        return checkbox ? checkbox.checked : true; // 기본값 true (체크박스 없으면 표시)
+    };
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 
     let finalColumns = [
-        { id: "name", label: "구분", isDynamic: false, align: "left" },
-        {
+        { id: "name", label: "구분", isDynamic: false, align: "left" }, // 항상 표시
+        // ▼▼▼ [수정] 체크박스로 제어 가능한 컬럼들 (2025-11-14) ▼▼▼
+        ...(getColumnVisibility("unit_price_type_id") ? [{
             id: "unit_price_type_id",
             label: "단가기준",
             isDynamic: false,
             align: "center",
             width: "150px",
-        },
-        { id: "quantity", label: "수량", isDynamic: false, align: "right" },
-        // ▼▼▼ [추가] 2차 수량 컬럼 (2025-11-14) ▼▼▼
-        ...(showSecondaryQuantity ? [{ id: "secondary_quantity", label: "2차수량", isDynamic: false, align: "right" }] : []),
-        // ▲▲▲ [추가] 여기까지 ▲▲▲
-        { id: "count", label: "항목 수", isDynamic: false, align: "right" },
-        {
+        }] : []),
+        ...(getColumnVisibility("quantity") ? [{ id: "quantity", label: "수량", isDynamic: false, align: "right" }] : []),
+        ...(getColumnVisibility("secondary_quantity") ? [{ id: "secondary_quantity", label: "2차수량", isDynamic: false, align: "right" }] : []),
+        ...(getColumnVisibility("count") ? [{ id: "count", label: "항목 수", isDynamic: false, align: "right" }] : []),
+        ...(getColumnVisibility("total_cost_unit") ? [{
             id: "total_cost_unit",
             label: "합계단가",
             isDynamic: true,
             align: "right",
-        },
-        {
+        }] : []),
+        ...(getColumnVisibility("material_cost_unit") ? [{
             id: "material_cost_unit",
             label: "재료비단가",
             isDynamic: true,
             align: "right",
-        },
-        {
+        }] : []),
+        ...(getColumnVisibility("labor_cost_unit") ? [{
             id: "labor_cost_unit",
             label: "노무비단가",
             isDynamic: true,
             align: "right",
-        },
-        {
+        }] : []),
+        ...(getColumnVisibility("expense_cost_unit") ? [{
             id: "expense_cost_unit",
             label: "경비단가",
             isDynamic: true,
             align: "right",
-        },
+        }] : []),
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         ...dynamicDisplayFields,
-        {
+        // ▼▼▼ [수정] 체크박스로 제어 가능한 합계 컬럼들 (2025-11-14) ▼▼▼
+        ...(getColumnVisibility("total_cost_total") ? [{
             id: "total_cost_total",
             label: "합계금액",
             isDynamic: false,
             align: "right",
-        },
-        {
+        }] : []),
+        ...(getColumnVisibility("material_cost_total") ? [{
             id: "material_cost_total",
             label: "재료비",
             isDynamic: false,
             align: "right",
-        },
-        {
+        }] : []),
+        ...(getColumnVisibility("labor_cost_total") ? [{
             id: "labor_cost_total",
             label: "노무비",
             isDynamic: false,
             align: "right",
-        },
-        {
+        }] : []),
+        ...(getColumnVisibility("expense_cost_total") ? [{
             id: "expense_cost_total",
             label: "경비",
             isDynamic: false,
             align: "right",
-        },
+        }] : []),
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     ];
 
     if (currentBoqColumns.length > 0) {

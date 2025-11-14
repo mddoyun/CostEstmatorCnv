@@ -1737,12 +1737,59 @@
                                 >
                                     📄 Excel 내보내기
                                 </button>
-                                <!-- ▼▼▼ [추가] 2차 수량 표시 옵션 (2025-11-14) ▼▼▼ -->
+                                <!-- ▼▼▼ [추가] 컬럼 표시 옵션 (2025-11-14) ▼▼▼ -->
                                 <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
-                                    <label style="display: flex; align-items: center; cursor: pointer; font-size: 14px;">
-                                        <input type="checkbox" id="boq-show-secondary-quantity-cb" style="margin-right: 8px;">
-                                        <span>2차 수량 표시</span>
-                                    </label>
+                                    <h4 style="margin: 0 0 10px 0; font-size: 13px; font-weight: bold;">컬럼 표시 설정</h4>
+                                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="unit_price_type_id" checked style="margin-right: 6px;">
+                                            <span>단가기준</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="quantity" checked style="margin-right: 6px;">
+                                            <span>수량</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="secondary_quantity" style="margin-right: 6px;">
+                                            <span>2차수량</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="count" checked style="margin-right: 6px;">
+                                            <span>항목 수</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="total_cost_unit" checked style="margin-right: 6px;">
+                                            <span>합계단가</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="material_cost_unit" checked style="margin-right: 6px;">
+                                            <span>재료비단가</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="labor_cost_unit" checked style="margin-right: 6px;">
+                                            <span>노무비단가</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="expense_cost_unit" checked style="margin-right: 6px;">
+                                            <span>경비단가</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="total_cost_total" checked style="margin-right: 6px;">
+                                            <span>합계금액</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="material_cost_total" checked style="margin-right: 6px;">
+                                            <span>재료비</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="labor_cost_total" checked style="margin-right: 6px;">
+                                            <span>노무비</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                            <input type="checkbox" class="boq-column-toggle" data-column="expense_cost_total" checked style="margin-right: 6px;">
+                                            <span>경비</span>
+                                        </label>
+                                    </div>
                                 </div>
                                 <!-- ▲▲▲ [추가] 여기까지 ▲▲▲ -->
                             </div>
