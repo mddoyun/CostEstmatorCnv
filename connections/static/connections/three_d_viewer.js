@@ -204,11 +204,12 @@
         };
         // ▲▲▲ 여기까지 ▲▲▲
 
-        // Lighting - ▼▼▼ [수정] 더 균일한 조명으로 변경 (2025-11-14) ▼▼▼
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가: 0.6 → 0.7
+        // Lighting - ▼▼▼ [수정] 균일한 조명으로 투톤 제거 (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);  // 완전히 밝게
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소: 0.8 → 0.6
+        // 방향성 조명을 아주 약하게 (투톤 최소화)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);  // 매우 약하게
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
 
@@ -223,6 +224,12 @@
         directionalLight.shadow.camera.bottom = -50;
 
         scene.add(directionalLight);
+
+        // ▼▼▼ [추가] 반대편에서도 조명 추가 (투톤 제거) ▼▼▼
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.2);
+        directionalLight2.position.set(-10, 20, -10);  // 반대편
+        scene.add(directionalLight2);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Axes Helper
         const axesHelper = new THREE.AxesHelper(5);
@@ -657,11 +664,11 @@
         originalMaterials.clear();
 
         // Re-add essential scene elements (matching initThreeDViewer settings)
-        // ▼▼▼ [수정] 더 균일한 조명으로 변경 (2025-11-14) ▼▼▼
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가
+        // ▼▼▼ [수정] 균일한 조명으로 투톤 제거 (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);  // 완전히 밝게
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);  // 매우 약하게
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
         // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -677,6 +684,12 @@
         directionalLight.shadow.camera.bottom = -50;
 
         scene.add(directionalLight);
+
+        // ▼▼▼ [추가] 반대편 조명 (투톤 제거) ▼▼▼
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.2);
+        directionalLight2.position.set(-10, 20, -10);
+        scene.add(directionalLight2);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         const axesHelper = new THREE.AxesHelper(5);
         scene.add(axesHelper);
@@ -9686,11 +9699,11 @@
             RIGHT: null
         };
 
-        // Add lighting - ▼▼▼ [수정] 더 균일한 조명 (2025-11-14) ▼▼▼
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가
+        // Add lighting - ▼▼▼ [수정] 균일한 조명 (투톤 제거) (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);  // 완전히 밝게
         dataMgmtScene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);  // 매우 약하게
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
         // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -9703,6 +9716,12 @@
         directionalLight.shadow.camera.top = 50;
         directionalLight.shadow.camera.bottom = -50;
         dataMgmtScene.add(directionalLight);
+
+        // ▼▼▼ [추가] 반대편 조명 (투톤 제거) ▼▼▼
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.2);
+        directionalLight2.position.set(-10, 20, -10);
+        dataMgmtScene.add(directionalLight2);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Add helpers
         const axesHelper = new THREE.AxesHelper(5);
@@ -9807,11 +9826,11 @@
             RIGHT: null
         };
 
-        // Add lighting - ▼▼▼ [수정] 더 균일한 조명 (2025-11-14) ▼▼▼
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가
+        // Add lighting - ▼▼▼ [수정] 균일한 조명 (투톤 제거) (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);  // 완전히 밝게
         simScene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);  // 매우 약하게
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
         // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -9824,6 +9843,12 @@
         directionalLight.shadow.camera.top = 50;
         directionalLight.shadow.camera.bottom = -50;
         simScene.add(directionalLight);
+
+        // ▼▼▼ [추가] 반대편 조명 (투톤 제거) ▼▼▼
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.2);
+        directionalLight2.position.set(-10, 20, -10);
+        simScene.add(directionalLight2);
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // Add helpers
         const axesHelper = new THREE.AxesHelper(5);
