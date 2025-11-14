@@ -80,6 +80,7 @@ function setupSpaceManagementListeners() {
 }
 
 function setupRulesetManagementListeners() {
+    console.log('[Setup] Setting up ruleset management listeners');
     document
         .querySelectorAll(".ruleset-nav-button")
         .forEach((button) =>
@@ -117,14 +118,25 @@ function setupRulesetManagementListeners() {
                 "new"
             )
         );
-    document
-        .getElementById("add-space-classification-rule-btn")
-        ?.addEventListener("click", () =>
-            renderSpaceClassificationRulesetTable(
-                loadedSpaceClassificationRules,
-                "new"
-            )
-        );
+    const spaceClassBtn = document.getElementById("add-space-classification-rule-btn");
+    console.log('[Setup] Space classification button:', spaceClassBtn);
+    spaceClassBtn?.addEventListener("click", () => {
+            console.log('[Space Classification] Add rule button clicked');
+            try {
+                if (typeof renderSpaceClassificationRulesetTable === 'function') {
+                    renderSpaceClassificationRulesetTable(
+                        loadedSpaceClassificationRules,
+                        "new"
+                    );
+                } else {
+                    console.error('[Space Classification] renderSpaceClassificationRulesetTable is not a function');
+                    showToast('공간분류 룰셋 렌더링 함수가 정의되지 않았습니다.', 'error');
+                }
+            } catch (error) {
+                console.error('[Space Classification] Error rendering ruleset:', error);
+                showToast('공간분류 룰셋 표시 중 오류가 발생했습니다: ' + error.message, 'error');
+            }
+        });
     document
         .getElementById("add-space-assignment-rule-btn")
         ?.addEventListener("click", () =>
@@ -176,17 +188,41 @@ function setupRulesetManagementListeners() {
         ?.addEventListener("click", applyActivityAssignmentRules);
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     // ▼▼▼ [추가] Geometry 관계 룰셋 이벤트 리스너 ▼▼▼
-    document
-        .getElementById("geometry-relation-ruleset-table-container")
-        ?.addEventListener("click", handleGeometryRelationRuleActions);
-    document
-        .getElementById("add-geometry-relation-rule-btn")
-        ?.addEventListener("click", () =>
-            renderGeometryRelationRulesTable(loadedGeometryRelationRules, "new")
-        );
-    document
-        .getElementById("apply-geometry-relation-rules-btn")
-        ?.addEventListener("click", applyGeometryRelationRules);
+    const geoRelTableContainer = document.getElementById("geometry-relation-ruleset-table-container");
+    console.log('[Setup] Geometry relation table container:', geoRelTableContainer);
+    geoRelTableContainer?.addEventListener("click", (e) => {
+        console.log('[Geometry Relation] Table container clicked');
+        if (typeof handleGeometryRelationRuleActions === 'function') {
+            handleGeometryRelationRuleActions(e);
+        } else {
+            console.warn('[Geometry Relation Ruleset] Handler not implemented');
+            showToast('공간관계 룰셋 기능은 아직 구현 중입니다.', 'warning');
+        }
+    });
+
+    const geoRelAddBtn = document.getElementById("add-geometry-relation-rule-btn");
+    console.log('[Setup] Geometry relation add button:', geoRelAddBtn);
+    geoRelAddBtn?.addEventListener("click", () => {
+        console.log('[Geometry Relation] Add button clicked');
+        if (typeof addGeometryRelationRule === 'function') {
+            addGeometryRelationRule();
+        } else {
+            console.warn('[Geometry Relation Ruleset] addGeometryRelationRule function not implemented');
+            showToast('공간관계 룰셋 추가 기능이 로드되지 않았습니다.', 'error');
+        }
+    });
+
+    const geoRelApplyBtn = document.getElementById("apply-geometry-relation-rules-btn");
+    console.log('[Setup] Geometry relation apply button:', geoRelApplyBtn);
+    geoRelApplyBtn?.addEventListener("click", () => {
+        console.log('[Geometry Relation] Apply button clicked');
+        if (typeof applyGeometryRelationRules === 'function') {
+            applyGeometryRelationRules();
+        } else {
+            console.warn('[Geometry Relation Ruleset] Apply function not implemented');
+            showToast('공간관계 룰셋 기능은 아직 구현 중입니다.', 'warning');
+        }
+    });
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     // CSV 가져오기/내보내기 버튼 (동적 설정)
     setupRulesetCsvButtons();

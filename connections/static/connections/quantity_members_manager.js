@@ -147,7 +147,15 @@ async function loadQuantityMembers() {
 
         renderActiveQmView();
 
-        populateQmFieldSelection(loadedQuantityMembers);
+        // ▼▼▼ [수정] 필드 선택 체크박스 생성 (인자 없음) ▼▼▼
+        populateQmFieldSelection();
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+        // ▼▼▼ [추가] 그룹핑 필드 드롭다운 생성 (2025-11-13) ▼▼▼
+        if (typeof populateQmGroupingFields === 'function') {
+            populateQmGroupingFields(loadedQuantityMembers);
+        }
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
 
         // ▼▼▼ AI 인덱스 재빌드를 위한 이벤트 발생 ▼▼▼
         window.dispatchEvent(new Event('quantity-members-loaded'));
@@ -3001,4 +3009,18 @@ async function updateAllQmFormulas() {
     // UI 갱신
     renderActiveQmView();
     renderQmSelectedProperties();
+}
+
+// =====================================================================
+// Auto-initialize: Setup listeners when DOM is ready
+// =====================================================================
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('[QM Manager] Auto-initializing listeners (DOMContentLoaded)');
+        setupQuantityMembersListeners();
+    });
+} else {
+    // DOM already loaded
+    console.log('[QM Manager] Auto-initializing listeners (immediate)');
+    setupQuantityMembersListeners();
 }

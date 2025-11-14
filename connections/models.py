@@ -1080,6 +1080,10 @@ class GeometryRelationRule(models.Model):
     #             "id": "top_slab",
     #             "name": "상단 슬라브 접촉",
     #             "related_classification": "슬라브",
+    #             "related_conditions": [  # ▼▼▼ [신규] 비교 객체 조건 (2025-11-13) ▼▼▼
+    #                 {"property": "QM.Properties.두께", "operator": ">=", "value": "200"},
+    #                 {"property": "QM.System.classification_tag", "operator": "contains", "value": "슬라브"}
+    #             ],  # ▲▲▲ [신규] 여기까지 ▲▲▲
     #             "contact_type": "top_cap",  # or "side_top", "bottom", "side_all"
     #             "tolerance": 0.001,  # 1mm
     #             "find_mode": "highest"  # or "lowest", "nearest", "all"
@@ -1088,6 +1092,7 @@ class GeometryRelationRule(models.Model):
     #             "id": "side_beam",
     #             "name": "측면 보 접촉",
     #             "related_classification": "보",
+    #             "related_conditions": [],  # 조건 없으면 분류만으로 필터링
     #             "contact_type": "side_top",
     #             "tolerance": 0.001,
     #             "find_mode": "nearest"

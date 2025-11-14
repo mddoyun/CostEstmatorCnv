@@ -944,6 +944,14 @@ function renderRawQmTable(members, editingMemberId = null) {
             const fieldName = field.startsWith('QM.System.')
                 ? field.substring(10)  // 'QM.System.' 제거
                 : field.substring(10); // 'QM_System_' 제거
+
+            // ▼▼▼ [추가] 특별 필드 매핑 (2025-11-13) ▼▼▼
+            // classification_tag -> classification_tag_name
+            if (fieldName === 'classification_tag') {
+                return item.classification_tag_name ?? '';
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             return item[fieldName] ?? '';
         }
 
@@ -1501,6 +1509,14 @@ function renderCostCodeViewTable(members) {
             const fieldName = field.startsWith('QM.System.')
                 ? field.substring(10)  // 'QM.System.' 제거
                 : field.substring(10); // 'QM_System_' 제거
+
+            // ▼▼▼ [추가] 특별 필드 매핑 (2025-11-13) ▼▼▼
+            // classification_tag -> classification_tag_name
+            if (fieldName === 'classification_tag') {
+                return item.classification_tag_name ?? '';
+            }
+            // ▲▲▲ [추가] 여기까지 ▲▲▲
+
             return item[fieldName] ?? '';
         }
 
@@ -1779,64 +1795,28 @@ function toggleQmGroup(groupPath) {
 }
 /**
  * '수량산출부재' 데이터와 연관된 모든 속성을 분석하여 그룹핑 필드 목록을 동적으로 채웁니다.
+ * generateQMPropertyOptions()를 사용하여 완전한 속성 상속 체계를 구현합니다.
  * @param {Array} members - 수량산출부재 데이터 배열
  */
-function populateQmFieldSelection(members) {
-    if (members.length === 0) return;
+function populateQmGroupingFields(members) {
+    if (!members || members.length === 0) return;
 
-    const fieldKeys = new Set(['name', 'classification_tag_name']);
+    // ▼▼▼ [수정] generateQMPropertyOptions()를 사용하여 모든 속성 수집 (2025-11-13) ▼▼▼
+    const propertyOptionGroups = generateQMPropertyOptions();
+    const allFields = [];
 
-    const membersToScan = members.slice(0, 50);
-    membersToScan.forEach((member) => {
-        if (member.member_mark_id) {
-            const mark = loadedMemberMarks.find(
-                (m) => m.id === member.member_mark_id
-            );
-            if (mark) {
-                // '일람부호.Mark'를 그룹핑 옵션에 추가
-                fieldKeys.add('일람부호.Mark');
-                if (mark.properties) {
-                    Object.keys(mark.properties).forEach((key) =>
-                        fieldKeys.add(`일람부호.${key}`)
-                    );
-                }
-            }
-        }
-
-        if (member.raw_element_id) {
-            const rawElement = allRevitData.find(
-                (el) => el.id === member.raw_element_id
-            );
-            if (rawElement && rawElement.raw_data) {
-                const rawData = rawElement.raw_data;
-                // 'BIM원본' 관련 속성을 그룹핑 옵션에 추가
-                if (rawData.Parameters)
-                    Object.keys(rawData.Parameters).forEach((k) =>
-                        fieldKeys.add(`BIM원본.${k}`)
-                    );
-                if (rawData.TypeParameters)
-                    Object.keys(rawData.TypeParameters).forEach((k) =>
-                        fieldKeys.add(`BIM원본.TypeParameters.${k}`)
-                    );
-                Object.keys(rawData).forEach((k) => {
-                    if (
-                        k !== 'Parameters' &&
-                        k !== 'TypeParameters' &&
-                        typeof rawData[k] !== 'object'
-                    ) {
-                        fieldKeys.add(`BIM원본.${k}`);
-                    }
-                });
-            }
-        }
+    propertyOptionGroups.forEach(group => {
+        group.options.forEach(opt => {
+            allFields.push(opt.value);  // QM.System.id, BIM.Parameters.xxx 등
+        });
     });
 
-    const sortedKeys = Array.from(fieldKeys).sort();
+    const sortedFields = allFields.sort();
     const groupBySelects = document.querySelectorAll('.qm-group-by-select');
     let optionsHtml =
         '<option value="">-- 그룹핑 기준 선택 --</option>' +
-        sortedKeys
-            .map((key) => `<option value="${key}">${key}</option>`)
+        sortedFields
+            .map((field) => `<option value="${field}">${field}</option>`)
             .join('');
 
     groupBySelects.forEach((select) => {
@@ -1844,6 +1824,7 @@ function populateQmFieldSelection(members) {
         select.innerHTML = optionsHtml;
         select.value = selectedValue;
     });
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
 }
 /**
  * 선택된 수량산출부재의 속성을 테이블로 렌더링합니다.

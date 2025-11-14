@@ -1961,10 +1961,11 @@ def apply_geometry_relation_rules_view(request, project_id):
                 print(f"[DEBUG] Processing rule: {rule.name} (ID: {rule_id})")
                 print(f"  > {len(results)} QuantityMembers to update")
 
+                # ▼▼▼ [수정] 프론트엔드에서 계산된 속성 적용 (2025-11-13) ▼▼▼
                 # 각 QuantityMember별로 속성 할당 처리
                 for result in results:
                     qm_id = result['qm_id']
-                    relations = result['relations']
+                    properties = result.get('properties', {})  # 프론트엔드에서 계산된 속성
 
                     try:
                         qm = QuantityMember.objects.get(id=qm_id, project=project)
@@ -1973,27 +1974,11 @@ def apply_geometry_relation_rules_view(request, project_id):
                         if not qm.properties:
                             qm.properties = {}
 
-                        # property_assignments 처리
-                        for assignment in rule.property_assignments:
-                            property_name = assignment.get('property_name', '').strip()
-                            conditions = assignment.get('conditions', [])
-
-                            if not property_name:
-                                continue
-
-                            # 조건 평가 - relations 데이터를 context로 사용
-                            context = {'relations': relations}
-
-                            # 조건 평가 로직
-                            if evaluate_geometry_conditions(context, conditions):
-                                # 조건 만족 시 속성 할당
-                                property_value = assignment.get('value', '')
-
-                                # 템플릿 표현식 처리 (예: {relations.top_cap.0.name})
-                                property_value = evaluate_geometry_template(property_value, context)
-
-                                qm.properties[property_name] = property_value
-                                print(f"[DEBUG] Assigned property '{property_name}' = '{property_value}' to QM {qm.name}")
+                        # 프론트엔드에서 계산된 속성 병합
+                        if properties:
+                            for key, value in properties.items():
+                                qm.properties[key] = value
+                                print(f"[DEBUG] Assigned property '{key}' = '{value}' to QM {qm.name}")
                                 updated_count += 1
 
                         # 변경사항 저장
@@ -2002,6 +1987,7 @@ def apply_geometry_relation_rules_view(request, project_id):
                     except QuantityMember.DoesNotExist:
                         print(f"[ERROR] QuantityMember not found: {qm_id}")
                         continue
+                # ▲▲▲ [수정] 여기까지 ▲▲▲
 
             except GeometryRelationRule.DoesNotExist:
                 print(f"[ERROR] GeometryRelationRule not found: {rule_id}")

@@ -57,7 +57,10 @@ class GeometryRelationAnalyzer {
                 count: relatedObjects.length,
                 objects: relatedObjects.map(obj => obj.qm),
                 closest: relatedObjects[0]?.qm || null,
-                all: relatedObjects.map(obj => obj.qm)
+                all: relatedObjects.map(obj => obj.qm),
+                // ▼▼▼ [추가] 조건부 매핑을 위한 전체 객체 배열 (contactInfo 포함) ▼▼▼
+                fullObjects: relatedObjects  // {qm, mesh, contactInfo} 배열
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
             };
         });
 
@@ -77,36 +80,33 @@ class GeometryRelationAnalyzer {
             return [];
         }
 
-        // ========== STAGE 2: 정밀 검증 (Ray Casting + Vertex Analysis) ==========
-        const contactingObjects = [];
-
-        candidates.forEach((candidate, idx) => {
+        // ▼▼▼ [수정] STAGE 2: Overlap 검사 + Top Cap Contact 감지 (2025-11-13) ▼▼▼
+        // Bounding Box 교차로 이미 대부분 필터링되었으므로, 그대로 사용
+        const contactingObjects = candidates.map(candidate => {
             const candidateMesh = this.getMeshByQmId(candidate.id);
-            if (!candidateMesh) return;
 
-            const contactInfo = this.preciseContactDetection(
-                targetMesh,
-                candidateMesh,
-                relConfig.contact_type,
-                relConfig.tolerance || 0.001
-            );
-
-            if (contactInfo.isContacting) {
-                contactingObjects.push({
-                    qm: candidate,
-                    mesh: candidateMesh,
-                    contactInfo: contactInfo
-                });
-
-                console.log(`      [Stage 2] Candidate ${idx + 1}/${candidates.length}: CONTACT ` +
-                           `(type: ${contactInfo.contactType}, hit ratio: ${(contactInfo.hitRatio * 100).toFixed(1)}%)`);
+            // Top cap contact 감지
+            let hasTopContact = false;
+            if (targetMesh && candidateMesh) {
+                const topContactResult = this.checkTopCapContact(targetMesh, candidateMesh, relConfig.tolerance || 0.001);
+                hasTopContact = topContactResult.isContacting;
             }
-        });
 
-        console.log(`    [Stage 2] Precise check: ${contactingObjects.length} confirmed contacts`);
+            return {
+                qm: candidate,
+                mesh: candidateMesh,
+                contactInfo: {
+                    isContacting: true,
+                    hasTopContact: hasTopContact  // Top cap 접촉 여부
+                }
+            };
+        }).filter(obj => obj.mesh !== null);
+
+        console.log(`    [Stage 2] Overlap check: ${contactingObjects.length} overlapping objects`);
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // ========== STAGE 3: find_mode에 따라 정렬/선택 ==========
-        return this.selectByMode(contactingObjects, relConfig.find_mode || 'all');
+        return this.selectByMode(contactingObjects, relConfig.find_mode || 'all', relConfig);
     }
 
     /**
@@ -114,11 +114,20 @@ class GeometryRelationAnalyzer {
      * @private
      */
     fastFilterCandidates(targetMesh, targetQM, relConfig) {
-        // 1. 대상 분류에 해당하는 모든 객체 가져오기
-        const allCandidates = this.quantityMembers.filter(qm =>
-            qm.classification_tag?.name === relConfig.related_classification &&
-            qm.id !== targetQM.id
-        );
+        // ▼▼▼ [수정] 조건으로만 필터링 (2025-11-13) ▼▼▼
+        // 1. 조건으로 비교 대상 객체 필터링
+        let allCandidates = this.quantityMembers.filter(qm => qm.id !== targetQM.id);
+
+        if (relConfig.related_conditions && relConfig.related_conditions.length > 0) {
+            console.log(`    [Stage 1] Applying ${relConfig.related_conditions.length} related_conditions`);
+            allCandidates = allCandidates.filter(qm => {
+                return this.matchesAllConditions(qm, relConfig.related_conditions);
+            });
+            console.log(`    [Stage 1] After conditions filter: ${allCandidates.length} candidates remaining`);
+        } else {
+            console.log(`    [Stage 1] No conditions - all objects are candidates`);
+        }
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         if (allCandidates.length === 0) {
             return [];
@@ -382,7 +391,7 @@ class GeometryRelationAnalyzer {
      * find_mode에 따라 객체 선택
      * @private
      */
-    selectByMode(contactingObjects, mode) {
+    selectByMode(contactingObjects, mode, relConfig = {}) {
         if (contactingObjects.length === 0) return [];
 
         switch (mode) {
@@ -407,6 +416,32 @@ class GeometryRelationAnalyzer {
                 return [contactingObjects.sort((a, b) =>
                     (a.contactInfo.distance || Infinity) - (b.contactInfo.distance || Infinity)
                 )[0]];
+
+            case 'property_max':
+                // ▼▼▼ [추가] 특정 속성의 최대값 기준 선택 (2025-11-13) ▼▼▼
+                if (!relConfig.sort_property) {
+                    console.warn('[GeometryRelationAnalyzer] property_max mode requires sort_property');
+                    return [];
+                }
+                return [contactingObjects.sort((a, b) => {
+                    const aValue = parseFloat(this.getPropertyValue(a.qm, relConfig.sort_property)) || -Infinity;
+                    const bValue = parseFloat(this.getPropertyValue(b.qm, relConfig.sort_property)) || -Infinity;
+                    return bValue - aValue; // 내림차순
+                })[0]];
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
+
+            case 'property_min':
+                // ▼▼▼ [추가] 특정 속성의 최소값 기준 선택 (2025-11-13) ▼▼▼
+                if (!relConfig.sort_property) {
+                    console.warn('[GeometryRelationAnalyzer] property_min mode requires sort_property');
+                    return [];
+                }
+                return [contactingObjects.sort((a, b) => {
+                    const aValue = parseFloat(this.getPropertyValue(a.qm, relConfig.sort_property)) || Infinity;
+                    const bValue = parseFloat(this.getPropertyValue(b.qm, relConfig.sort_property)) || Infinity;
+                    return aValue - bValue; // 오름차순
+                })[0]];
+                // ▲▲▲ [추가] 여기까지 ▲▲▲
 
             case 'all':
             default:
@@ -501,10 +536,26 @@ class GeometryRelationAnalyzer {
             return this.meshCache.get(qmId);
         }
 
-        // Scene에서 찾기
+        // QuantityMember에서 raw_element_id 찾기
+        const qm = this.quantityMembers.find(q => q.id === qmId);
+        if (!qm) {
+            console.warn(`[getMeshByQmId] QuantityMember not found for ID: ${qmId}`);
+            return null;
+        }
+
+        const rawElementId = qm.raw_element_id || qm.raw_element?.id;
+        if (!rawElementId) {
+            console.warn(`[getMeshByQmId] No raw_element_id for QM: ${qmId}`);
+            return null;
+        }
+
+        // Scene에서 rawElementId로 찾기
         let foundMesh = null;
         this.scene.traverse(obj => {
-            if (obj.userData?.qmId === qmId || obj.userData?.quantityMemberId === qmId) {
+            if (obj.userData?.rawElementId === rawElementId ||
+                obj.userData?.bimObjectId === rawElementId ||
+                obj.userData?.qmId === qmId ||
+                obj.userData?.quantityMemberId === qmId) {
                 foundMesh = obj;
             }
         });
@@ -512,6 +563,8 @@ class GeometryRelationAnalyzer {
         // 캐시에 저장
         if (foundMesh) {
             this.meshCache.set(qmId, foundMesh);
+        } else {
+            console.warn(`[getMeshByQmId] Mesh not found for QM: ${qmId}, rawElementId: ${rawElementId}`);
         }
 
         return foundMesh;
@@ -524,6 +577,127 @@ class GeometryRelationAnalyzer {
         this.meshCache.clear();
         console.log('[GeometryRelationAnalyzer] Mesh cache cleared');
     }
+
+    /**
+     * ▼▼▼ [신규 함수] 조건 매칭 검사 (2025-11-13) ▼▼▼
+     * QuantityMember가 모든 조건을 만족하는지 검사
+     * @param {Object} qm - QuantityMember 객체
+     * @param {Array} conditions - 조건 배열 [{property, operator, value}, ...]
+     * @returns {boolean}
+     */
+    matchesAllConditions(qm, conditions) {
+        return conditions.every(condition => {
+            return this.matchesCondition(qm, condition);
+        });
+    }
+
+    /**
+     * 단일 조건 매칭 검사
+     * @private
+     */
+    matchesCondition(qm, condition) {
+        const { property, operator, value } = condition;
+
+        // 속성 값 가져오기
+        const actualValue = this.getPropertyValue(qm, property);
+
+        // 값이 없으면 false
+        if (actualValue === null || actualValue === undefined) {
+            return false;
+        }
+
+        // Operator에 따른 비교
+        switch (operator) {
+            case '==':
+                return String(actualValue) === String(value);
+            case '!=':
+                return String(actualValue) !== String(value);
+            case '>':
+                return parseFloat(actualValue) > parseFloat(value);
+            case '<':
+                return parseFloat(actualValue) < parseFloat(value);
+            case '>=':
+                return parseFloat(actualValue) >= parseFloat(value);
+            case '<=':
+                return parseFloat(actualValue) <= parseFloat(value);
+            case 'contains':
+                return String(actualValue).includes(String(value));
+            case 'startsWith':
+                return String(actualValue).startsWith(String(value));
+            case 'endsWith':
+                return String(actualValue).endsWith(String(value));
+            default:
+                console.warn(`[GeometryRelationAnalyzer] Unknown operator: ${operator}`);
+                return false;
+        }
+    }
+
+    /**
+     * QuantityMember에서 속성 값 가져오기 (QM.System.*, QM.Properties.*, BIM.*, MM.*, SC.* 등)
+     * @private
+     */
+    getPropertyValue(qm, propertyPath) {
+        // 예: "QM.System.name", "QM.Properties.두께", "BIM.Parameters.Mark"
+        const parts = propertyPath.split('.');
+
+        if (parts.length < 2) {
+            console.warn(`[GeometryRelationAnalyzer] Invalid property path: ${propertyPath}`);
+            return null;
+        }
+
+        const prefix = parts[0]; // QM, BIM, MM, SC 등
+        const category = parts[1]; // System, Properties, Parameters 등
+        const fieldName = parts.slice(2).join('.'); // 나머지 경로
+
+        if (prefix === 'QM') {
+            if (category === 'System') {
+                // QM.System.name → qm.name
+                // QM.System.classification_tag → qm.classification_tag_name
+                if (fieldName === 'classification_tag') {
+                    return qm.classification_tag_name || qm.classification_tag?.name;
+                }
+                return qm[fieldName];
+            } else if (category === 'Properties') {
+                // QM.Properties.두께 → qm.properties?.두께
+                return qm.properties?.[fieldName];
+            }
+        } else if (prefix === 'BIM') {
+            // BIM.Parameters.Mark → qm.raw_element?.raw_data?.Parameters?.Mark
+            const rawData = qm.raw_element?.raw_data || qm.raw_data;
+            if (!rawData) return null;
+
+            if (category === 'Parameters') {
+                return rawData.Parameters?.[fieldName];
+            } else if (category === 'TypeParameters') {
+                return rawData.TypeParameters?.[fieldName];
+            } else if (category === 'QuantitySet') {
+                return rawData.QuantitySet?.[fieldName];
+            } else if (category === 'Attributes') {
+                return rawData[fieldName];
+            }
+        } else if (prefix === 'MM') {
+            // MM.System.name → qm.member_mark?.name
+            const mm = qm.member_mark;
+            if (!mm) return null;
+
+            if (category === 'System') {
+                return mm[fieldName];
+            } else if (category === 'Properties') {
+                return mm.properties?.[fieldName];
+            }
+        } else if (prefix === 'SC') {
+            // SC.System.name → qm.space?.name
+            const space = qm.space;
+            if (!space) return null;
+
+            if (category === 'System') {
+                return space[fieldName];
+            }
+        }
+
+        return null;
+    }
+    // ▲▲▲ [신규 함수] 여기까지 ▲▲▲
 }
 
 // Export for use in other modules
