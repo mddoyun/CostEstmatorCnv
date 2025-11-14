@@ -204,11 +204,11 @@
         };
         // ▲▲▲ 여기까지 ▲▲▲
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // Lighting - ▼▼▼ [수정] 더 균일한 조명으로 변경 (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가: 0.6 → 0.7
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소: 0.8 → 0.6
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
 
@@ -657,12 +657,14 @@
         originalMaterials.clear();
 
         // Re-add essential scene elements (matching initThreeDViewer settings)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // ▼▼▼ [수정] 더 균일한 조명으로 변경 (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // Configure shadow properties
         directionalLight.shadow.mapSize.width = 2048;
@@ -1723,7 +1725,7 @@
                 const material = new THREE.MeshStandardMaterial({
                     color: 0xcccccc,        // Light gray (임시)
                     metalness: 0.0,
-                    roughness: 1.0,
+                    roughness: 0.8,         // ✅ 감소: 1.0 → 0.8 (더 부드러운 표면)
                     flatShading: false,
                     side: THREE.DoubleSide
                 });
@@ -9684,13 +9686,14 @@
             RIGHT: null
         };
 
-        // Add lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // Add lighting - ▼▼▼ [수정] 더 균일한 조명 (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가
         dataMgmtScene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         directionalLight.shadow.camera.near = 0.5;
@@ -9804,13 +9807,14 @@
             RIGHT: null
         };
 
-        // Add lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // Add lighting - ▼▼▼ [수정] 더 균일한 조명 (2025-11-14) ▼▼▼
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);  // 밝기 증가
         simScene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);  // 밝기 감소
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         directionalLight.shadow.camera.near = 0.5;
