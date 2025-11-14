@@ -1734,12 +1734,9 @@
                 geometry.computeVertexNormals();
                 geometry.normalizeNormals();
 
-                // ▼▼▼ [수정] 초기 재질은 임시로 생성 (나중에 렌더링 모드 적용) ▼▼▼
-                const material = new THREE.MeshStandardMaterial({
+                // ▼▼▼ [수정] MeshBasicMaterial로 변경 - 조명 영향 없음 (2025-11-14) ▼▼▼
+                const material = new THREE.MeshBasicMaterial({
                     color: 0xcccccc,        // Light gray (임시)
-                    metalness: 0.0,
-                    roughness: 0.8,
-                    flatShading: true,      // ✅ true로 변경: 균일한 면 색상 (그라데이션 제거)
                     side: THREE.DoubleSide
                 });
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
@@ -12399,10 +12396,9 @@
                 break;
 
             case 'white':
-                // 모두 하얀색
-                mesh.material = new THREE.MeshStandardMaterial({
+                // 모두 하얀색 - ▼▼▼ [수정] MeshBasicMaterial 사용 (2025-11-14) ▼▼▼
+                mesh.material = new THREE.MeshBasicMaterial({
                     color: isSelected ? 0xffff00 : 0xffffff,
-                    flatShading: false,
                     side: THREE.DoubleSide
                 });
                 mesh.material.needsUpdate = true;
@@ -12425,10 +12421,9 @@
                 break;
 
             case 'edges':
-                // ▼▼▼ [수정] 테두리선 모드 (흰색 면만, 선은 하단 통합 로직에서 처리) ▼▼▼
-                mesh.material = new THREE.MeshStandardMaterial({
+                // ▼▼▼ [수정] 테두리선 모드 - MeshBasicMaterial 사용 (2025-11-14) ▼▼▼
+                mesh.material = new THREE.MeshBasicMaterial({
                     color: isSelected ? 0xffff00 : 0xffffff,
-                    flatShading: false,
                     side: THREE.DoubleSide,
                     polygonOffset: true,
                     polygonOffsetFactor: 1,
@@ -12440,16 +12435,14 @@
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             case 'sunlight':
-                // 태양광 그림자 모드 (밝은 음영)
-                mesh.material = new THREE.MeshPhongMaterial({
+                // ▼▼▼ [수정] 태양광 모드 - MeshBasicMaterial 사용 (2025-11-14) ▼▼▼
+                mesh.material = new THREE.MeshBasicMaterial({
                     color: isSelected ? 0xffff00 : 0xffffff,
-                    flatShading: false,
-                    side: THREE.DoubleSide,
-                    shininess: 10,
-                    specular: 0x222222
+                    side: THREE.DoubleSide
                 });
                 mesh.material.needsUpdate = true;
                 break;
+                // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             default:
                 // 기본값 - realistic 모드
@@ -12541,16 +12534,15 @@
             transparent = false;
         }
 
-        mesh.material = new THREE.MeshStandardMaterial({
+        // ▼▼▼ [수정] MeshBasicMaterial로 변경 - 조명 영향 제거 (2025-11-14) ▼▼▼
+        mesh.material = new THREE.MeshBasicMaterial({
             color: color,
-            flatShading: false,
             side: THREE.DoubleSide,
-            metalness: 0.1,
-            roughness: 0.8,
             transparent: transparent,
             opacity: opacity,
             depthWrite: !transparent // 투명 객체는 depth write 비활성화
         });
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
         mesh.material.needsUpdate = true;
     }
 
@@ -12589,14 +12581,13 @@
             color = 0xffff00;
         }
 
-        mesh.material = new THREE.MeshStandardMaterial({
+        // ▼▼▼ [수정] MeshBasicMaterial 사용 (2025-11-14) ▼▼▼
+        mesh.material = new THREE.MeshBasicMaterial({
             color: color,
-            flatShading: false,
-            side: THREE.DoubleSide,
-            metalness: 0.3,
-            roughness: 0.7
+            side: THREE.DoubleSide
         });
         mesh.material.needsUpdate = true;
+        // ▲▲▲ [수정] 여기까지 ▲▲▲
     }
 
     // ▲▲▲ [추가] 여기까지 ▲▲▲
