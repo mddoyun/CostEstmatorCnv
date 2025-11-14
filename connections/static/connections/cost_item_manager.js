@@ -1703,15 +1703,31 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
                 // ▲▲▲ [추가] 여기까지 ▲▲▲
 
                 if (evaluateCiConditions(rule.conditions || [], ciContext)) {
-                    // 수량 산식 평가
+                    // ▼▼▼ [수정] 1차 수량 산식 평가 (2025-11-14) ▼▼▼
                     const quantity = evaluateQuantityFormula(rule.quantity_formula || '', ciContext);
 
+                    // ▼▼▼ [추가] 2차 수량 산식 평가 (2025-11-14) ▼▼▼
+                    const secondaryQuantity = evaluateQuantityFormula(rule.secondary_quantity_formula || '', ciContext);
+
+                    let updated = false;
                     if (quantity !== null && quantity !== undefined && !isNaN(quantity)) {
                         costItem.quantity = quantity;
+                        updated = true;
+                    }
+
+                    // 2차 수량도 계산 (formula가 있으면)
+                    if (secondaryQuantity !== null && secondaryQuantity !== undefined && !isNaN(secondaryQuantity)) {
+                        costItem.secondary_quantity = secondaryQuantity;
+                        updated = true;
+                        console.log(`[applyCostItemQuantityRules] CostItem ${costItem.id}: secondary_quantity = ${secondaryQuantity}`);
+                    }
+
+                    if (updated) {
                         updatedItems.push(costItem);
                         updatedCount++;
                         break; // 첫 번째 매칭 룰만 적용 (priority 순)
                     }
+                    // ▲▲▲ [수정] 여기까지 ▲▲▲
                 }
             }
         }
@@ -2916,6 +2932,120 @@ async function updateAllCiFormulas() {
 }
 // ▲▲▲ [추가] 여기까지 ▲▲▲
 
+// =====================================================================
+// ▼▼▼ [추가] 2차 수량 디버깅 및 자동 재계산 헬퍼 함수 (2025-11-14) ▼▼▼
+// =====================================================================
+
+/**
+ * 모든 CostItem의 is_manual_secondary_quantity 플래그를 false로 리셋하고
+ * 자동생성(공사코드기준) 함수를 호출하여 2차 수량을 재계산합니다.
+ *
+ * 사용법: 브라우저 콘솔에서 아래 명령 실행
+ * > await resetSecondaryQuantityAndRecalculate()
+ */
+async function resetSecondaryQuantityAndRecalculate() {
+    if (!currentProjectId) {
+        console.error('[resetSecondaryQuantity] 프로젝트가 선택되지 않았습니다.');
+        showToast('프로젝트를 먼저 선택하세요.', 'error');
+        return;
+    }
+
+    if (!window.loadedCostItems || window.loadedCostItems.length === 0) {
+        console.error('[resetSecondaryQuantity] CostItem이 없습니다.');
+        showToast('산출항목이 없습니다.', 'error');
+        return;
+    }
+
+    console.log(`[resetSecondaryQuantity] 시작: ${window.loadedCostItems.length}개 항목 처리`);
+
+    let resetCount = 0;
+    let errorCount = 0;
+
+    // 1단계: 모든 CostItem의 is_manual_secondary_quantity 플래그를 false로 설정
+    for (const item of window.loadedCostItems) {
+        try {
+            const response = await fetch(
+                `/connections/api/cost-items/${currentProjectId}/${item.id}/`,
+                {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        is_manual_secondary_quantity: false
+                    })
+                }
+            );
+
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.message || 'Unknown error');
+            }
+
+            console.log(`[resetSecondaryQuantity] ✅ ${item.id}: is_manual_secondary_quantity = false`);
+            resetCount++;
+        } catch (error) {
+            console.error(`[resetSecondaryQuantity] ❌ ${item.id}: ${error.message}`);
+            errorCount++;
+        }
+    }
+
+    console.log(`[resetSecondaryQuantity] 완료: ${resetCount}개 성공, ${errorCount}개 실패`);
+
+    if (resetCount > 0) {
+        showToast(`${resetCount}개 항목의 2차 수량 수동 입력 플래그를 해제했습니다.`, 'success');
+
+        // 2단계: 자동생성(공사코드기준) 함수 호출하여 2차 수량 재계산
+        console.log('[resetSecondaryQuantity] 자동생성(공사코드기준) 시작...');
+        showToast('2차 수량 재계산 중...', 'info');
+
+        await createAutoCostItems(true);  // skipConfirmation = true
+
+        console.log('[resetSecondaryQuantity] 2차 수량 재계산 완료');
+    } else {
+        showToast('플래그 리셋에 실패했습니다.', 'error');
+    }
+}
+
+/**
+ * 현재 로드된 CostItem들의 2차 수량 관련 정보를 콘솔에 출력합니다.
+ *
+ * 사용법: 브라우저 콘솔에서 아래 명령 실행
+ * > debugSecondaryQuantity()
+ */
+function debugSecondaryQuantity() {
+    if (!window.loadedCostItems || window.loadedCostItems.length === 0) {
+        console.log('[debugSecondaryQuantity] CostItem이 없습니다.');
+        return;
+    }
+
+    console.log('=== 2차 수량 디버깅 정보 ===');
+    console.log(`총 ${window.loadedCostItems.length}개 CostItem`);
+    console.log('');
+
+    window.loadedCostItems.forEach((item, idx) => {
+        console.log(`[${idx + 1}] CostItem ID: ${item.id}`);
+        console.log(`  - 공사코드: ${item.cost_code_name || '없음'}`);
+        console.log(`  - 1차 수량: ${item.quantity || 0} (수동: ${item.is_manual_quantity})`);
+        console.log(`  - 2차 수량: ${item.secondary_quantity || 0} (수동: ${item.is_manual_secondary_quantity})`);
+        console.log(`  - 2차 품명: ${item.cost_code_secondary_name || '없음'}`);
+        console.log(`  - 2차 단위: ${item.cost_code_secondary_unit || '없음'}`);
+        console.log('');
+    });
+
+    // 2차 수량이 0인 항목 개수
+    const zeroSecondaryCount = window.loadedCostItems.filter(item => !item.secondary_quantity || item.secondary_quantity === 0).length;
+    console.log(`⚠️ 2차 수량이 0인 항목: ${zeroSecondaryCount}개`);
+
+    // is_manual_secondary_quantity가 true인 항목 개수
+    const manualSecondaryCount = window.loadedCostItems.filter(item => item.is_manual_secondary_quantity).length;
+    console.log(`🔒 수동 입력으로 잠긴 항목(is_manual_secondary_quantity=true): ${manualSecondaryCount}개`);
+}
+
+// ▲▲▲ [추가] 여기까지 ▲▲▲
+
 // 전역 스코프에 노출
 window.updateCiRulesetHelperPanel = updateCiRulesetHelperPanel;
 window.initCiSplitBar = initCiSplitBar;
@@ -2926,3 +3056,7 @@ window.assignActivityToCi = assignActivityToCi;
 window.clearActivitiesFromCi = clearActivitiesFromCi;
 window.applyCiActivityRules = applyCiActivityRules;
 window.renderCiActivitiesList = renderCiActivitiesList;
+// ▼▼▼ [추가] 2차 수량 헬퍼 함수 (2025-11-14) ▼▼▼
+window.resetSecondaryQuantityAndRecalculate = resetSecondaryQuantityAndRecalculate;
+window.debugSecondaryQuantity = debugSecondaryQuantity;
+// ▲▲▲ [추가] 여기까지 ▲▲▲

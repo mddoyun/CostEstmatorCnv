@@ -2475,13 +2475,14 @@ function renderCostCodeRulesetTable(rules, editId = null) {
             .join('');
     }
 
-    let tableHtml = `<table class="ruleset-table" style="min-width: 1400px;"><thead>
+    let tableHtml = `<table class="ruleset-table" style="min-width: 1800px;"><thead>
         <tr>
             <th style="width: 80px; min-width: 80px;">우선순위</th>
             <th style="width: 200px; min-width: 200px;">이름/설명</th>
             <th style="width: 200px; min-width: 200px;">대상 공사코드</th>
             <th style="width: 400px; min-width: 400px;">적용 조건 (CostItem 속성 기준)</th>
             <th style="width: 400px; min-width: 400px;">수량 계산식</th>
+            <th style="width: 400px; min-width: 400px;">2차 수량 계산식</th>
             <th style="width: 120px; min-width: 120px;">작업</th>
         </tr>
     </thead><tbody>`;
@@ -2504,6 +2505,7 @@ function renderCostCodeRulesetTable(rules, editId = null) {
 
             // 수량 산식 UI 생성
             const quantityFormula = rule.quantity_formula || '';
+            const secondaryQuantityFormula = rule.secondary_quantity_formula || '';
 
             // CostItem 속성 옵션 생성
             let propertyOptions = '<option value="">-- 속성 선택 --</option>';
@@ -2537,6 +2539,25 @@ function renderCostCodeRulesetTable(rules, editId = null) {
                 </div>
             `;
 
+            let secondaryQuantityFormulaHtml = `
+                <div class="secondary-quantity-formula-builder" style="display: flex; flex-direction: column; gap: 8px;">
+                    <textarea
+                        class="secondary-quantity-formula-input"
+                        placeholder="예: {BIM.Parameters.길이} * {CC.System.factor}"
+                        style="width: 100%; min-height: 80px; padding: 8px; font-family: monospace; resize: vertical;"
+                    >${secondaryQuantityFormula}</textarea>
+                    <div style="display: flex; gap: 5px; align-items: center;">
+                        <select class="secondary-quantity-formula-property-select" style="flex: 1; padding: 5px;">
+                            ${propertyOptions}
+                        </select>
+                        <button type="button" class="insert-secondary-property-btn" style="padding: 6px 12px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 3px;">
+                            속성 삽입
+                        </button>
+                    </div>
+                    <small style="color: #666;">💡 2차 수량 산식 (선택사항). 예: 철근 길이 계산</small>
+                </div>
+            `;
+
             return `
                 <tr class="rule-edit-row" data-rule-id="${rule.id}">
                     <td><input type="number" class="rule-priority-input" value="${
@@ -2548,6 +2569,7 @@ function renderCostCodeRulesetTable(rules, editId = null) {
                     <td><select class="rule-cost-code-select">${costCodeOptions}</select></td>
                     <td>${conditionsHtml}</td>
                     <td>${quantityFormulaHtml}</td>
+                    <td>${secondaryQuantityFormulaHtml}</td>
                     <td>
                         <button class="save-rule-btn">저장</button>
                         <button class="cancel-edit-btn">취소</button>
@@ -2572,6 +2594,13 @@ function renderCostCodeRulesetTable(rules, editId = null) {
             quantityFormulaDisplay = '<em style="color: #999;">수량 산식 없음</em>';
         }
 
+        let secondaryQuantityFormulaDisplay = '';
+        if (rule.secondary_quantity_formula) {
+            secondaryQuantityFormulaDisplay = `<div style="padding: 5px; background: #f5f5f5; border-radius: 3px; font-family: monospace; white-space: pre-wrap; word-break: break-all;">${rule.secondary_quantity_formula}</div>`;
+        } else {
+            secondaryQuantityFormulaDisplay = '<em style="color: #999;">2차 수량 산식 없음</em>';
+        }
+
         return `
             <tr data-rule-id="${rule.id}">
                 <td>${rule.priority}</td>
@@ -2581,6 +2610,7 @@ function renderCostCodeRulesetTable(rules, editId = null) {
                 <td>${rule.target_cost_code_name}</td>
                 <td style="word-wrap: break-word; vertical-align: top;">${conditionsDisplay}</td>
                 <td style="word-wrap: break-word; vertical-align: top;">${quantityFormulaDisplay}</td>
+                <td style="word-wrap: break-word; vertical-align: top;">${secondaryQuantityFormulaDisplay}</td>
                 <td>
                     <button class="edit-rule-btn">수정</button>
                     <button class="delete-rule-btn">삭제</button>
@@ -2596,7 +2626,7 @@ function renderCostCodeRulesetTable(rules, editId = null) {
     }
     if (rules.length === 0 && editId !== 'new') {
         tableHtml +=
-            '<tr><td colspan="6">정의된 규칙이 없습니다. 새 규칙을 추가하세요.</td></tr>';
+            '<tr><td colspan="7">정의된 규칙이 없습니다. 새 규칙을 추가하세요.</td></tr>';
     }
     tableHtml += '</tbody></table>';
 
@@ -3812,6 +3842,10 @@ function generateCIPropertyOptions() {
         { value: 'CI.System.name', label: 'CI.System.name' },
         { value: 'CI.System.quantity', label: 'CI.System.quantity' },
         { value: 'CI.System.is_manual_quantity', label: 'CI.System.is_manual_quantity' },
+        // ▼▼▼ [추가] 2차 수량 필드 (2025-11-14) ▼▼▼
+        { value: 'CI.System.secondary_quantity', label: 'CI.System.secondary_quantity (2차 수량)' },
+        { value: 'CI.System.is_manual_secondary_quantity', label: 'CI.System.is_manual_secondary_quantity' },
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
         { value: 'CI.System.group', label: 'CI.System.group' },
         { value: 'CI.System.note', label: 'CI.System.note' }
     ];
@@ -3827,10 +3861,16 @@ function generateCIPropertyOptions() {
         { value: 'CC.System.name', label: 'CC.System.name' },
         { value: 'CC.System.description', label: 'CC.System.description' },
         { value: 'CC.System.detail_code', label: 'CC.System.detail_code' },
-        { value: 'CC.System.product_name', label: 'CC.System.product_name' },
-        { value: 'CC.System.note', label: 'CC.System.note' },
-        { value: 'CC.System.spec', label: 'CC.System.spec' },
-        { value: 'CC.System.unit', label: 'CC.System.unit' },
+        { value: 'CC.System.product_name', label: 'CC.System.product_name (품명)' },
+        { value: 'CC.System.note', label: 'CC.System.note (비고)' },
+        { value: 'CC.System.spec', label: 'CC.System.spec (규격)' },
+        { value: 'CC.System.unit', label: 'CC.System.unit (단위)' },
+        // ▼▼▼ [추가] 2차 필드 (2025-11-14) ▼▼▼
+        { value: 'CC.System.secondary_name', label: 'CC.System.secondary_name (2차 품명)' },
+        { value: 'CC.System.secondary_spec', label: 'CC.System.secondary_spec (2차 규격)' },
+        { value: 'CC.System.secondary_unit', label: 'CC.System.secondary_unit (2차 단위)' },
+        { value: 'CC.System.secondary_detail_code', label: 'CC.System.secondary_detail_code (2차 내역코드)' },
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
         { value: 'CC.System.category', label: 'CC.System.category' },
         { value: 'CC.System.ai_sd_enabled', label: 'CC.System.ai_sd_enabled' },
         { value: 'CC.System.dd_enabled', label: 'CC.System.dd_enabled' }
@@ -7386,7 +7426,7 @@ window.getAllCiFieldsForConditionBuilder = function() {
  * 수량 산식 빌더 리스너 설정
  */
 function setupQuantityFormulaBuilderListeners() {
-    // "속성 삽입" 버튼 클릭 리스너
+    // "속성 삽입" 버튼 클릭 리스너 (1차 수량)
     document.querySelectorAll('.insert-property-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const builder = e.target.closest('.quantity-formula-builder');
@@ -7418,6 +7458,40 @@ function setupQuantityFormulaBuilderListeners() {
             select.selectedIndex = 0;
         });
     });
+
+    // ▼▼▼ [추가] "속성 삽입" 버튼 클릭 리스너 (2차 수량) (2025-11-14) ▼▼▼
+    document.querySelectorAll('.insert-secondary-property-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const builder = e.target.closest('.secondary-quantity-formula-builder');
+            if (!builder) return;
+
+            const textarea = builder.querySelector('.secondary-quantity-formula-input');
+            const select = builder.querySelector('.secondary-quantity-formula-property-select');
+            const selectedValue = select.value;
+
+            if (!selectedValue) {
+                alert('속성을 선택하세요.');
+                return;
+            }
+
+            // 커서 위치에 속성 삽입
+            const startPos = textarea.selectionStart;
+            const endPos = textarea.selectionEnd;
+            const currentValue = textarea.value;
+
+            const newValue = currentValue.substring(0, startPos) + selectedValue + currentValue.substring(endPos);
+            textarea.value = newValue;
+
+            // 커서를 삽입된 텍스트 끝으로 이동
+            const newCursorPos = startPos + selectedValue.length;
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+            textarea.focus();
+
+            // 선택 초기화
+            select.selectedIndex = 0;
+        });
+    });
+    // ▲▲▲ [추가] 여기까지 ▲▲▲
 }
 
 /**

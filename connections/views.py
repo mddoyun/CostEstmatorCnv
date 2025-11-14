@@ -801,6 +801,12 @@ def cost_codes_api(request, project_id, code_id=None):
             'detail_code': code.detail_code,
             'product_name': code.product_name,
             'note': code.note,
+            # ▼▼▼ [추가] 2차 필드 반환 (2025-11-14) ▼▼▼
+            'secondary_name': code.secondary_name,
+            'secondary_spec': code.secondary_spec,
+            'secondary_unit': code.secondary_unit,
+            'secondary_detail_code': code.secondary_detail_code,
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
         } for code in codes]
         return JsonResponse(codes_data, safe=False)
 
@@ -830,6 +836,12 @@ def cost_codes_api(request, project_id, code_id=None):
                 detail_code=data.get('detail_code', ''),
                 product_name=data.get('product_name', ''),
                 note=data.get('note', ''),
+                # ▼▼▼ [추가] 2차 필드 저장 (2025-11-14) ▼▼▼
+                secondary_name=data.get('secondary_name', ''),
+                secondary_spec=data.get('secondary_spec', ''),
+                secondary_unit=data.get('secondary_unit', ''),
+                secondary_detail_code=data.get('secondary_detail_code', ''),
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
             )
             return JsonResponse({'status': 'success', 'message': '새 공사코드가 생성되었습니다.', 'code_id': str(new_code.id)})
         except Project.DoesNotExist:
@@ -854,6 +866,13 @@ def cost_codes_api(request, project_id, code_id=None):
             cost_code.detail_code = data.get('detail_code', cost_code.detail_code)
             cost_code.product_name = data.get('product_name', cost_code.product_name)
             cost_code.note = data.get('note', cost_code.note)
+
+            # ▼▼▼ [추가] 2차 필드 업데이트 (2025-11-14) ▼▼▼
+            cost_code.secondary_name = data.get('secondary_name', cost_code.secondary_name)
+            cost_code.secondary_spec = data.get('secondary_spec', cost_code.secondary_spec)
+            cost_code.secondary_unit = data.get('secondary_unit', cost_code.secondary_unit)
+            cost_code.secondary_detail_code = data.get('secondary_detail_code', cost_code.secondary_detail_code)
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
 
             # [ADD] 새 불린 필드 적용 (키가 오면만 반영)
             if 'ai_sd_enabled' in data:
@@ -1504,8 +1523,12 @@ def cost_code_rules_api(request, project_id, rule_id=None):
         for rule in rules:
             # quantity_mapping_script에서 formula 추출 (신규 형식) 또는 그대로 반환 (기존 형식)
             quantity_formula = ''
-            if isinstance(rule.quantity_mapping_script, dict) and 'formula' in rule.quantity_mapping_script:
-                quantity_formula = rule.quantity_mapping_script['formula']
+            secondary_quantity_formula = ''  # ✅ 추가 (2025-11-14)
+            if isinstance(rule.quantity_mapping_script, dict):
+                if 'formula' in rule.quantity_mapping_script:
+                    quantity_formula = rule.quantity_mapping_script['formula']
+                if 'secondary_formula' in rule.quantity_mapping_script:  # ✅ 추가
+                    secondary_quantity_formula = rule.quantity_mapping_script['secondary_formula']
 
             rules_data.append({
                 'id': str(rule.id),
@@ -1516,6 +1539,7 @@ def cost_code_rules_api(request, project_id, rule_id=None):
                 'target_cost_code_name': f"{rule.target_cost_code.code} - {rule.target_cost_code.name}",
                 'conditions': rule.conditions,
                 'quantity_formula': quantity_formula,  # 신규 필드
+                'secondary_quantity_formula': secondary_quantity_formula,  # ✅ 추가 (2025-11-14)
                 'quantity_mapping_script': rule.quantity_mapping_script,  # 하위 호환성
                 'priority': rule.priority,
             })
@@ -1535,9 +1559,14 @@ def cost_code_rules_api(request, project_id, rule_id=None):
             rule.target_cost_code = target_cost_code
             rule.conditions = data.get('conditions', [])
 
-            # quantity_formula를 quantity_mapping_script로 저장 (하위 호환성 유지)
-            if 'quantity_formula' in data:
-                rule.quantity_mapping_script = {'formula': data.get('quantity_formula', '')}
+            # quantity_formula와 secondary_quantity_formula를 quantity_mapping_script로 저장 (하위 호환성 유지)
+            if 'quantity_formula' in data or 'secondary_quantity_formula' in data:
+                mapping_script = {}
+                if 'quantity_formula' in data:
+                    mapping_script['formula'] = data.get('quantity_formula', '')
+                if 'secondary_quantity_formula' in data:  # ✅ 추가 (2025-11-14)
+                    mapping_script['secondary_formula'] = data.get('secondary_quantity_formula', '')
+                rule.quantity_mapping_script = mapping_script
             else:
                 rule.quantity_mapping_script = data.get('quantity_mapping_script', {})
 
@@ -2202,6 +2231,11 @@ def cost_items_api(request, project_id, item_id=None):
                 'id': str(item.id),
                 'quantity': item.quantity,
                 'quantity_mapping_expression': item.quantity_mapping_expression,
+                # ▼▼▼ [추가] 2차 수량 필드 (2025-11-14) ▼▼▼
+                'secondary_quantity': item.secondary_quantity,
+                'is_manual_secondary_quantity': item.is_manual_secondary_quantity,
+                'secondary_quantity_mapping_expression': item.secondary_quantity_mapping_expression,
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
                 'cost_code_name': f"{item.cost_code.code} - {item.cost_code.name}" if item.cost_code else "미지정",
                 'cost_code': item.cost_code.code if item.cost_code else None,  # ▼▼▼ [추가] 공사코드 ▼▼▼
                 'cost_code_detail_code': item.cost_code.detail_code if item.cost_code else None,  # ▼▼▼ [추가] 상세코드/이름 ▼▼▼
@@ -2212,6 +2246,12 @@ def cost_items_api(request, project_id, item_id=None):
                 'cost_code_spec': item.cost_code.spec if item.cost_code else None,  # 규격
                 'cost_code_category': item.cost_code.category if item.cost_code else None,  # 공정
                 'cost_code_description': item.cost_code.description if item.cost_code else None,  # 설명
+                # ▼▼▼ [추가] 2차 필드 (2025-11-14) ▼▼▼
+                'cost_code_secondary_name': item.cost_code.secondary_name if item.cost_code else None,
+                'cost_code_secondary_spec': item.cost_code.secondary_spec if item.cost_code else None,
+                'cost_code_secondary_unit': item.cost_code.secondary_unit if item.cost_code else None,
+                'cost_code_secondary_detail_code': item.cost_code.secondary_detail_code if item.cost_code else None,
+                # ▲▲▲ [추가] 여기까지 ▲▲▲
                 'cost_code_ai_sd_enabled': item.cost_code.ai_sd_enabled if item.cost_code else False,  # AI 개략견적
                 'cost_code_dd_enabled': item.cost_code.dd_enabled if item.cost_code else False,  # 상세견적
                 # ▲▲▲ [추가] 여기까지 ▲▲▲
@@ -2317,6 +2357,13 @@ def cost_items_api(request, project_id, item_id=None):
                         item.is_manual_quantity = True  # 수동 수량 입력 플래그 설정
                         print(f"[DEBUG][cost_items_api] POST: Updated quantity to {data['quantity']} and set is_manual_quantity=True")
 
+                    # ▼▼▼ [추가] 2차 수량 업데이트 (2025-11-14) ▼▼▼
+                    if 'secondary_quantity' in data:
+                        item.secondary_quantity = float(data['secondary_quantity'])
+                        item.is_manual_secondary_quantity = True  # 수동 2차 수량 입력 플래그 설정
+                        print(f"[DEBUG][cost_items_api] POST: Updated secondary_quantity to {data['secondary_quantity']} and set is_manual_secondary_quantity=True")
+                    # ▲▲▲ [추가] 여기까지 ▲▲▲
+
                     # description 업데이트
                     if 'description' in data:
                         item.description = data['description']
@@ -2328,6 +2375,15 @@ def cost_items_api(request, project_id, item_id=None):
                         if data['quantity_mapping_expression']:
                             item.is_manual_quantity = True
                             print(f"[DEBUG][cost_items_api] POST: Set is_manual_quantity=True due to mapping expression")
+
+                    # ▼▼▼ [추가] 2차 수량 맵핑식 업데이트 (2025-11-14) ▼▼▼
+                    if 'secondary_quantity_mapping_expression' in data:
+                        item.secondary_quantity_mapping_expression = data['secondary_quantity_mapping_expression']
+                        # mapping expression이 설정되면 수동 입력으로 간주
+                        if data['secondary_quantity_mapping_expression']:
+                            item.is_manual_secondary_quantity = True
+                            print(f"[DEBUG][cost_items_api] POST: Set is_manual_secondary_quantity=True due to mapping expression")
+                    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
                     item.save()
                     return JsonResponse({'status': 'success', 'message': '산출항목이 업데이트되었습니다.', 'item_id': str(item.id)})
@@ -2425,6 +2481,27 @@ def cost_items_api(request, project_id, item_id=None):
             if 'is_manual_quantity' in data:
                 item.is_manual_quantity = data['is_manual_quantity']
                 print(f"[DEBUG][cost_items_api] PATCH: Explicitly set is_manual_quantity to {data['is_manual_quantity']}")
+
+            # ▼▼▼ [추가] 2차 수량 관련 필드 (2025-11-14) ▼▼▼
+            if 'secondary_quantity' in data:
+                item.secondary_quantity = data['secondary_quantity']
+                item.is_manual_secondary_quantity = True
+                print(f"[DEBUG][cost_items_api] PATCH: Updated secondary_quantity to {data['secondary_quantity']} and set is_manual_secondary_quantity=True")
+
+            if 'secondary_quantity_mapping_expression' in data:
+                item.secondary_quantity_mapping_expression = data['secondary_quantity_mapping_expression']
+                if not data['secondary_quantity_mapping_expression'] or data['secondary_quantity_mapping_expression'] == {}:
+                    item.is_manual_secondary_quantity = False
+                    print(f"[DEBUG][cost_items_api] PATCH: Reset is_manual_secondary_quantity to False (mapping expression cleared)")
+                else:
+                    item.is_manual_secondary_quantity = True
+                    print(f"[DEBUG][cost_items_api] PATCH: Set is_manual_secondary_quantity=True due to mapping expression")
+
+            # is_manual_secondary_quantity 필드를 직접 설정할 수 있도록 허용
+            if 'is_manual_secondary_quantity' in data:
+                item.is_manual_secondary_quantity = data['is_manual_secondary_quantity']
+                print(f"[DEBUG][cost_items_api] PATCH: Explicitly set is_manual_secondary_quantity to {data['is_manual_secondary_quantity']}")
+            # ▲▲▲ [추가] 여기까지 ▲▲▲
 
             item.save()
             print(f"[DEBUG][cost_items_api] PATCH: Item saved successfully")
@@ -2531,18 +2608,57 @@ def create_cost_items_auto_view(request, project_id):
                         if rule.target_cost_code.code == cost_code.code and evaluate_conditions(combined_properties, rule.conditions):
                             script_to_use = rule.quantity_mapping_script
                             break
-                
+
+                # ▼▼▼ [수정] 1차 수량 계산 (2025-11-14) ▼▼▼
                 final_qty = 0.0
                 if script_to_use:
-                    qty_script = script_to_use.get('수량', 0)
+                    # 신규 형식 {'formula': '...'} 또는 구형식 {'수량': '...'} 모두 지원
+                    qty_script = script_to_use.get('formula') or script_to_use.get('수량', 0)
                     calculated_qty = evaluate_expression_for_cost_item(qty_script, member)
                     final_qty = float(calculated_qty) if is_numeric(calculated_qty) else 0.0
+                    print(f"[DEBUG][CostItem] 1차 수량 계산: script_to_use={script_to_use}")
+                    print(f"[DEBUG][CostItem] 1차 수량: qty_script='{qty_script}' -> final_qty={final_qty}")
 
-                # is_manual_quantity가 True면 수량 업데이트 건너뜀
+                # ▼▼▼ [추가] 2차 수량 계산 (2025-11-14) ▼▼▼
+                final_secondary_qty = 0.0
+                print(f"[DEBUG][CostItem] script_to_use keys: {script_to_use.keys() if script_to_use else 'None'}")
+                if script_to_use and 'secondary_formula' in script_to_use:
+                    secondary_qty_script = script_to_use.get('secondary_formula', '')
+                    print(f"[DEBUG][CostItem] 2차 수량 공식 발견: '{secondary_qty_script}'")
+                    if secondary_qty_script:
+                        calculated_secondary_qty = evaluate_expression_for_cost_item(secondary_qty_script, member)
+                        final_secondary_qty = float(calculated_secondary_qty) if is_numeric(calculated_secondary_qty) else 0.0
+                        print(f"[DEBUG][CostItem] 2차 수량 계산 결과: {final_secondary_qty}")
+                    else:
+                        print(f"[DEBUG][CostItem] 2차 수량 공식이 비어있음")
+                else:
+                    print(f"[DEBUG][CostItem] 2차 수량 공식 없음 (secondary_formula 키가 없거나 script_to_use가 None)")
+
+                # ▼▼▼ [수정] 1차/2차 수량 한번에 업데이트 (2025-11-14) ▼▼▼
+                needs_update = False
+                update_fields = []
+
+                # is_manual_quantity가 False면 수량 업데이트
                 if not item.is_manual_quantity:
                     if item.quantity != final_qty or created:
                         item.quantity = final_qty
-                        item.save(update_fields=['quantity'])
+                        update_fields.append('quantity')
+                        needs_update = True
+
+                # is_manual_secondary_quantity가 False면 2차 수량 업데이트
+                if not item.is_manual_secondary_quantity:
+                    if item.secondary_quantity != final_secondary_qty or created:
+                        item.secondary_quantity = final_secondary_qty
+                        update_fields.append('secondary_quantity')
+                        needs_update = True
+                        print(f"[DEBUG][CostItem] 2차 수량 업데이트 예정: item_id={item.id}, secondary_qty={final_secondary_qty}")
+                else:
+                    print(f"[DEBUG][CostItem] 2차 수량 업데이트 스킵 (is_manual_secondary_quantity=True): item_id={item.id}")
+
+                # 업데이트 필요하면 한번에 저장
+                if needs_update:
+                    item.save(update_fields=update_fields)
+                # ▲▲▲ [수정] 여기까지 ▲▲▲
 
                 valid_item_ids.add(item.id)
 

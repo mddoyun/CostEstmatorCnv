@@ -59,6 +59,12 @@ class CostCode(models.Model):
     product_name = models.CharField(max_length=255, blank=True, null=True, verbose_name="품명")
     note = models.TextField(blank=True, null=True, verbose_name="비고")
     # ▲▲▲ [추가] 여기까지 ▲▲▲
+    # ▼▼▼ [추가] 2차 품명/규격/단위/내역코드 필드 (2025-11-14) ▼▼▼
+    secondary_name = models.CharField(max_length=255, blank=True, null=True, verbose_name="2차품명")
+    secondary_spec = models.TextField(blank=True, null=True, verbose_name="2차규격")
+    secondary_unit = models.CharField(max_length=50, blank=True, null=True, verbose_name="2차단위")
+    secondary_detail_code = models.CharField(max_length=100, blank=True, null=True, verbose_name="2차내역코드")
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
     created_at = models.DateTimeField(auto_now_add=True)
     # ▼▼▼ [수정] ai_sd_enabled 필드 verbose_name 추가 ▼▼▼
     ai_sd_enabled = models.BooleanField(default=False, verbose_name="개산견적(SD) 사용")       # AI개략견적활용여부
@@ -833,6 +839,12 @@ class CostItem(models.Model):
     is_manual_quantity = models.BooleanField(default=False, help_text="수동으로 입력된 수량 여부 (True면 자동 생성 시 수량 유지)")
 
     quantity_mapping_expression = models.JSONField(default=dict, blank=True, verbose_name="수량 맵핑식(json)")
+
+    # ▼▼▼ [추가] 2차 수량 필드 (2025-11-14) ▼▼▼
+    secondary_quantity = models.FloatField(default=0.0, help_text="2차 수량 (예: 철근 길이)")
+    is_manual_secondary_quantity = models.BooleanField(default=False, help_text="2차 수량 수동 입력 여부")
+    secondary_quantity_mapping_expression = models.JSONField(default=dict, blank=True, verbose_name="2차 수량 맵핑식(json)")
+    # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     unit_price_type = models.ForeignKey(
             UnitPriceType,

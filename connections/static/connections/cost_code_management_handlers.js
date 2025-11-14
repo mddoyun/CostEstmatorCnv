@@ -61,6 +61,10 @@ function renderCostCodesTable(codes, editId = null) {
                 <th>품명</th>
                 <th>규격</th>
                 <th>단위</th>
+                <th>2차품명</th>
+                <th>2차규격</th>
+                <th>2차단위</th>
+                <th>2차내역코드</th>
                 <th>비고</th>
                 <!-- [ADD] 새 컬럼 2개 -->
                 <th>AI개략견적</th>
@@ -109,6 +113,19 @@ function renderCostCodesTable(codes, editId = null) {
                 <td><input type="text" class="cost-unit-input" value="${
                     code.unit || ''
                 }" placeholder="단위"></td>
+                <!-- [ADD] 2차 필드 입력 (2025-11-14) -->
+                <td><input type="text" class="cost-secondary-name-input" value="${
+                    code.secondary_name || ''
+                }" placeholder="2차품명"></td>
+                <td><input type="text" class="cost-secondary-spec-input" value="${
+                    code.secondary_spec || ''
+                }" placeholder="2차규격"></td>
+                <td><input type="text" class="cost-secondary-unit-input" value="${
+                    code.secondary_unit || ''
+                }" placeholder="2차단위"></td>
+                <td><input type="text" class="cost-secondary-detail-code-input" value="${
+                    code.secondary_detail_code || ''
+                }" placeholder="2차내역코드"></td>
                 <td><input type="text" class="cost-note-input" value="${
                     code.note || ''
                 }" placeholder="비고"></td>
@@ -134,6 +151,11 @@ function renderCostCodesTable(codes, editId = null) {
                 <td>${code.product_name || ''}</td>
                 <td>${code.spec || ''}</td>
                 <td>${code.unit || ''}</td>
+                <!-- [ADD] 2차 필드 표시 (2025-11-14) -->
+                <td>${code.secondary_name || ''}</td>
+                <td>${code.secondary_spec || ''}</td>
+                <td>${code.secondary_unit || ''}</td>
+                <td>${code.secondary_detail_code || ''}</td>
                 <td>${code.note || ''}</td>
                 <!-- [ADD] 보기모드 표시 2개 -->
                 <td>${code.ai_sd_enabled ? '✅' : '—'}</td>
@@ -222,6 +244,11 @@ async function handleCostCodeActions(event) {
             detail_code: actionRow.querySelector('.cost-detail-code-input').value,
             product_name: actionRow.querySelector('.cost-product-name-input').value,
             note: actionRow.querySelector('.cost-note-input').value,
+            // ✅ 2차 필드 포함 (2025-11-14)
+            secondary_name: actionRow.querySelector('.cost-secondary-name-input')?.value || '',
+            secondary_spec: actionRow.querySelector('.cost-secondary-spec-input')?.value || '',
+            secondary_unit: actionRow.querySelector('.cost-secondary-unit-input')?.value || '',
+            secondary_detail_code: actionRow.querySelector('.cost-secondary-detail-code-input')?.value || '',
             // ✅ 체크박스 2개 포함
             ai_sd_enabled:
                 !!actionRow.querySelector('.cost-ai-sd-input')?.checked,

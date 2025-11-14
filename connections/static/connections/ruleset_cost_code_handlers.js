@@ -72,6 +72,11 @@ async function handleCostCodeRuleActions(event) {
         const quantityFormulaInput = ruleRow.querySelector('.quantity-formula-input');
         const quantity_formula = quantityFormulaInput ? quantityFormulaInput.value.trim() : '';
 
+        // ▼▼▼ [추가] 2차 수량 산식 수집 (2025-11-14) ▼▼▼
+        const secondaryQuantityFormulaInput = ruleRow.querySelector('.secondary-quantity-formula-input');
+        const secondary_quantity_formula = secondaryQuantityFormulaInput ? secondaryQuantityFormulaInput.value.trim() : '';
+        // ▲▲▲ [추가] 여기까지 ▲▲▲
+
         const ruleData = {
             id: ruleId !== 'new' ? ruleId : null,
             priority:
@@ -82,6 +87,7 @@ async function handleCostCodeRuleActions(event) {
                 .value,
             conditions: conditions,
             quantity_formula: quantity_formula,
+            secondary_quantity_formula: secondary_quantity_formula,  // ✅ 추가
         };
 
         if (!ruleData.target_cost_code_id) {
