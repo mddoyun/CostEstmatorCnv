@@ -1734,21 +1734,28 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
 
         // 4. 변경된 항목 저장
         if (updatedItems.length > 0) {
-
+            // ▼▼▼ [수정] PATCH 메서드로 수량만 업데이트 (2025-11-14) ▼▼▼
             for (const item of updatedItems) {
-                const saveResponse = await fetch(`/connections/api/cost-items/${currentProjectId}/`, {
-                    method: 'POST',
+                const updateData = {
+                    quantity: item.quantity,
+                    secondary_quantity: item.secondary_quantity
+                };
+
+                const saveResponse = await fetch(`/connections/api/cost-items/${currentProjectId}/${item.id}/`, {
+                    method: 'PATCH',  // ✅ 수정: POST → PATCH
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': csrftoken,
                     },
-                    body: JSON.stringify(item),
+                    body: JSON.stringify(updateData),
                 });
 
                 if (!saveResponse.ok) {
                     const error = await saveResponse.json();
+                    console.error(`[applyCostItemQuantityRules] Failed to update item ${item.id}:`, error);
                 }
             }
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
 
             // 5. 테이블 갱신
             await loadCostItems();
