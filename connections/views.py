@@ -2182,9 +2182,21 @@ def evaluate_expression_for_cost_item(expression, quantity_member):
     if member_placeholders:
         for placeholder in set(member_placeholders):
             value = None
-            
-            # 1순위: QuantityMember.properties에서 찾기 (예: '체적')
-            if placeholder in member_props:
+
+            # ▼▼▼ [수정] QM.properties.*, MM.properties.* 형태 파싱 (2025-11-14) ▼▼▼
+            if placeholder.startswith('QM.properties.'):
+                # {QM.properties.높이} → "높이" 추출
+                prop_key = placeholder.replace('QM.properties.', '')
+                value = member_props.get(prop_key)
+            elif placeholder.startswith('MM.properties.'):
+                # {MM.properties.대근(상)간격} → "대근(상)간격" 추출
+                prop_key = placeholder.replace('MM.properties.', '')
+                member_mark = quantity_member.member_mark
+                if member_mark and member_mark.properties:
+                    value = member_mark.properties.get(prop_key)
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
+            # 1순위: QuantityMember.properties에서 찾기 (예: '체적' - prefix 없는 경우)
+            elif placeholder in member_props:
                 value = member_props.get(placeholder)
             # 2순위: RawElement.raw_data에서 찾기 (예: 'Volume')
             else:
