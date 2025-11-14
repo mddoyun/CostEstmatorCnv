@@ -128,7 +128,7 @@
     // ▼▼▼ [추가] 렌더링 모드 관리 변수 ▼▼▼
     let renderingMode = 'realistic'; // 'realistic', 'white', 'wireframe', 'material'
     let shadowsEnabled = false;
-    let edgesVisible = false; // ▼▼▼ [추가] 모든 모드에서 선 표시 여부 (독립적 토글) ▼▼▼
+    let edgesVisible = true; // ▼▼▼ [수정] 기본값 true로 변경 - 선 기본 표시 (2025-11-14) ▼▼▼
     // ▲▲▲ [추가] 여기까지 ▲▲▲
     // ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -1725,8 +1725,8 @@
                 const material = new THREE.MeshStandardMaterial({
                     color: 0xcccccc,        // Light gray (임시)
                     metalness: 0.0,
-                    roughness: 0.8,         // ✅ 감소: 1.0 → 0.8 (더 부드러운 표면)
-                    flatShading: false,
+                    roughness: 0.8,
+                    flatShading: true,      // ✅ true로 변경: 균일한 면 색상 (그라데이션 제거)
                     side: THREE.DoubleSide
                 });
                 // ▲▲▲ [수정] 여기까지 ▲▲▲
