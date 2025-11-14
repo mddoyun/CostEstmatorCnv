@@ -3146,7 +3146,11 @@ def generate_boq_report_api(request, project_id):
         # CostCode 모든 필드 추가 (그룹핑 및 표시용)
         'cost_code__code', 'cost_code__name', 'cost_code__description', 'cost_code__detail_code',
         'cost_code__category', 'cost_code__product_name', 'cost_code__spec',
-        'cost_code__unit', 'cost_code__note', 'cost_code__ai_sd_enabled', 'cost_code__dd_enabled'
+        'cost_code__unit', 'cost_code__note', 'cost_code__ai_sd_enabled', 'cost_code__dd_enabled',
+        # ▼▼▼ [추가] CostCode 2차 필드 (2025-11-14) ▼▼▼
+        'cost_code__secondary_name', 'cost_code__secondary_spec',
+        'cost_code__secondary_unit', 'cost_code__secondary_detail_code'
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
     }
 
     # Additional Django-queryable fields (not custom processed)
@@ -3290,6 +3294,12 @@ def generate_boq_report_api(request, project_id):
         processed_item['cost_code_note'] = db_item.get('cost_code__note')
         processed_item['cost_code_ai_sd_enabled'] = db_item.get('cost_code__ai_sd_enabled')
         processed_item['cost_code_dd_enabled'] = db_item.get('cost_code__dd_enabled')
+        # ▼▼▼ [추가] CostCode 2차 필드 (2025-11-14) ▼▼▼
+        processed_item['cost_code_secondary_name'] = db_item.get('cost_code__secondary_name')
+        processed_item['cost_code_secondary_spec'] = db_item.get('cost_code__secondary_spec')
+        processed_item['cost_code_secondary_unit'] = db_item.get('cost_code__secondary_unit')
+        processed_item['cost_code_secondary_detail_code'] = db_item.get('cost_code__secondary_detail_code')
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
         qm_id = db_item.get('quantity_member_id')
         processed_item['quantity_member_id'] = str(qm_id) if qm_id else None
