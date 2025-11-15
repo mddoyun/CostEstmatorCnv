@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['run_server.py'],
+    ['run_integrated_server.py'],
     pathex=[],
     binaries=[],
     datas=[('db.sqlite3', '.'), ('aibim_quantity_takeoff_web', 'aibim_quantity_takeoff_web'), ('connections', 'connections')],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='CostEstimatorServer',
+    name='CostEstimator',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
