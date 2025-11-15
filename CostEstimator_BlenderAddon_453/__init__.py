@@ -48,7 +48,7 @@ websocket_thread_loop = None
 
 server_process = None
 server_status = "서버 꺼짐" # "서버 꺼짐", "시작 중...", "실행 중", "오류"
-SERVER_CHECK_TIMEOUT = 30 
+SERVER_CHECK_TIMEOUT = 90  # 90초로 증가 (PyInstaller 압축 해제 시간 고려) 
 
 
 def schedule_blender_task(task_callable, *args, **kwargs):
@@ -704,18 +704,24 @@ def check_server_status():
     """0.5초마다 서버 상태를 확인하는 타이머 함수"""
     global server_status, start_time
 
-    if time.time() - start_time > SERVER_CHECK_TIMEOUT:
+    elapsed = time.time() - start_time
+
+    if elapsed > SERVER_CHECK_TIMEOUT:
         print("🛑 [Blender] 서버 시작 시간 초과.")
         server_status = "오류: 시간 초과"
         stop_server_process()
         return None
+
+    # 진행 상황 표시 (10초마다)
+    if int(elapsed) % 10 == 0 and int(elapsed) > 0:
+        server_status = f"시작 중... ({int(elapsed)}초)"
 
     try:
         port = bpy.context.scene.costestimator_server_port
         base_address = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base_address, timeout=1) as response:
             if response.status == 200:
-                print("✅ [Blender] 서버가 성공적으로 실행되었습니다.")
+                print(f"✅ [Blender] 서버가 성공적으로 실행되었습니다 ({int(elapsed)}초 소요).")
                 server_status = "실행 중"
                 return None
     except Exception:
