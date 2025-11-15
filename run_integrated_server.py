@@ -233,7 +233,7 @@ def setup_django_environment():
     return writable_dir
 
 
-def run_django_server():
+def run_django_server(port=8000):
     """Django 서버 실행"""
     try:
         # 마이그레이션 실행
@@ -243,12 +243,12 @@ def run_django_server():
 
         # 서버 실행
         print("=" * 60)
-        print("[INFO] Django server starting at http://127.0.0.1:8000")
+        print(f"[INFO] Django server starting at http://127.0.0.1:{port}")
         print("[INFO] Ollama API available at http://127.0.0.1:11434")
         print("[INFO] Press Ctrl+C to stop all servers")
         print("=" * 60)
 
-        execute_from_command_line([sys.argv[0], 'runserver', '--noreload'])
+        execute_from_command_line([sys.argv[0], 'runserver', f'127.0.0.1:{port}', '--noreload'])
 
     except KeyboardInterrupt:
         print("\n[INFO] Server shutdown command received")
@@ -263,12 +263,29 @@ def run_django_server():
 
 def main():
     """메인 실행 함수"""
+    # 포트 인자 파싱
+    port = 8000  # 기본 포트
+
+    if len(sys.argv) > 1:
+        try:
+            port = int(sys.argv[1])
+            if not (1024 <= port <= 65535):
+                print(f"[ERROR] Invalid port number: {port}")
+                print("[INFO] Port must be between 1024 and 65535")
+                sys.exit(1)
+        except ValueError:
+            print(f"[ERROR] Invalid port argument: {sys.argv[1]}")
+            print("[INFO] Usage: CostEstimator [port]")
+            print("[INFO] Example: CostEstimator 8080")
+            sys.exit(1)
+
     print("=" * 60)
     print("CostEstimator Integrated Server Launcher")
     print("Django + Ollama AI")
     print("=" * 60)
     print(f"Platform: {platform.system()} {platform.release()}")
     print(f"Python: {sys.version.split()[0]}")
+    print(f"Port: {port}")
     print("=" * 60)
 
     # 1. Ollama 확인 및 시작
@@ -282,13 +299,12 @@ def main():
         print("[WARNING] Ollama not found on this system")
         print("[INFO] Please install Ollama from: https://ollama.ai")
         print("[INFO] Continuing without Ollama (AI features will be limited)")
-        response = input("Continue anyway? (y/n): ")
-        if response.lower() != 'y':
-            sys.exit(0)
+        # 자동으로 계속 진행 (블렌더에서 실행 시 입력 불가)
+        print("[INFO] Continuing without Ollama...")
 
     # 2. Django 환경 설정 및 실행
     setup_django_environment()
-    run_django_server()
+    run_django_server(port)
 
 
 if __name__ == '__main__':

@@ -708,16 +708,16 @@ def check_server_status():
         print("🛑 [Blender] 서버 시작 시간 초과.")
         server_status = "오류: 시간 초과"
         stop_server_process()
-        return None 
+        return None
 
     try:
-        uri = bpy.context.scene.costestimator_server_url
-        base_address = uri.replace("ws://", "http://").replace("wss://", "").split("/ws/")[0]
+        port = bpy.context.scene.costestimator_server_port
+        base_address = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base_address, timeout=1) as response:
             if response.status == 200:
                 print("✅ [Blender] 서버가 성공적으로 실행되었습니다.")
                 server_status = "실행 중"
-                return None 
+                return None
     except Exception:
         return 0.5 
 
@@ -738,13 +738,13 @@ class COSTESTIMATOR_OT_StartServer(bpy.types.Operator):
 
         # 1. 운영체제를 확인하고 그에 맞는 실행 파일 경로를 설정합니다.
         if platform.system() == "Windows":
-            executable_path = os.path.join(addon_dir, "server_win", "CostEstimatorServer.exe")
+            executable_path = os.path.join(addon_dir, "server_win", "CostEstimator.exe")
         elif platform.system() == "Darwin": # "Darwin"은 macOS의 공식 명칭입니다.
-            executable_path = os.path.join(addon_dir, "server_mac", "CostEstimatorServer")
+            executable_path = os.path.join(addon_dir, "server_mac", "CostEstimator")
         else:
             self.report({'ERROR'}, f"지원하지 않는 운영체제입니다: {platform.system()}")
             return {'CANCELLED'}
-        
+
         # 2. 실행 파일이 실제로 존재하는지 확인합니다.
         if not os.path.exists(executable_path):
             msg = f"실행 파일을 찾을 수 없습니다: {executable_path}"
@@ -752,8 +752,11 @@ class COSTESTIMATOR_OT_StartServer(bpy.types.Operator):
             server_status = "오류: 파일 없음"
             return {'CANCELLED'}
 
+        # 3. 포트 번호 가져오기
+        port = context.scene.costestimator_server_port
+
         try:
-            # 3. macOS인 경우, 실행 권한을 부여합니다. (최초 1회만 필요)
+            # 4. macOS인 경우, 실행 권한을 부여합니다. (최초 1회만 필요)
             if platform.system() == "Darwin":
                 try:
                     # 'chmod +x'와 동일한 효과
@@ -762,22 +765,22 @@ class COSTESTIMATOR_OT_StartServer(bpy.types.Operator):
                 except Exception as e:
                     print(f"경고: 실행 권한 설정에 실패했습니다. 이미 권한이 있을 수 있습니다. ({e})")
 
-            print(f"🚀 [Blender] 서버 실행 시도: {executable_path}")
-            
-            # 4. 백그라운드에서 서버 프로세스 시작
+            print(f"🚀 [Blender] 서버 실행 시도: {executable_path} (포트: {port})")
+
+            # 5. 백그라운드에서 서버 프로세스 시작 (포트 인자 추가)
             #    Windows에서는 터미널 창이 뜨지 않도록 CREATE_NO_WINDOW 플래그를 추가합니다.
             creation_flags = 0
             if platform.system() == "Windows":
                 creation_flags = subprocess.CREATE_NO_WINDOW
 
-            server_process = subprocess.Popen([executable_path], creationflags=creation_flags)
+            server_process = subprocess.Popen([executable_path, str(port)], creationflags=creation_flags)
             server_status = "시작 중..."
-            
-            # 5. 서버 상태 확인 타이머 시작
+
+            # 6. 서버 상태 확인 타이머 시작
             start_time = time.time()
             bpy.app.timers.register(check_server_status)
-            
-            self.report({'INFO'}, "서버를 시작합니다. 잠시만 기다려주세요...")
+
+            self.report({'INFO'}, f"서버를 시작합니다 (포트: {port}). 잠시만 기다려주세요...")
         except Exception as e:
             msg = f"서버 시작 실패: {e}"
             self.report({'ERROR'}, msg)
@@ -793,7 +796,7 @@ class COSTESTIMATOR_OT_Connect(bpy.types.Operator):
     bl_idname = "costestimator.connect"
     bl_label = "웹소켓 연결 및 브라우저 열기"
     bl_description = "서버에 웹소켓으로 연결하고, 웹 브라우저에서 제어판을 엽니다."
-    
+
     def execute(self, context):
         global status_message, last_timer_tick_time
         if websocket_client:
@@ -820,9 +823,12 @@ class COSTESTIMATOR_OT_Connect(bpy.types.Operator):
             print("[DEBUG] Watchdog timer already registered")
         # ▲▲▲ [추가] 여기까지 ▲▲▲
 
-        uri = context.scene.costestimator_server_url
+        # 포트에 맞춰 URI 동적 생성
+        port = context.scene.costestimator_server_port
+        uri = f"ws://127.0.0.1:{port}/ws/blender-connector/"
+
         try:
-            base_address = uri.replace("ws://", "http://").replace("wss://", "").split("/ws/")[0]
+            base_address = f"http://127.0.0.1:{port}"
             webbrowser.open(base_address)
         except Exception as e:
             self.report({'WARNING'}, f"웹 브라우저 열기 실패: {e}")
@@ -879,7 +885,11 @@ class COSTESTIMATOR_PT_Panel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="서버 관리")
-        
+
+        # 포트 선택
+        row = box.row()
+        row.prop(scene, "costestimator_server_port")
+
         row = box.row()
         row.active = server_process is None or server_process.poll() is not None
         row.operator("costestimator.start_server", text="서버 시작", icon='PLAY')
@@ -888,17 +898,21 @@ class COSTESTIMATOR_PT_Panel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="웹소켓 연결")
-        box.prop(scene, "costestimator_server_url")
-        
+
+        # 포트에 맞춰 WebSocket URL 자동 표시
+        port = scene.costestimator_server_port
+        ws_url = f"ws://127.0.0.1:{port}/ws/blender-connector/"
+        box.label(text=f"URL: {ws_url}")
+
         split = box.split(factor=0.5, align=True)
-        
+
         col1 = split.column()
         col1.active = server_status == "실행 중" and websocket_client is None
         col1.operator("costestimator.connect", text="연결 및 브라우저 열기", icon='LINKED')
-        
+
         col2 = split.column()
         col2.operator("costestimator.disconnect", text="연결 끊기 & 서버 종료", icon='UNLINKED')
-        
+
         box.label(text=f"웹소켓 상태: {status_message}")
 
 
@@ -913,8 +927,14 @@ def register():
     # 라이브러리 경로 설정 코드는 이미 파일 최상단으로 이동했습니다.
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.costestimator_server_url = bpy.props.StringProperty(
-        name="서버 주소", default="ws://127.0.0.1:8000/ws/blender-connector/"
+
+    # 포트 선택 속성
+    bpy.types.Scene.costestimator_server_port = bpy.props.IntProperty(
+        name="포트",
+        description="Cost Estimator 서버 포트",
+        default=8000,
+        min=1024,
+        max=65535
     )
 
     # 타이머는 애드온 설치 시가 아닌, Connect 버튼 클릭 시 시작됩니다.
@@ -938,7 +958,7 @@ def unregister():
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.costestimator_server_url
+    del bpy.types.Scene.costestimator_server_port
 
 if __name__ == "__main__":
     register()
