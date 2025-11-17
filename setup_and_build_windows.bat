@@ -125,6 +125,17 @@ if errorlevel 1 (
 echo [OK] PyInstaller ready
 echo.
 
+REM Create initial database if not exists
+echo [INFO] Preparing database...
+if not exist "db.sqlite3" (
+    echo [INFO] Creating initial database...
+    python manage.py migrate --noinput
+    echo [OK] Database created
+) else (
+    echo [OK] Database found
+)
+echo.
+
 REM Clean previous build
 echo [INFO] Cleaning previous build...
 if exist "build" rmdir /s /q "build"
