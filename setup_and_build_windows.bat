@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================
 REM CostEstimator - Complete Setup and Build Script for Windows
-REM GitHub 클론 → 가상환경 설정 → 빌드를 한 번에 수행
+REM GitHub clone - virtual environment - dependencies - build
 REM ============================================================
 
 echo ============================================================
@@ -14,10 +14,10 @@ echo   4. Build Windows server executable
 echo ============================================================
 echo.
 
-REM 현재 디렉토리 저장
+REM Save current directory
 set "ORIGINAL_DIR=%CD%"
 
-REM Git 확인
+REM Check Git installation
 echo [1/6] Checking Git...
 git --version >nul 2>&1
 if errorlevel 1 (
@@ -29,7 +29,7 @@ if errorlevel 1 (
 echo [OK] Git found
 echo.
 
-REM Python 확인
+REM Check Python installation
 echo [2/6] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -43,7 +43,7 @@ python --version
 echo [OK] Python found
 echo.
 
-REM GitHub 클론
+REM Clone from GitHub
 echo [3/6] Cloning from GitHub...
 if exist "CostEstmatorCnv" (
     echo [INFO] CostEstmatorCnv folder already exists
@@ -67,10 +67,10 @@ if not exist "CostEstmatorCnv" (
 echo [OK] Repository cloned
 echo.
 
-REM 클론된 폴더로 이동
+REM Move to cloned folder
 cd CostEstmatorCnv
 
-REM 가상환경 설정
+REM Setup virtual environment
 echo [4/6] Setting up virtual environment...
 if exist ".mddoyun" (
     echo [INFO] Virtual environment already exists
@@ -86,7 +86,7 @@ if exist ".mddoyun" (
 echo [OK] Virtual environment ready
 echo.
 
-REM 가상환경 활성화 및 의존성 설치
+REM Activate virtual environment and install dependencies
 echo [5/6] Installing dependencies...
 call .mddoyun\Scripts\activate.bat
 
@@ -105,13 +105,13 @@ if errorlevel 1 (
 echo [OK] Dependencies installed
 echo.
 
-REM 빌드 실행
+REM Execute build
 echo [6/6] Building Windows server executable...
 echo [INFO] This will take 5-10 minutes on first run...
 echo.
 call build_windows.bat
 
-REM 원래 디렉토리로 복귀
+REM Return to original directory
 cd "%ORIGINAL_DIR%"
 
 echo.
