@@ -91,17 +91,22 @@ echo [5/6] Installing dependencies...
 call .mddoyun\Scripts\activate.bat
 
 echo [INFO] Upgrading pip...
-python -m pip install --upgrade pip --quiet
+python -m pip install --upgrade pip
 
+echo.
 echo [INFO] Installing requirements (this may take 5-10 minutes)...
-pip install -r requirements.txt --quiet
+echo [INFO] Progress will be displayed below. Please wait...
+echo.
+pip install -r requirements.txt
 
 if errorlevel 1 (
+    echo.
     echo [ERROR] Failed to install dependencies
     cd "%ORIGINAL_DIR%"
     pause
     exit /b 1
 )
+echo.
 echo [OK] Dependencies installed
 echo.
 
