@@ -14,7 +14,13 @@ venv/
 node_modules/
 references/
 *.exe
+*.spec
 
 # AI Models (too large for git)
 ai_models/
 checkpoints/
+
+# Blender Addon Server Build Results (too large for git)
+CostEstimator_BlenderAddon_453/server_mac/
+CostEstimator_BlenderAddon_453/server_win/
+CostEstimator_BlenderAddon_*.zip
