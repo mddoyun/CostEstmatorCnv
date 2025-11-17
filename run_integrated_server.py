@@ -6,6 +6,11 @@ macOS 및 Windows 모두 지원
 
 import os
 import sys
+
+# ▼▼▼ [중요] 출력 버퍼링 비활성화 (로그 파일에 즉시 기록되도록) ▼▼▼
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)  # 라인 버퍼링
+sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', buffering=1)  # 라인 버퍼링
+# ▲▲▲ 출력 버퍼링 비활성화 끝 ▲▲▲
 import shutil
 import subprocess
 import time
@@ -152,19 +157,24 @@ def check_ollama_models(ollama_path):
             if models:
                 print("\n[INFO] Installed Ollama models:")
                 print(models)
+                sys.stdout.flush()  # 즉시 출력
 
                 # llama 모델 확인
                 if 'llama' in models.lower():
                     print("[OK] Llama model detected")
+                    sys.stdout.flush()  # 즉시 출력
                 else:
                     print("[WARNING] No Llama model found")
                     print("[INFO] To install: ollama pull llama3.2:3b")
+                    sys.stdout.flush()  # 즉시 출력
             else:
                 print("[WARNING] No Ollama models installed")
                 print("[INFO] To install: ollama pull llama3.2:3b")
+                sys.stdout.flush()  # 즉시 출력
 
     except Exception as e:
         print(f"[WARNING] Could not check Ollama models: {e}")
+        sys.stdout.flush()  # 즉시 출력
 
 
 def cleanup_ollama():
@@ -202,8 +212,10 @@ def setup_django_environment():
         writable_dir = Path.home() / "CostEstimator_Data"
         writable_dir.mkdir(exist_ok=True)
         print(f"[OK] Data folder checked: {writable_dir}")
+        sys.stdout.flush()  # 즉시 출력
     except Exception as e:
         print(f"[ERROR] Could not create data folder: {e}")
+        sys.stdout.flush()  # 즉시 출력
         input("Press Enter to exit...")
         sys.exit(1)
 
@@ -236,10 +248,16 @@ def setup_django_environment():
 def run_django_server(port=8000):
     """Django 서버 실행"""
     try:
-        # 마이그레이션 실행
+        # 마이그레이션 실행 (비대화형 모드)
         print("\n--- Starting database migration ---")
-        execute_from_command_line([sys.argv[0], 'migrate'])
+        sys.stdout.flush()  # 즉시 출력
+        sys.stderr.flush()
+
+        execute_from_command_line([sys.argv[0], 'migrate', '--noinput'])
+
         print("--- Database migration complete ---\n")
+        sys.stdout.flush()  # 즉시 출력
+        sys.stderr.flush()
 
         # 서버 실행
         print("=" * 60)
@@ -247,6 +265,8 @@ def run_django_server(port=8000):
         print("[INFO] Ollama API available at http://127.0.0.1:11434")
         print("[INFO] Press Ctrl+C to stop all servers")
         print("=" * 60)
+        sys.stdout.flush()  # 즉시 출력
+        sys.stderr.flush()
 
         execute_from_command_line([sys.argv[0], 'runserver', f'127.0.0.1:{port}', '--noreload'])
 
@@ -287,12 +307,14 @@ def main():
     print(f"Python: {sys.version.split()[0]}")
     print(f"Port: {port}")
     print("=" * 60)
+    sys.stdout.flush()  # 즉시 출력
 
     # 1. Ollama 확인 및 시작
     ollama_path, ollama_exists = find_ollama_executable()
 
     if ollama_exists:
         print(f"[OK] Ollama found: {ollama_path}")
+        sys.stdout.flush()  # 즉시 출력
         check_ollama_models(ollama_path)
         start_ollama_server(ollama_path)
     else:

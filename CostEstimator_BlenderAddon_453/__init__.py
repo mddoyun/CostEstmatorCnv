@@ -48,7 +48,10 @@ websocket_thread_loop = None
 
 server_process = None
 server_status = "서버 꺼짐" # "서버 꺼짐", "시작 중...", "실행 중", "오류"
-SERVER_CHECK_TIMEOUT = 90  # 90초로 증가 (PyInstaller 압축 해제 시간 고려) 
+SERVER_CHECK_TIMEOUT = 180  # 180초 (PyInstaller 초기 실행 + TensorFlow 로딩 고려)
+server_completion_start_time = None  # 서버 완료 애니메이션 시작 시간
+server_completion_start_percent = 0  # 완료 애니메이션 시작 시 진행률
+spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]  # 스피너 애니메이션 프레임 
 
 
 def schedule_blender_task(task_callable, *args, **kwargs):
@@ -65,14 +68,14 @@ def stop_server_process():
     if server_process and server_process.poll() is None:
         print("🔌 [Blender] Django 서버 프로세스를 종료합니다...")
         try:
-            server_process.terminate() 
+            server_process.terminate()
             server_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            server_process.kill() 
+            server_process.kill()
             print("🛑 [Blender] 서버 프로세스가 응답하지 않아 강제 종료했습니다.")
         except Exception as e:
             print(f"서버 프로세스 종료 중 오류: {e}")
-        
+
     server_process = None
     server_status = "서버 꺼짐"
     print("✅ [Blender] 서버가 성공적으로 종료되었습니다.")
@@ -700,32 +703,141 @@ def handle_get_selection():
 
 
 start_time = 0
+log_file_path_global = None  # 로그 파일 경로를 저장할 전역 변수
+server_start_phase = ""  # 현재 서버 시작 단계
+server_progress_percent = 0  # 진행률 (0~100)
+last_log_line = ""  # 마지막 로그 라인
+
 def check_server_status():
-    """0.5초마다 서버 상태를 확인하는 타이머 함수"""
-    global server_status, start_time
+    """0.1초마다 서버 상태를 확인하는 타이머 함수 (실시간 UI 업데이트)"""
+    global server_status, start_time, log_file_path_global, server_start_phase, server_progress_percent, last_log_line
 
     elapsed = time.time() - start_time
 
     if elapsed > SERVER_CHECK_TIMEOUT:
         print("🛑 [Blender] 서버 시작 시간 초과.")
+        if log_file_path_global:
+            print(f"📝 [Blender] 로그 파일 확인: {log_file_path_global}")
         server_status = "오류: 시간 초과"
         stop_server_process()
         return None
 
-    # 진행 상황 표시 (10초마다)
-    if int(elapsed) % 10 == 0 and int(elapsed) > 0:
-        server_status = f"시작 중... ({int(elapsed)}초)"
+    # 로그 파일에서 실시간 진행 상황 파악 (단계만 확인, 진행률은 시간 기반)
+    log_stage = None  # 로그로부터 파악한 현재 단계
+    if log_file_path_global and os.path.exists(log_file_path_global):
+        try:
+            with open(log_file_path_global, 'r') as f:
+                lines = f.readlines()
+                if lines:
+                    log_content = ''.join(lines)
+
+                    # 최신 단계부터 역순으로 체크 (가장 진행된 단계 확인)
+                    if "Starting ASGI" in log_content or "Daphne" in log_content:
+                        log_stage = "port_binding"
+                    elif "Django server starting" in log_content:
+                        log_stage = "django_starting"
+                    elif "Database migration complete" in log_content or "No migrations to apply" in log_content:
+                        log_stage = "db_complete"
+                    elif "Starting database migration" in log_content:
+                        log_stage = "db_migration"
+                    elif "Data folder checked" in log_content:
+                        log_stage = "data_folder"
+                    elif "Ollama found" in log_content or "Platform:" in log_content:
+                        log_stage = "initialization"
+        except Exception as e:
+            pass  # 로그 읽기 실패 시 시간 기반 로직만 사용
+
+    # 시간과 로그 단계를 모두 고려한 진행률 계산
+    # 로그 단계를 시간 범위로 매핑
+    if log_stage == "port_binding":
+        # ASGI 시작됨 → 150초 이후로 간주
+        if elapsed < 150:
+            elapsed = 150
+    elif log_stage == "django_starting" or log_stage == "db_complete":
+        # Django 시작 또는 DB 완료 → 100초 이후로 간주
+        if elapsed < 100:
+            elapsed = 100
+    elif log_stage == "db_migration":
+        # DB 마이그레이션 중 → 15초 이후로 간주 (최소)
+        if elapsed < 15:
+            elapsed = 15
+
+    # 시간 기반 진행률 계산 (로그 단계 반영됨)
+    if True:  # 항상 시간 기반으로 계산
+        if elapsed < 15:
+            # 0-15초: 0% → 15%
+            server_start_phase = "⚙️ 초기화 중"
+            server_progress_percent = int((elapsed / 15) * 15)
+            server_status = f"시작 중... ⚙️ 초기화 중 ({elapsed:.1f}초)"
+        elif elapsed < 50:
+            # 15-50초: 15% → 40% (DB 마이그레이션)
+            server_start_phase = "🗄️ DB 마이그레이션 중"
+            server_progress_percent = 15 + int(((elapsed - 15) / 35) * 25)
+            server_status = f"시작 중... 🗄️ DB 마이그레이션 중 ({elapsed:.1f}초)"
+        elif elapsed < 100:
+            # 50-100초: 40% → 65% (서버 준비)
+            server_start_phase = "🚀 서버 준비 중"
+            server_progress_percent = 40 + int(((elapsed - 50) / 50) * 25)
+            server_status = f"시작 중... 🚀 서버 준비 중 ({elapsed:.1f}초)"
+        elif elapsed < 150:
+            # 100-150초: 65% → 85% (포트 바인딩)
+            server_start_phase = "🔌 포트 바인딩 중"
+            server_progress_percent = 65 + int(((elapsed - 100) / 50) * 20)
+            server_status = f"시작 중... 🔌 포트 바인딩 중 ({elapsed:.1f}초)"
+        else:
+            # 150초 이후: 85% → 95% (라이브러리 로딩)
+            server_start_phase = "📚 라이브러리 로딩 중"
+            server_progress_percent = min(95, 85 + int(((elapsed - 150) / 30) * 10))
+            server_status = f"시작 중... 📚 라이브러리 로딩 중 ({elapsed:.1f}초)"
+
+    # 서버 응답 확인
+    global server_completion_start_time, server_completion_start_percent
 
     try:
         port = bpy.context.scene.costestimator_server_port
         base_address = f"http://127.0.0.1:{port}"
-        with urllib.request.urlopen(base_address, timeout=1) as response:
+        with urllib.request.urlopen(base_address, timeout=3) as response:  # 타임아웃 1초 → 3초
             if response.status == 200:
-                print(f"✅ [Blender] 서버가 성공적으로 실행되었습니다 ({int(elapsed)}초 소요).")
-                server_status = "실행 중"
-                return None
-    except Exception:
-        return 0.5 
+                # 서버 응답 성공 - 부드러운 완료 애니메이션 시작
+                if server_completion_start_time is None:
+                    # 완료 애니메이션 첫 시작
+                    server_completion_start_time = time.time()
+                    server_completion_start_percent = server_progress_percent
+                    print(f"✅ [Blender] 서버 응답 확인! {server_completion_start_percent}% → 100% 전환 시작 ({elapsed:.1f}초 소요)")
+
+                # 2초에 걸쳐 현재 진행률에서 100%까지 부드럽게 증가
+                completion_elapsed = time.time() - server_completion_start_time
+                COMPLETION_ANIMATION_DURATION = 2.0  # 2초
+
+                if completion_elapsed < COMPLETION_ANIMATION_DURATION:
+                    # 진행 중: 시작 % → 100% 선형 보간
+                    progress = completion_elapsed / COMPLETION_ANIMATION_DURATION
+                    server_progress_percent = int(server_completion_start_percent +
+                                                  (100 - server_completion_start_percent) * progress)
+                    # 스피너 애니메이션 (0.1초마다 변경)
+                    spinner_index = int(completion_elapsed * 10) % len(spinner_frames)
+                    spinner = spinner_frames[spinner_index]
+                    server_status = f"{spinner} 마무리 중... 잠시만 기다려주세요 ({elapsed:.1f}초)"
+                    server_start_phase = "완료 중"
+                else:
+                    # 애니메이션 완료 - 실행 중 상태로 전환
+                    server_progress_percent = 100
+                    server_status = "실행 중"
+                    server_start_phase = "완료"
+                    print(f"✅ [Blender] 서버가 성공적으로 실행되었습니다 (총 {elapsed:.1f}초 소요).")
+                    return None
+    except Exception as e:
+        # 서버가 아직 시작 안 됐거나 응답 중 (정상)
+        # 20초마다 한 번씩만 디버그 출력 (너무 많은 로그 방지)
+        if elapsed > 20 and int(elapsed) % 20 == 0 and elapsed % 1 < 0.2:
+            print(f"[DEBUG] Server check failed at {int(elapsed)}s: Connection refused (서버 준비 중)")
+
+    # Blender UI를 강제로 다시 그리기 (실시간 업데이트 보장)
+    for area in bpy.context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.tag_redraw()
+
+    return 0.1  # 0.1초 간격으로 빠르게 체크 
 
 # --- ▼▼▼ [핵심 수정] 서버 시작 Operator 수정 ▼▼▼ ---
 class COSTESTIMATOR_OT_StartServer(bpy.types.Operator):
@@ -734,19 +846,52 @@ class COSTESTIMATOR_OT_StartServer(bpy.types.Operator):
     bl_description = "Cost Estimator 웹 서버를 백그라운드에서 실행합니다."
 
     def execute(self, context):
-        global server_process, server_status, start_time
+        global server_process, server_status, start_time, log_file_path_global
+        global server_completion_start_time, server_completion_start_percent
+
+        # 완료 애니메이션 상태 초기화
+        server_completion_start_time = None
+        server_completion_start_percent = 0
+
+        # 블렌더가 관리하는 프로세스 체크
         if server_process and server_process.poll() is None:
             self.report({'WARNING'}, "서버가 이미 실행 중입니다.")
             return {'CANCELLED'}
+
+        # 포트가 이미 사용 중인지 확인 (이전 실행이 살아있을 수 있음)
+        port = context.scene.costestimator_server_port
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('127.0.0.1', port))
+            sock.close()
+            if result == 0:
+                # 포트가 이미 사용 중 - HTTP 체크로 우리 서버인지 확인
+                try:
+                    import urllib.request
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}", timeout=2) as response:
+                        if response.status == 200:
+                            print(f"✅ [Blender] 서버가 이미 실행 중입니다 (포트 {port})")
+                            server_status = "실행 중"
+                            self.report({'INFO'}, f"서버가 이미 실행 중입니다 (포트: {port})")
+                            return {'FINISHED'}
+                except:
+                    pass
+                # HTTP 응답 없음 - 다른 프로그램이 포트 사용 중
+                self.report({'ERROR'}, f"포트 {port}가 다른 프로그램에 의해 사용 중입니다.")
+                return {'CANCELLED'}
+        except:
+            pass  # 포트 체크 실패는 무시 (서버 시작 진행)
 
         addon_dir = os.path.dirname(__file__)
         executable_path = None
 
         # 1. 운영체제를 확인하고 그에 맞는 실행 파일 경로를 설정합니다.
         if platform.system() == "Windows":
-            executable_path = os.path.join(addon_dir, "server_win", "CostEstimator.exe")
+            executable_path = os.path.join(addon_dir, "server_win", "CostEstimator", "CostEstimator.exe")
         elif platform.system() == "Darwin": # "Darwin"은 macOS의 공식 명칭입니다.
-            executable_path = os.path.join(addon_dir, "server_mac", "CostEstimator")
+            executable_path = os.path.join(addon_dir, "server_mac", "CostEstimator", "CostEstimator")
         else:
             self.report({'ERROR'}, f"지원하지 않는 운영체제입니다: {platform.system()}")
             return {'CANCELLED'}
@@ -773,16 +918,37 @@ class COSTESTIMATOR_OT_StartServer(bpy.types.Operator):
 
             print(f"🚀 [Blender] 서버 실행 시도: {executable_path} (포트: {port})")
 
-            # 5. 백그라운드에서 서버 프로세스 시작 (포트 인자 추가)
+            # 5. 로그 파일 경로 설정 (디버깅용)
+            import tempfile
+            log_file_path = os.path.join(tempfile.gettempdir(), "blender_server.log")
+            log_file_path_global = log_file_path  # 전역 변수에 저장
+            print(f"📝 [Blender] 서버 로그 파일: {log_file_path}")
+
+            # 6. 백그라운드에서 서버 프로세스 시작 (포트 인자 추가)
             #    Windows에서는 터미널 창이 뜨지 않도록 CREATE_NO_WINDOW 플래그를 추가합니다.
+            #    stdout/stderr를 로그 파일로 리다이렉션하여 오류 메시지를 캡처합니다.
             creation_flags = 0
             if platform.system() == "Windows":
                 creation_flags = subprocess.CREATE_NO_WINDOW
 
-            server_process = subprocess.Popen([executable_path, str(port)], creationflags=creation_flags)
-            server_status = "시작 중..."
+            # Python unbuffered 모드 활성화 (로그 즉시 기록)
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
 
-            # 6. 서버 상태 확인 타이머 시작
+            # 로그 파일을 프로세스가 직접 열도록 함 (파일 핸들 공유 문제 방지)
+            log_file = open(log_file_path, 'w', buffering=1)  # 라인 버퍼링
+
+            server_process = subprocess.Popen(
+                [executable_path, str(port)],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                env=env,
+                creationflags=creation_flags,
+                close_fds=False  # 파일 디스크립터를 자식 프로세스가 사용할 수 있도록
+            )
+            server_status = "시작 중... 📦 압축 해제 중 (0초)"
+
+            # 7. 서버 상태 확인 타이머 시작
             start_time = time.time()
             bpy.app.timers.register(check_server_status)
 
@@ -900,7 +1066,44 @@ class COSTESTIMATOR_PT_Panel(bpy.types.Panel):
         row.active = server_process is None or server_process.poll() is not None
         row.operator("costestimator.start_server", text="서버 시작", icon='PLAY')
 
+        # 상세한 서버 상태 표시
         box.label(text=f"서버 상태: {server_status}")
+
+        # 시작 중일 때 프로그레스 바 및 진행 상황 표시
+        if "시작 중" in server_status:
+            box.separator()
+
+            # 프로그레스 바
+            row = box.row()
+            row.label(text=f"진행률: {server_progress_percent}%")
+
+            # 프로그레스 바 시각화 (블렌더 UI 제약으로 텍스트 기반)
+            progress_bar_length = 20
+            filled = int((server_progress_percent / 100) * progress_bar_length)
+            empty = progress_bar_length - filled
+            progress_bar = "█" * filled + "░" * empty
+
+            row = box.row()
+            row.label(text=f"[{progress_bar}] {server_progress_percent}%")
+
+            box.separator()
+
+            # 현재 진행 중인 단계 표시
+            col = box.column(align=True)
+            col.label(text=f"📋 현재: {server_start_phase}")
+
+            # 마지막 로그 라인 표시 (있으면)
+            if last_log_line and len(last_log_line) < 60:
+                col.label(text=f"   {last_log_line[:60]}")
+
+            box.separator()
+            col = box.column(align=True)
+            col.label(text="📋 진행 단계:")
+            col.label(text="  1. ⚙️ 초기화 중... (예상: 10초)")
+            col.label(text="  2. 🗄️ DB 마이그레이션 중 (예상: 20초)")
+            col.label(text="  3. 🚀 서버 시작 중 (예상: 20초)")
+            box.separator()
+            box.label(text="⏱️ 전체 예상 시간: 30~50초")
 
         box = layout.box()
         box.label(text="웹소켓 연결")

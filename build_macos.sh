@@ -31,22 +31,23 @@ echo "[INFO] Building CostEstimator executable..."
 echo ""
 
 pyinstaller --name "CostEstimator" \
-  --onefile \
+  --onedir \
   --add-data "db.sqlite3:." \
   --add-data "aibim_quantity_takeoff_web:aibim_quantity_takeoff_web" \
   --add-data "connections:connections" \
+  --python-option u \
   run_integrated_server.py
 
 # 5. 빌드 결과 확인
-if [ -f "dist/CostEstimator" ]; then
+if [ -d "dist/CostEstimator" ]; then
     echo ""
     echo "=========================================="
     echo "[SUCCESS] Build completed!"
     echo "=========================================="
-    echo "Executable location: dist/CostEstimator"
-    ls -lh dist/CostEstimator
+    echo "Executable location: dist/CostEstimator/"
+    ls -lh dist/CostEstimator/
     echo ""
-    echo "To run: ./dist/CostEstimator"
+    echo "To run: ./dist/CostEstimator/CostEstimator"
     echo ""
     echo "[NOTE] Ollama must be installed separately:"
     echo "  brew install ollama"
