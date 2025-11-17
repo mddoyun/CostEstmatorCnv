@@ -110,11 +110,77 @@ echo.
 echo [OK] Dependencies installed
 echo.
 
-REM Execute build
+REM Execute build (inline, virtual environment already activated)
 echo [6/6] Building Windows server executable...
 echo [INFO] This will take 5-10 minutes on first run...
 echo.
-call build_windows.bat
+
+REM Check PyInstaller
+echo [INFO] Checking PyInstaller...
+python -c "import PyInstaller" 2>nul
+if errorlevel 1 (
+    echo [INFO] Installing PyInstaller...
+    pip install pyinstaller
+)
+echo [OK] PyInstaller ready
+echo.
+
+REM Clean previous build
+echo [INFO] Cleaning previous build...
+if exist "build" rmdir /s /q "build"
+if exist "dist\CostEstimator" rmdir /s /q "dist\CostEstimator"
+if exist "CostEstimator_BlenderAddon_453\server_win" rmdir /s /q "CostEstimator_BlenderAddon_453\server_win"
+echo [OK] Cleaned
+echo.
+
+REM Build with PyInstaller
+echo [INFO] Building with PyInstaller (this may take 5-10 minutes)...
+echo.
+pyinstaller --name "CostEstimator" --onedir --add-data "db.sqlite3;." --add-data "aibim_quantity_takeoff_web;aibim_quantity_takeoff_web" --add-data "connections;connections" --hidden-import "django" --hidden-import "channels" --hidden-import "daphne" --collect-all django --collect-all channels --collect-all daphne --noconfirm run_integrated_server.py
+
+if not exist "dist\CostEstimator\CostEstimator.exe" (
+    echo.
+    echo [ERROR] Build failed! CostEstimator.exe not found
+    cd "%ORIGINAL_DIR%"
+    pause
+    exit /b 1
+)
+echo [OK] Build completed
+echo.
+
+REM Copy to addon folder
+echo [INFO] Copying to Blender addon folder...
+if not exist "CostEstimator_BlenderAddon_453" (
+    echo [ERROR] Addon folder not found
+    cd "%ORIGINAL_DIR%"
+    pause
+    exit /b 1
+)
+
+mkdir "CostEstimator_BlenderAddon_453\server_win" 2>nul
+xcopy /E /I /Y /Q "dist\CostEstimator" "CostEstimator_BlenderAddon_453\server_win\CostEstimator"
+
+if exist "CostEstimator_BlenderAddon_453\server_win\CostEstimator\CostEstimator.exe" (
+    echo [OK] Copied to addon folder
+) else (
+    echo [ERROR] Copy failed
+    cd "%ORIGINAL_DIR%"
+    pause
+    exit /b 1
+)
+echo.
+
+REM Create ZIP package
+echo [INFO] Creating ZIP package...
+if exist "CostEstimator_BlenderAddon_Windows.zip" del "CostEstimator_BlenderAddon_Windows.zip"
+powershell -Command "Compress-Archive -Path 'CostEstimator_BlenderAddon_453', 'README_BLENDER_ADDON.md' -DestinationPath 'CostEstimator_BlenderAddon_Windows.zip' -Force"
+
+if exist "CostEstimator_BlenderAddon_Windows.zip" (
+    echo [OK] ZIP created: CostEstimator_BlenderAddon_Windows.zip
+) else (
+    echo [WARNING] ZIP creation failed, but you can manually compress the addon folder
+)
+echo.
 
 REM Return to original directory
 cd "%ORIGINAL_DIR%"
