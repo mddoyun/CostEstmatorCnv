@@ -21,10 +21,18 @@ REM Check Git installation
 echo [1/6] Checking Git...
 git --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Git not found!
-    echo Please install Git from: https://git-scm.com/download/win
+    echo [WARN] Git not found! Attempting to install via winget...
+    winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements
+    if errorlevel 1 (
+        echo [ERROR] Failed to install Git automatically!
+        echo Please install Git manually from: https://git-scm.com/download/win
+        pause
+        exit /b 1
+    )
+    echo [INFO] Git installed! Please restart this script in a new command prompt window.
+    echo       Close this window and run the batch file again.
     pause
-    exit /b 1
+    exit /b 0
 )
 echo [OK] Git found
 echo.
@@ -33,11 +41,20 @@ REM Check Python installation
 echo [2/6] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python not found!
-    echo Please install Python 3.11+ from: https://www.python.org/downloads/
-    echo Make sure to check "Add Python to PATH" during installation
+    echo [WARN] Python not found! Attempting to install via winget...
+    echo [INFO] Installing Python 3.11 (this may take 2-3 minutes)...
+    winget install --id Python.Python.3.11 -e --source winget --silent --accept-package-agreements --accept-source-agreements
+    if errorlevel 1 (
+        echo [ERROR] Failed to install Python automatically!
+        echo Please install Python 3.11+ manually from: https://www.python.org/downloads/
+        echo Make sure to check "Add Python to PATH" during installation
+        pause
+        exit /b 1
+    )
+    echo [INFO] Python installed! Please restart this script in a new command prompt window.
+    echo       Close this window and run the batch file again.
     pause
-    exit /b 1
+    exit /b 0
 )
 python --version
 echo [OK] Python found
