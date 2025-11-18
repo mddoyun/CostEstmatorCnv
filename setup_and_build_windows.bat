@@ -47,24 +47,20 @@ REM Clone from GitHub
 echo [3/6] Cloning from GitHub...
 if exist "CostEstmatorCnv" (
     echo [INFO] CostEstmatorCnv folder already exists
-    choice /C YN /M "Do you want to delete and re-clone? (Y/N)"
-    if errorlevel 2 (
-        echo [INFO] Using existing folder
-    ) else (
-        echo [INFO] Deleting existing folder...
-        rmdir /s /q "CostEstmatorCnv"
-        git clone https://github.com/mddoyun/CostEstmatorCnv.git
-    )
+    echo [INFO] Pulling latest changes...
+    cd CostEstmatorCnv
+    git pull
+    cd ..
+    echo [OK] Updated to latest version
 ) else (
     git clone https://github.com/mddoyun/CostEstmatorCnv.git
+    if not exist "CostEstmatorCnv" (
+        echo [ERROR] Clone failed!
+        pause
+        exit /b 1
+    )
+    echo [OK] Repository cloned
 )
-
-if not exist "CostEstmatorCnv" (
-    echo [ERROR] Clone failed!
-    pause
-    exit /b 1
-)
-echo [OK] Repository cloned
 echo.
 
 REM Move to cloned folder
