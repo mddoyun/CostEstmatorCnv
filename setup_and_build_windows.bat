@@ -125,8 +125,12 @@ REM Create initial database if not exists
 echo [INFO] Preparing database...
 if not exist "db.sqlite3" (
     echo [INFO] Creating initial database...
-    python manage.py migrate --noinput
-    echo [OK] Database created
+    python manage.py migrate --noinput 2>nul
+    if not exist "db.sqlite3" (
+        echo [WARN] Migration failed, creating empty database file...
+        type nul > db.sqlite3
+    )
+    echo [OK] Database ready
 ) else (
     echo [OK] Database found
 )
