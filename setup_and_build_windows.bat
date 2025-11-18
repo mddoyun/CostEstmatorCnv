@@ -159,8 +159,19 @@ if not exist "dist\CostEstimator\CostEstimator.exe" (
 echo [OK] Build completed
 echo.
 
-REM Copy to addon folder
-echo [INFO] Copying to Blender addon folder...
+REM Install addon Python dependencies
+echo [INFO] Installing Blender addon dependencies...
+if exist "CostEstimator_BlenderAddon_453\lib" (
+    echo [INFO] Clearing old lib folder...
+    rmdir /s /q "CostEstimator_BlenderAddon_453\lib"
+)
+mkdir "CostEstimator_BlenderAddon_453\lib"
+pip install -r "CostEstimator_BlenderAddon_453\requirements.txt" --target "CostEstimator_BlenderAddon_453\lib" --upgrade
+echo [OK] Addon dependencies installed
+echo.
+
+REM Copy server to addon folder
+echo [INFO] Copying server to Blender addon folder...
 if not exist "CostEstimator_BlenderAddon_453" (
     echo [ERROR] Addon folder not found
     cd "%ORIGINAL_DIR%"
@@ -172,7 +183,7 @@ mkdir "CostEstimator_BlenderAddon_453\server_win" 2>nul
 xcopy /E /I /Y /Q "dist\CostEstimator" "CostEstimator_BlenderAddon_453\server_win\CostEstimator"
 
 if exist "CostEstimator_BlenderAddon_453\server_win\CostEstimator\CostEstimator.exe" (
-    echo [OK] Copied to addon folder
+    echo [OK] Server copied to addon folder
 ) else (
     echo [ERROR] Copy failed
     cd "%ORIGINAL_DIR%"
