@@ -203,6 +203,15 @@ if geom:
 [GEOMETRY] Copied System.Geometry → Parameters.Geometry for element 8d9e5f2a...
 ```
 
+**Frontend Output**:
+```
+[3D Viewer] Geometry filtering summary:
+[3D Viewer] - Total objects in allRevitData: 2
+[3D Viewer] - Objects with no geometry: 0
+[3D Viewer] - Objects filtered (split): 0
+[3D Viewer] - Objects with valid geometry: 2
+```
+
 ### Failure Case: No Geometry Extracted
 
 **Revit Output**:
@@ -215,7 +224,48 @@ if geom:
 [GEOMETRY] Element 3f4a2b1c... has System but NO Geometry field
 ```
 
+**Frontend Output**:
+```
+[3D Viewer] Object 12345678... (Basic Wall) has Parameters but NO Geometry field
+[3D Viewer] Geometry filtering summary:
+[3D Viewer] - Total objects in allRevitData: 1
+[3D Viewer] - Objects with no geometry: 1
+[3D Viewer] - Objects filtered (split): 0
+[3D Viewer] - Objects with valid geometry: 0
+```
+
 **Diagnosis**: Revit element has no extractable geometry (annotation, group, etc.)
+
+### Failure Case: Copy System.Geometry → Parameters.Geometry Failed
+
+**Revit Output**:
+```
+[Geometry] Element 945123 (Basic Wall): SUCCESS - 8 vertices, 12 faces
+```
+
+**Server Output**:
+```
+[GEOMETRY] Element 3f4a2b1c... has geometry: 8 verts, 12 faces, matrix=True, materials=True
+[GEOMETRY] Copied System.Geometry → Parameters.Geometry for element 3f4a2b1c...
+```
+
+**Frontend Output**:
+```
+[3D Viewer] Object 12345678... (Basic Wall) has Parameters but NO Geometry field
+[3D Viewer] → But System.Geometry EXISTS! Copy may have failed.
+[3D Viewer] Geometry filtering summary:
+[3D Viewer] - Total objects in allRevitData: 1
+[3D Viewer] - Objects with no geometry: 1
+[3D Viewer] - Objects filtered (split): 0
+[3D Viewer] - Objects with valid geometry: 0
+```
+
+**Diagnosis**: Geometry extracted successfully in Revit and sent to server, but frontend sees System.Geometry without Parameters.Geometry. This indicates:
+- Database save/load issue (geometry not persisted)
+- WebSocket transmission issue (geometry lost in transit)
+- Server copy logic executed but not persisted to database
+
+**Action**: Check database directly to verify if Parameters.Geometry exists in raw_data
 
 ### Failure Case: Exception During Extraction
 
@@ -252,6 +302,45 @@ Based on debug output, determine:
    - Verify unit conversion (Revit uses feet internally)
    - Check face winding order (normals)
 
+### Frontend (Browser)
+
+**File**: `connections/static/connections/three_d_viewer.js`
+
+**Location**: Lines 490-537 (Geometry filtering section)
+
+**Added Debug Statements**:
+
+```javascript
+// 1. Count objects without geometry
+let noGeometryCount = 0;
+
+// 2. Log why each object is filtered
+if (!obj.raw_data) {
+    console.log(`[3D Viewer] Object ${obj.id} has NO raw_data`);
+} else if (!obj.raw_data.Parameters) {
+    console.log(`[3D Viewer] Object ${obj.id} has raw_data but NO Parameters field`);
+} else if (!obj.raw_data.Parameters.Geometry) {
+    console.log(`[3D Viewer] Object ${obj.id} (${obj.raw_data.Name || 'unnamed'}) has Parameters but NO Geometry field`);
+    // Check if System.Geometry exists but wasn't copied
+    if (obj.raw_data.System && obj.raw_data.System.Geometry) {
+        console.log(`[3D Viewer] → But System.Geometry EXISTS! Copy may have failed.`);
+    }
+}
+
+// 3. Summary statistics
+console.log(`[3D Viewer] Geometry filtering summary:`);
+console.log(`[3D Viewer] - Total objects in allRevitData: ${window.allRevitData.length}`);
+console.log(`[3D Viewer] - Objects with no geometry: ${noGeometryCount}`);
+console.log(`[3D Viewer] - Objects filtered (split): ${filteredOutCount}`);
+console.log(`[3D Viewer] - Objects with valid geometry: ${geometryObjects.length}`);
+```
+
+**What to Check**:
+- Browser console (F12 → Console tab)
+- Look for `[3D Viewer]` prefixed messages
+- Check if objects have System.Geometry but not Parameters.Geometry
+- Verify geometry filtering summary shows valid geometry count > 0
+
 ## Files Modified
 
 1. `CostEstimator_RevitAddin_2026/MainTools/QuantityTakeoff_web/RevitDataCollector.cs`
@@ -259,6 +348,9 @@ Based on debug output, determine:
 
 2. `connections/consumers.py`
    - Lines 432-458: Added comprehensive geometry tracking logs
+
+3. `connections/static/connections/three_d_viewer.js`
+   - Lines 490-537: Added detailed geometry filtering logs and summary statistics
 
 ## Commit Message
 

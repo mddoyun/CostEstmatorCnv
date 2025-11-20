@@ -488,10 +488,24 @@
 
         // ▼▼▼ [수정] 분할된 BIM 원본 객체는 제외하고 필터링 ▼▼▼
         let filteredOutCount = 0;
+        let noGeometryCount = 0;
         const geometryObjects = window.allRevitData
             .filter(obj => {
                 // 지오메트리 데이터가 없으면 먼저 제외
                 if (!obj.raw_data || !obj.raw_data.Parameters || !obj.raw_data.Parameters.Geometry) {
+                    noGeometryCount++;
+                    // 디버깅: 왜 geometry가 없는지 상세 로그
+                    if (!obj.raw_data) {
+                        console.log(`[3D Viewer] Object ${obj.id} has NO raw_data`);
+                    } else if (!obj.raw_data.Parameters) {
+                        console.log(`[3D Viewer] Object ${obj.id} has raw_data but NO Parameters field`);
+                    } else if (!obj.raw_data.Parameters.Geometry) {
+                        console.log(`[3D Viewer] Object ${obj.id} (${obj.raw_data.Name || 'unnamed'}) has Parameters but NO Geometry field`);
+                        // System.Geometry가 있는지도 확인
+                        if (obj.raw_data.System && obj.raw_data.System.Geometry) {
+                            console.log(`[3D Viewer] → But System.Geometry EXISTS! Copy may have failed.`);
+                        }
+                    }
                     return false;
                 }
 
@@ -515,7 +529,11 @@
                     matrix: obj.raw_data.Parameters.Geometry.matrix
                 }
             }));
-        console.log(`[3D Viewer] Filtered out ${filteredOutCount} BIM objects that have splits`);
+        console.log(`[3D Viewer] Geometry filtering summary:`);
+        console.log(`[3D Viewer] - Total objects in allRevitData: ${window.allRevitData.length}`);
+        console.log(`[3D Viewer] - Objects with no geometry: ${noGeometryCount}`);
+        console.log(`[3D Viewer] - Objects filtered (split): ${filteredOutCount}`);
+        console.log(`[3D Viewer] - Objects with valid geometry: ${geometryObjects.length}`);
         // ▲▲▲ [수정] 여기까지 ▲▲▲
 
         // ▼▼▼ [추가] 분할 객체 데이터 준비 (parent split 제외) ▼▼▼
