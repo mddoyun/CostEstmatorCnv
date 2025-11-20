@@ -339,7 +339,11 @@ namespace RevitDjangoConnector
                 };
 
                 var geomElement = element.get_Geometry(options);
-                if (geomElement == null) return null;
+                if (geomElement == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): No geometry element");
+                    return null;
+                }
 
                 var allVerts = new List<double>();
                 var allFaces = new List<int>();
@@ -350,10 +354,16 @@ namespace RevitDjangoConnector
                     ProcessGeometryObject(geomObj, allVerts, allFaces, Transform.Identity);
                 }
 
-                if (allVerts.Count == 0) return null;
+                if (allVerts.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): No vertices extracted");
+                    return null;
+                }
 
                 // Materials 정보 추출
                 var materials = ExtractMaterials(element, doc);
+
+                System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): SUCCESS - {allVerts.Count / 3} vertices, {allFaces.Count / 3} faces");
 
                 // Blender와 100% 동일한 구조로 반환
                 return new Dictionary<string, object>
@@ -366,7 +376,8 @@ namespace RevitDjangoConnector
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Geometry extraction failed for element {element.Id.Value}: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value}: EXCEPTION - {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Geometry] Stack trace: {ex.StackTrace}");
                 return null;
             }
         }

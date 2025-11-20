@@ -432,11 +432,28 @@ class RevitConsumer(AsyncWebsocketConsumer):
                 # ▼▼▼ [추가] 3D 뷰어 호환성: System.Geometry를 Parameters.Geometry로도 복사 ▼▼▼
                 if 'System' in processed_item and isinstance(processed_item['System'], dict):
                     if 'Geometry' in processed_item['System']:
+                        geom_data = processed_item['System']['Geometry']
+                        # 디버깅: Geometry 데이터 구조 확인
+                        if geom_data:
+                            verts_count = len(geom_data.get('verts', [])) if isinstance(geom_data.get('verts'), list) else 0
+                            faces_count = len(geom_data.get('faces', [])) if isinstance(geom_data.get('faces'), list) else 0
+                            has_matrix = 'matrix' in geom_data
+                            has_materials = 'materials' in geom_data
+                            print(f"    [GEOMETRY] Element {uid[:8]}... has geometry: {verts_count / 3:.0f} verts, {faces_count / 3:.0f} faces, matrix={has_matrix}, materials={has_materials}")
+                        else:
+                            print(f"    [GEOMETRY] Element {uid[:8]}... has NULL geometry data")
+
                         # Parameters 필드가 없으면 생성
                         if 'Parameters' not in processed_item:
                             processed_item['Parameters'] = {}
                         # System.Geometry를 Parameters.Geometry로 복사 (3D 뷰어용)
-                        processed_item['Parameters']['Geometry'] = processed_item['System']['Geometry']
+                        processed_item['Parameters']['Geometry'] = geom_data
+                        print(f"    [GEOMETRY] Copied System.Geometry → Parameters.Geometry for element {uid[:8]}...")
+                    else:
+                        print(f"    [GEOMETRY] Element {uid[:8]}... has System but NO Geometry field")
+                else:
+                    if 'System' not in processed_item:
+                        print(f"    [GEOMETRY] Element {uid[:8]}... has NO System field at all")
                 # ▲▲▲ [추가] 여기까지 ▲▲▲
                 # ▲▲▲ [추가] 여기까지 ▲▲▲
 
