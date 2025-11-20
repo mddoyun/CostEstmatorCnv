@@ -4,9 +4,69 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 
 namespace RevitDjangoConnector
 {
+    // ▼▼▼ 파일 로거 클래스 ▼▼▼
+    public static class FileLogger
+    {
+        private static string logFilePath;
+        private static object lockObj = new object();
+
+        static FileLogger()
+        {
+            // Log file path: %USERPROFILE%\CostEstimator_Data\logs\revit_geometry.log
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string logDir = Path.Combine(userProfile, "CostEstimator_Data", "logs");
+
+            // Create directory if it doesn't exist
+            if (!Directory.Exists(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+
+            logFilePath = Path.Combine(logDir, "revit_geometry.log");
+
+            // Write startup message
+            WriteToFile($"[INFO] Revit Geometry Logger initialized - {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        }
+
+        public static void LogInfo(string message)
+        {
+            WriteToFile($"[INFO] {DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}");
+            System.Diagnostics.Debug.WriteLine($"[Geometry] {message}");
+        }
+
+        public static void LogWarning(string message)
+        {
+            WriteToFile($"[WARN] {DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}");
+            System.Diagnostics.Debug.WriteLine($"[Geometry] {message}");
+        }
+
+        public static void LogError(string message)
+        {
+            WriteToFile($"[ERROR] {DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}");
+            System.Diagnostics.Debug.WriteLine($"[Geometry] {message}");
+        }
+
+        private static void WriteToFile(string message)
+        {
+            try
+            {
+                lock (lockObj)
+                {
+                    File.AppendAllText(logFilePath, message + Environment.NewLine);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[FileLogger] Failed to write to log file: {ex.Message}");
+            }
+        }
+    }
+    // ▲▲▲ 파일 로거 클래스 끝 ▲▲▲
+
     public static class RevitDataCollector
     {
         // Revit Category → IFC Class 매핑
@@ -341,7 +401,7 @@ namespace RevitDjangoConnector
                 var geomElement = element.get_Geometry(options);
                 if (geomElement == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): No geometry element");
+                    FileLogger.LogWarning($"Element {element.Id.Value} ({element.Name}): No geometry element");
 
                     // Options 없이 다시 시도
                     geomElement = element.get_Geometry(new Options());
@@ -349,7 +409,7 @@ namespace RevitDjangoConnector
                     {
                         return null;
                     }
-                    System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): Got geometry with default options");
+                    FileLogger.LogInfo($"Element {element.Id.Value} ({element.Name}): Got geometry with default options");
                 }
 
                 var allVerts = new List<double>();
@@ -363,14 +423,14 @@ namespace RevitDjangoConnector
 
                 if (allVerts.Count == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): No vertices extracted");
+                    FileLogger.LogWarning($"Element {element.Id.Value} ({element.Name}): No vertices extracted");
                     return null;
                 }
 
                 // Materials 정보 추출
                 var materials = ExtractMaterials(element, doc);
 
-                System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): SUCCESS - {allVerts.Count / 3} vertices, {allFaces.Count / 3} faces");
+                FileLogger.LogInfo($"Element {element.Id.Value} ({element.Name}): SUCCESS - {allVerts.Count / 3} vertices, {allFaces.Count / 3} faces");
 
                 // Blender와 100% 동일한 구조로 반환
                 return new Dictionary<string, object>
@@ -383,8 +443,8 @@ namespace RevitDjangoConnector
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value}: EXCEPTION - {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[Geometry] Stack trace: {ex.StackTrace}");
+                FileLogger.LogError($"Element {element.Id.Value}: EXCEPTION - {ex.Message}");
+                FileLogger.LogError($"Stack trace: {ex.StackTrace}");
                 return null;
             }
         }
@@ -517,7 +577,7 @@ namespace RevitDjangoConnector
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Geometry] GeometryInstance processing failed: {ex.Message}");
+                    FileLogger.LogWarning($"GeometryInstance processing failed: {ex.Message}");
                 }
             }
             else
@@ -556,7 +616,7 @@ namespace RevitDjangoConnector
                 allFaces.Add(vertexOffset + (int)triangle.get_Index(2));
             }
 
-            System.Diagnostics.Debug.WriteLine($"[Geometry] ProcessMesh: {mesh.Vertices.Count} vertices, {mesh.NumTriangles} triangles");
+            FileLogger.LogInfo($"ProcessMesh: {mesh.Vertices.Count} vertices, {mesh.NumTriangles} triangles");
         }
 
         private static void ProcessSolid(Solid solid, List<double> allVerts, List<int> allFaces, Transform transform)
@@ -604,13 +664,13 @@ namespace RevitDjangoConnector
                 catch (Exception ex)
                 {
                     // Face triangulation 실패 시 로깅 후 계속 진행
-                    System.Diagnostics.Debug.WriteLine($"[Geometry] Face triangulation failed: {ex.Message}");
+                    FileLogger.LogWarning($"Face triangulation failed: {ex.Message}");
                 }
             }
 
             if (faceCount > 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[Geometry] ProcessSolid: Processed {faceCount} faces, {triangleCount} triangles");
+                FileLogger.LogInfo($"ProcessSolid: Processed {faceCount} faces, {triangleCount} triangles");
             }
         }
 

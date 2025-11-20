@@ -129,3 +129,71 @@ CHANNEL_LAYERS = {
 		"BACKEND": "channels.layers.InMemoryChannelLayer"
 	}
 }
+
+# Logging configuration
+# Log files will be stored in ~/CostEstimator_Data/logs/
+LOG_DIR = Path.home() / 'CostEstimator_Data' / 'logs'
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {name} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'simple': {
+            'format': '[{levelname}] {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file_all': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'server_all.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'file_geometry': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'geometry_debug.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'file_frontend': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'frontend.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file_all'],
+            'level': 'INFO',
+        },
+        'connections': {
+            'handlers': ['console', 'file_all'],
+            'level': 'DEBUG',
+        },
+        'geometry': {
+            'handlers': ['console', 'file_geometry'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'frontend': {
+            'handlers': ['console', 'file_frontend'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}

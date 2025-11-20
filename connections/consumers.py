@@ -1,5 +1,6 @@
 # connections/consumers.py
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.db.models import F
@@ -10,6 +11,10 @@ from django.db.models import Count
 from .models import Project, RawElement, QuantityClassificationTag, QuantityMember, AIModel, SplitElement, CostItem
 # ▲▲▲ [수정] 여기까지 ▲▲▲
 import asyncio
+
+# Initialize loggers for file output
+geometry_logger = logging.getLogger('geometry')
+frontend_logger = logging.getLogger('frontend')
 
 # --- 데이터 평탄화 헬퍼 함수 ---
 def flatten_bim_data(element_data):
@@ -439,21 +444,21 @@ class RevitConsumer(AsyncWebsocketConsumer):
                             faces_count = len(geom_data.get('faces', [])) if isinstance(geom_data.get('faces'), list) else 0
                             has_matrix = 'matrix' in geom_data
                             has_materials = 'materials' in geom_data
-                            print(f"    [GEOMETRY] Element {uid[:8]}... has geometry: {verts_count / 3:.0f} verts, {faces_count / 3:.0f} faces, matrix={has_matrix}, materials={has_materials}")
+                            geometry_logger.info(f"Element {uid[:8]}... has geometry: {verts_count / 3:.0f} verts, {faces_count / 3:.0f} faces, matrix={has_matrix}, materials={has_materials}")
                         else:
-                            print(f"    [GEOMETRY] Element {uid[:8]}... has NULL geometry data")
+                            geometry_logger.warning(f"Element {uid[:8]}... has NULL geometry data")
 
                         # Parameters 필드가 없으면 생성
                         if 'Parameters' not in processed_item:
                             processed_item['Parameters'] = {}
                         # System.Geometry를 Parameters.Geometry로 복사 (3D 뷰어용)
                         processed_item['Parameters']['Geometry'] = geom_data
-                        print(f"    [GEOMETRY] Copied System.Geometry → Parameters.Geometry for element {uid[:8]}...")
+                        geometry_logger.info(f"Copied System.Geometry → Parameters.Geometry for element {uid[:8]}...")
                     else:
-                        print(f"    [GEOMETRY] Element {uid[:8]}... has System but NO Geometry field")
+                        geometry_logger.warning(f"Element {uid[:8]}... has System but NO Geometry field")
                 else:
                     if 'System' not in processed_item:
-                        print(f"    [GEOMETRY] Element {uid[:8]}... has NO System field at all")
+                        geometry_logger.warning(f"Element {uid[:8]}... has NO System field at all")
                 # ▲▲▲ [추가] 여기까지 ▲▲▲
                 # ▲▲▲ [추가] 여기까지 ▲▲▲
 
@@ -576,6 +581,24 @@ class FrontendConsumer(AsyncWebsocketConsumer):
         msg_type = data.get('type')
         payload = data.get('payload', {})
         print(f"✉️ [{self.__class__.__name__}] 웹 브라우저로부터 메시지 수신: type='{msg_type}'") # 기존 print 유지
+
+        # ▼▼▼ [추가] Frontend 로그를 파일에 저장 ▼▼▼
+        if msg_type == 'frontend_log':
+            level = payload.get('level', 'INFO')
+            message = payload.get('message', '')
+            source = payload.get('source', 'unknown')
+
+            # Log to file based on level
+            if level == 'ERROR':
+                frontend_logger.error(f"[{source}] {message}")
+            elif level == 'WARN':
+                frontend_logger.warning(f"[{source}] {message}")
+            elif level == 'INFO':
+                frontend_logger.info(f"[{source}] {message}")
+            else:  # DEBUG
+                frontend_logger.debug(f"[{source}] {message}")
+            return  # 로그만 기록하고 응답 없음
+        # ▲▲▲ [추가] 여기까지 ▲▲▲
 
         if msg_type == 'command_to_client':
             target_group = payload.pop('target_group', 'revit_broadcast_group')
