@@ -1,5 +1,6 @@
 # aibim_quantity_takeoff_web/settings.py
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -66,10 +67,14 @@ WSGI_APPLICATION = 'aibim_quantity_takeoff_web.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# Database path: use environment variable if set, otherwise use BASE_DIR
+# This allows PyInstaller builds to specify a writable data directory
+DB_PATH = os.environ.get('DATABASE_PATH', str(BASE_DIR / 'db.sqlite3'))
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DB_PATH,
     }
 }
 

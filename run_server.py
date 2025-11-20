@@ -24,8 +24,19 @@ def main():
 
     # --- 2. Copy initial database ---
     db_path = writable_dir / "db.sqlite3"
-    if not db_path.exists():
+
+    # Check if database file exists AND is valid (not empty/corrupted)
+    # A valid database should be at least 100KB
+    db_is_valid = db_path.exists() and db_path.stat().st_size > 100000
+
+    if not db_is_valid:
         try:
+            # Remove empty/corrupted file if exists
+            if db_path.exists():
+                print(f"[WARNING] Found invalid database file (size: {db_path.stat().st_size} bytes), removing...")
+                db_path.unlink()
+
+            # Copy fresh database
             if getattr(sys, 'frozen', False):
                 source_db_path = Path(sys._MEIPASS) / "db.sqlite3"
             else:
@@ -33,29 +44,47 @@ def main():
 
             if source_db_path.exists():
                 shutil.copy2(source_db_path, db_path)
-                print("[OK] Initial database copied.")
+                print(f"[OK] Initial database copied (size: {db_path.stat().st_size} bytes)")
             else:
                 print("[WARNING] Original database file (db.sqlite3) not found.")
         except Exception as e:
             print(f"[ERROR] Failed to copy database: {e}")
             input("Press Enter to exit...")
             sys.exit(1)
-            
+    else:
+        print(f"[OK] Using existing valid database: {db_path} (size: {db_path.stat().st_size} bytes)")
+
     # --- 3. Configure Django environment ---
     os.chdir(writable_dir)
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'aibim_quantity_takeoff_web.settings')
+    # Set explicit database path so Django uses the correct location
+    os.environ['DATABASE_PATH'] = str(db_path)
+    print(f"[INFO] Database path set to: {db_path}")
 
     try:
-        # --- 4. Run database migration ---
-        print("\n--- Starting database migration ---")
-        execute_from_command_line([sys.argv[0], 'migrate'])
-        print("--- Database migration complete ---\n")
+        # --- 4. Run database migration (only for new/invalid database) ---
+        if not db_is_valid:
+            print("\n--- Starting database migration (new/invalid database) ---")
+            execute_from_command_line([sys.argv[0], 'migrate'])
+            print("--- Database migration complete ---\n")
+        else:
+            print("[INFO] Valid database exists, skipping migration to preserve data")
 
-        # --- 5. Run Django server ---
-        print("[INFO] Starting Django server at http://127.0.0.1:8000")
+        # --- 5. Get port number from arguments (default: 8000) ---
+        port = '8000'
+        if len(sys.argv) > 1:
+            try:
+                port = str(int(sys.argv[1]))  # Validate port is a number
+                print(f"[INFO] Using port from argument: {port}")
+            except ValueError:
+                print(f"[WARNING] Invalid port argument '{sys.argv[1]}', using default 8000")
+
+        # --- 6. Run Django server ---
+        server_address = f'127.0.0.1:{port}'
+        print(f"[INFO] Starting Django server at http://{server_address}")
         print("[INFO] Press Ctrl+C in this window to stop the server.")
-        
-        execute_from_command_line([sys.argv[0], 'runserver', '--noreload'])
+
+        execute_from_command_line([sys.argv[0], 'runserver', server_address, '--noreload'])
 
     except KeyboardInterrupt:
         print("\n[INFO] Server shutdown command received. Exiting.")

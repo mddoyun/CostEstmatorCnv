@@ -546,9 +546,6 @@ C:\Users\mddoy\Documents\Developments\CostEstimator_RevitAddin_2026\obj\Debug\ne
 C:\Users\mddoy\Documents\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\refint\AiBimCost.dll
 C:\Users\mddoy\Documents\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\AiBimCost.pdb
 C:\Users\mddoy\Documents\Developments\CostEstimator_RevitAddin_2026\obj\Debug\net8.0-windows\ref\AiBimCost.dll
-C:\Users\mddoy\AppData\Roaming\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Debug\net8.0-windows\AiBimCost.deps.json
-C:\Users\mddoy\AppData\Roaming\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Debug\net8.0-windows\AiBimCost.dll
-C:\Users\mddoy\AppData\Roaming\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Debug\net8.0-windows\AiBimCost.pdb
 C:\Users\mddoyun\AppData\Roaming\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Debug\net8.0-windows\AiBimCost.deps.json
 C:\Users\mddoyun\AppData\Roaming\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Debug\net8.0-windows\AiBimCost.dll
 C:\Users\mddoyun\AppData\Roaming\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Debug\net8.0-windows\AiBimCost.pdb

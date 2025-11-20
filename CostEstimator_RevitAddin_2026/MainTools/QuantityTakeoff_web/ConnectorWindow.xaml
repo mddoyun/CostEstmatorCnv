@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:RevitDjangoConnector"
         mc:Ignorable="d"
-        Title="Cost Estimator Connector" Height="300" Width="450"
+        Title="Cost Estimator Connector" Height="500" Width="500"
         WindowStartupLocation="CenterScreen"
         Closing="Window_Closing">
 
@@ -15,31 +15,71 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Button x:Name="StartServerButton" Grid.Row="0" Content="✅ 서버 시작" Margin="0,0,0,10" Click="StartServerButton_Click" Height="30" FontWeight="Bold"/>
+        <!-- 서버 관리 섹션 -->
+        <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="1" Padding="10" Margin="0,0,0,10" CornerRadius="3">
+            <StackPanel>
+                <TextBlock Text="서버 관리" FontWeight="Bold" Margin="0,0,0,10"/>
 
-        <Grid Grid.Row="1" Margin="0,0,0,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Label Content="Server URL:" VerticalAlignment="Center"/>
-            <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Text="ws://127.0.0.1:8000/ws/revit-connector/" VerticalAlignment="Center" Margin="5,0"/>
-        </Grid>
+                <!-- 포트 선택 -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="포트:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="PortTextBox" Grid.Column="1" Text="8000" VerticalAlignment="Center" Margin="5,0" TextChanged="PortTextBox_TextChanged"/>
+                </Grid>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-            <Button x:Name="ConnectButton" Content="🌐 연결 및 브라우저 열기" Width="180" Margin="5" Click="ConnectButton_Click"/>
-            <Button x:Name="DisconnectButton" Content="❌ 연결 끊기 &amp; 서버 종료" Width="180" Margin="5" IsEnabled="False" Click="DisconnectButton_Click"/>
-        </StackPanel>
+                <!-- 서버 시작 버튼 -->
+                <Button x:Name="StartServerButton" Content="✅ 서버 시작" Margin="0,0,0,10" Click="StartServerButton_Click" Height="30" FontWeight="Bold"/>
 
-        <Grid Grid.Row="3" Margin="0,5,0,5">
+                <!-- 서버 상태 -->
+                <TextBlock x:Name="ServerStatusTextBlock" Text="서버 상태: 꺼짐" Margin="0,0,0,5"/>
+
+                <!-- 서버 시작 진행률 (서버 시작 중일 때만 표시) -->
+                <ProgressBar x:Name="ServerProgressBar" Height="8" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" Margin="0,0,0,5"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 웹소켓 연결 섹션 -->
+        <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1" Padding="10" Margin="0,0,0,10" CornerRadius="3">
+            <StackPanel>
+                <TextBlock Text="웹소켓 연결" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                <!-- Server URL (읽기 전용) -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="URL:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Text="ws://127.0.0.1:8000/ws/revit-connector/" VerticalAlignment="Center" Margin="5,0" IsReadOnly="True" Background="WhiteSmoke"/>
+                </Grid>
+
+                <!-- 연결 버튼들 -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+                    <Button x:Name="ConnectButton" Content="🌐 연결 및 브라우저 열기" Width="180" Margin="5" Click="ConnectButton_Click"/>
+                    <Button x:Name="DisconnectButton" Content="❌ 연결 끊기 &amp; 서버 종료" Width="180" Margin="5" IsEnabled="False" Click="DisconnectButton_Click"/>
+                </StackPanel>
+
+                <!-- 웹소켓 상태 -->
+                <TextBlock x:Name="WebSocketStatusTextBlock" Text="웹소켓 상태: 연결 대기 중" Margin="0,0,0,5"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 진행률 표시 -->
+        <Grid Grid.Row="2" Margin="0,5,0,5">
             <ProgressBar x:Name="ProgressBar" Height="20"/>
             <TextBlock x:Name="ProgressTextBlock" Text="Ready" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Black"/>
         </Grid>
 
-        <TextBox x:Name="StatusTextBox" Grid.Row="4" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
+        <!-- 상태 로그 -->
+        <TextBox x:Name="StatusTextBox" Grid.Row="3" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
                  Text="Ready."/>
     </Grid>
 </Window>

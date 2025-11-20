@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --version:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build:*)",
+      "Bash(cat:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(find:*)",
+      "Bash(tasklist:*)",
+      "Bash(python -m PyInstaller:*)",
+      "Bash(.mddoyun/Scripts/pyinstaller.exe:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(pyinstaller:*)",
+      "Bash(sqlite3:*)",
+      "Bash(python:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
