@@ -334,15 +334,22 @@ namespace RevitDjangoConnector
                 var options = new Options
                 {
                     ComputeReferences = false,
-                    DetailLevel = ViewDetailLevel.Medium,
-                    IncludeNonVisibleObjects = false
+                    DetailLevel = ViewDetailLevel.Fine,  // Medium → Fine으로 변경 (더 상세한 geometry)
+                    IncludeNonVisibleObjects = true  // false → true로 변경 (모든 객체의 geometry 추출)
                 };
 
                 var geomElement = element.get_Geometry(options);
                 if (geomElement == null)
                 {
                     System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): No geometry element");
-                    return null;
+
+                    // Options 없이 다시 시도
+                    geomElement = element.get_Geometry(new Options());
+                    if (geomElement == null)
+                    {
+                        return null;
+                    }
+                    System.Diagnostics.Debug.WriteLine($"[Geometry] Element {element.Id.Value} ({element.Name}): Got geometry with default options");
                 }
 
                 var allVerts = new List<double>();
@@ -490,28 +497,90 @@ namespace RevitDjangoConnector
             {
                 ProcessSolid(solid, allVerts, allFaces, parentTransform);
             }
+            else if (geomObj is Mesh mesh)
+            {
+                ProcessMesh(mesh, allVerts, allFaces, parentTransform);
+            }
             else if (geomObj is GeometryInstance instance)
             {
-                var instanceGeom = instance.GetSymbolGeometry();
-                var transform = parentTransform.Multiply(instance.Transform);
-                foreach (GeometryObject instanceObj in instanceGeom)
+                try
                 {
-                    ProcessGeometryObject(instanceObj, allVerts, allFaces, transform);
+                    var instanceGeom = instance.GetSymbolGeometry();
+                    if (instanceGeom != null)
+                    {
+                        var transform = parentTransform.Multiply(instance.Transform);
+                        foreach (GeometryObject instanceObj in instanceGeom)
+                        {
+                            ProcessGeometryObject(instanceObj, allVerts, allFaces, transform);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Geometry] GeometryInstance processing failed: {ex.Message}");
                 }
             }
+            else
+            {
+                // Curve, Point 등 다른 타입은 무시 (로깅은 너무 많아서 생략)
+            }
+        }
+
+        private static void ProcessMesh(Mesh mesh, List<double> allVerts, List<int> allFaces, Transform transform)
+        {
+            if (mesh == null || mesh.Vertices == null || mesh.Vertices.Count == 0)
+            {
+                return;
+            }
+
+            int vertexOffset = allVerts.Count / 3;
+
+            // Vertices 추가
+            for (int i = 0; i < mesh.Vertices.Count; i++)
+            {
+                XYZ vertex = mesh.Vertices[i];
+                XYZ transformedVertex = transform.OfPoint(vertex);
+
+                allVerts.Add(transformedVertex.X);
+                allVerts.Add(transformedVertex.Y);
+                allVerts.Add(transformedVertex.Z);
+            }
+
+            // Triangles 추가 (Mesh는 NumTriangles 속성 사용)
+            for (int i = 0; i < mesh.NumTriangles; i++)
+            {
+                MeshTriangle triangle = mesh.get_Triangle(i);
+
+                allFaces.Add(vertexOffset + (int)triangle.get_Index(0));
+                allFaces.Add(vertexOffset + (int)triangle.get_Index(1));
+                allFaces.Add(vertexOffset + (int)triangle.get_Index(2));
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[Geometry] ProcessMesh: {mesh.Vertices.Count} vertices, {mesh.NumTriangles} triangles");
         }
 
         private static void ProcessSolid(Solid solid, List<double> allVerts, List<int> allFaces, Transform transform)
         {
-            if (solid == null || solid.Volume <= 0) return;
+            // Volume 체크 제거 - Face가 있으면 처리
+            if (solid == null || solid.Faces == null || solid.Faces.Size == 0)
+            {
+                return;
+            }
+
+            int faceCount = 0;
+            int triangleCount = 0;
 
             foreach (Face face in solid.Faces)
             {
                 try
                 {
                     var triangulation = face.Triangulate();
-                    if (triangulation == null) continue;
+                    if (triangulation == null || triangulation.NumTriangles == 0)
+                    {
+                        continue;
+                    }
 
+                    faceCount++;
                     int vertexOffset = allVerts.Count / 3;
 
                     for (int i = 0; i < triangulation.NumTriangles; i++)
@@ -529,9 +598,19 @@ namespace RevitDjangoConnector
 
                             allFaces.Add(vertexOffset + i * 3 + j);
                         }
+                        triangleCount++;
                     }
                 }
-                catch { /* 실패 시 건너뛰기 */ }
+                catch (Exception ex)
+                {
+                    // Face triangulation 실패 시 로깅 후 계속 진행
+                    System.Diagnostics.Debug.WriteLine($"[Geometry] Face triangulation failed: {ex.Message}");
+                }
+            }
+
+            if (faceCount > 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Geometry] ProcessSolid: Processed {faceCount} faces, {triangleCount} triangles");
             }
         }
 
