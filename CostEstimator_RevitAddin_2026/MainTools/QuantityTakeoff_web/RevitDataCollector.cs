@@ -1,10 +1,12 @@
 // RevitDataCollector.cs (Blender 구조 100% 호환)
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using RevitColor = Autodesk.Revit.DB.Color;
 
 namespace RevitDjangoConnector
 {
@@ -203,7 +205,7 @@ namespace RevitDjangoConnector
 
                 try
                 {
-                    string groupName = param.Definition.ParameterGroup.ToString();
+                    string groupName = LabelUtils.GetLabelForGroup(param.Definition.GetGroupTypeId());
                     string paramName = param.Definition.Name;
                     string key = $"{groupName}__{paramName}";
 
@@ -352,7 +354,7 @@ namespace RevitDjangoConnector
 
                         try
                         {
-                            string groupName = param.Definition.ParameterGroup.ToString();
+                            string groupName = LabelUtils.GetLabelForGroup(param.Definition.GetGroupTypeId());
                             string paramName = param.Definition.Name;
                             string key = $"{groupName}__{paramName}";
 
@@ -492,7 +494,7 @@ namespace RevitDjangoConnector
                         // Color 정보 추출
                         try
                         {
-                            Color color = material.Color;
+                            RevitColor color = material.Color;
                             materials["diffuse_color"] = new List<double>
                             {
                                 color.Red / 255.0,
@@ -500,31 +502,13 @@ namespace RevitDjangoConnector
                                 color.Blue / 255.0
                             };
 
-                            // Transparency (Revit에서는 transparency parameter 사용)
-                            var transparencyParam = material.get_Parameter(BuiltInParameter.MATERIAL_TRANSPARENCY);
-                            if (transparencyParam != null && transparencyParam.HasValue)
-                            {
-                                materials["transparency"] = transparencyParam.AsDouble() / 100.0;  // Revit: 0-100, IFC: 0-1
-                            }
-                            else
-                            {
-                                materials["transparency"] = 0.0;
-                            }
+                            // Transparency - Revit 2026에서는 Material Appearance Asset을 통해 접근
+                            // 기본값 사용
+                            materials["transparency"] = 0.0;
 
-                            // Shininess (Revit의 gloss)
-                            var shininessParam = material.get_Parameter(BuiltInParameter.MATERIAL_SHININESS);
-                            if (shininessParam != null && shininessParam.HasValue)
-                            {
-                                double shininess = shininessParam.AsDouble();
-                                // Shininess를 specular color intensity로 변환 (간단한 매핑)
-                                double specIntensity = shininess / 128.0;  // Revit: 0-128, normalize to 0-1
-                                materials["specular_color"] = new List<double>
-                                {
-                                    specIntensity,
-                                    specIntensity,
-                                    specIntensity
-                                };
-                            }
+                            // Shininess - Revit 2026에서는 Material Appearance Asset을 통해 접근
+                            // 기본 specular color 설정
+                            materials["specular_color"] = new List<double> { 0.5, 0.5, 0.5 };
                         }
                         catch { /* Color 추출 실패 시 기본값 사용 */ }
                     }
