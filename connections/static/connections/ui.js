@@ -96,7 +96,7 @@ function getInternalFieldName(displayField) {
     // ▼▼▼ [수정] BIM.Attributes.* 처리 추가 (2025-11-05) ▼▼▼
     // BIM.Attributes.IfcClass -> IfcClass
     if (displayField.startsWith('BIM.Attributes.')) {
-        return displayField.substring(15); // 'BIM.Attributes.' 제거
+        return displayField.substring(4); // 'BIM.' 제거 -> 'Attributes.Category'
     }
     // ▲▲▲ [수정] 여기까지 ▲▲▲
 
@@ -180,7 +180,17 @@ function getValueForItem(item, field) {
 
     if (internalField in item && internalField !== 'raw_data') return item[internalField] ?? '';
 
-    // ▼▼▼ [추가] 다단계 경로 처리 (Type.Attributes.*, Type.PropertySet.*, etc.) - 2025-11-06 ▼▼▼
+    // ▼▼▼ [수정] 평탄화된 키 검사를 중첩 경로 처리보다 먼저 수행 (2025-11-29) ▼▼▼
+    // 예: 'Attributes.Category'가 raw_data['Attributes.Category']로 직접 존재하는 경우
+    if (internalField in raw_data) {
+        if (field.includes('IfcClass') || field.includes('Attributes')) {
+            console.log('[getValueForItem] Found flattened key in raw_data:', internalField, '=', raw_data[internalField]);
+        }
+        return raw_data[internalField] ?? '';
+    }
+    // ▲▲▲ [수정] 여기까지 ▲▲▲
+
+    // ▼▼▼ [수정] 다단계 경로 처리 - 평탄화된 키가 없는 경우에만 중첩 경로로 접근 (2025-11-29) ▼▼▼
     // 경로가 점으로 구분된 경우 (e.g., "Type.Attributes.Name", "PropertySet.Pset_WallCommon__LoadBearing")
     if (internalField.includes('.')) {
         const parts = internalField.split('.');
@@ -213,14 +223,6 @@ function getValueForItem(item, field) {
     }
     if (raw_data.Parameters && internalField in raw_data.Parameters)
         return raw_data.Parameters[internalField] ?? '';
-    if (internalField in raw_data) {
-        // ▼▼▼ [디버깅] raw_data에서 값 찾기 확인 (2025-11-05) ▼▼▼
-        if (field.includes('IfcClass') || field.includes('Attributes')) {
-            console.log('[getValueForItem] Found in raw_data:', internalField, '=', raw_data[internalField]);
-        }
-        // ▲▲▲ [디버깅] 여기까지 ▲▲▲
-        return raw_data[internalField] ?? '';
-    }
     return '';
 }
 

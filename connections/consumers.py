@@ -29,6 +29,10 @@ def flatten_bim_data(element_data):
     - BIM 도구에서 보낸 모든 중첩 구조를 재귀적으로 평탄화
     - 예: Attributes.Description, Parameters.Height, PropertySet.Pset_WallCommon__IsExternal
     """
+    # element_data가 None이거나 dict가 아닌 경우 빈 딕셔너리 반환
+    if element_data is None or not isinstance(element_data, dict):
+        return {}
+
     flattened = {}
 
     # 평탄화하지 않을 고정 필드들
@@ -38,6 +42,8 @@ def flatten_bim_data(element_data):
 
     def flatten_dict(data, prefix=""):
         """재귀적으로 딕셔너리를 평탄화"""
+        if data is None or not isinstance(data, dict):
+            return
         for key, value in data.items():
             new_key = f"{prefix}.{key}" if prefix else key
 
@@ -493,10 +499,15 @@ class RevitConsumer(AsyncWebsocketConsumer):
 
                 # ▼▼▼ [DEBUG] 생성된 객체의 materials 확인 ▼▼▼
                 for elem in created_objs[:1]:  # 첫 번째 객체만 확인
-                    if elem.raw_data and elem.raw_data.get("System"):  # raw_data가 None이 아니고 System이 있는지 확인
-                        mat = elem.raw_data.get("System", {}).get("Geometry", {}).get("materials")
-                        if mat:
-                            print(f"[DEBUG] DB saved element {elem.element_unique_id} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
+                    # raw_data가 None이 아니고 dict인지 확인
+                    if elem.raw_data and isinstance(elem.raw_data, dict):
+                        system_data = elem.raw_data.get("System")
+                        if system_data and isinstance(system_data, dict):
+                            geometry_data = system_data.get("Geometry")
+                            if geometry_data and isinstance(geometry_data, dict):
+                                mat = geometry_data.get("materials")
+                                if mat and isinstance(mat, dict):
+                                    print(f"[DEBUG] DB saved element {elem.element_unique_id} with materials: color={mat.get('diffuse_color')}, transparency={mat.get('transparency')}, style={mat.get('style_name')}, name={mat.get('name')}")
                 # ▲▲▲ [DEBUG] 끝 ▲▲▲
 
                 # Geometry volume 계산 및 업데이트
