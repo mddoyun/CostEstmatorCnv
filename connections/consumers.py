@@ -290,33 +290,33 @@ class RevitConsumer(AsyncWebsocketConsumer):
         path = self.scope['path']
         if 'revit-connector' in path:
             self.group_name = 'revit_broadcast_group'
-            print(f"✅ [{self.__class__.__name__}] Revit 클라이언트가 '{self.group_name}' 그룹에 참여합니다.") # 디버깅 추가
+            print(f"[OK] [{self.__class__.__name__}] Revit client joined '{self.group_name}' group")
         elif 'blender-connector' in path:
             self.group_name = 'blender_broadcast_group'
-            print(f"✅ [{self.__class__.__name__}] Blender 클라이언트가 '{self.group_name}' 그룹에 참여합니다.") # 디버깅 추가
+            print(f"[OK] [{self.__class__.__name__}] Blender client joined '{self.group_name}' group")
         else:
             self.group_name = None
-            print(f"⚠️ [{self.__class__.__name__}] 알 수 없는 경로로 클라이언트 연결 시도: {path}") # 디버깅 추가
+            print(f"[WARN] [{self.__class__.__name__}] Unknown path: {path}")
 
         if self.group_name:
-            # print(f"✅ [{self.__class__.__name__}] 클라이언트가 '{self.group_name}' 그룹에 참여합니다.") # 위에서 이미 출력
+            # print(f"[OK] [{self.__class__.__name__}] 클라이언트가 '{self.group_name}' 그룹에 참여합니다.") # 위에서 이미 출력
             await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name') and self.group_name:
-            print(f"❌ [{self.__class__.__name__}] 클라이언트가 '{self.group_name}' 그룹에서 나갑니다 (Code: {close_code}).") # 디버깅 추가
+            print(f"[DISCONN] [{self.__class__.__name__}] Client left '{self.group_name}' group (Code: {close_code})")
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
         msg_type = data.get('type')
         payload = data.get('payload', {})
-        print(f"\n✉️  [{self.__class__.__name__}] 클라이언트로부터 메시지 수신: type='{msg_type}'") # 기존 print 유지
+        print(f"\n[MSG] [{self.__class__.__name__}] Received from client: type='{msg_type}'")
 
         if msg_type == 'revit_selection_response':
             # 디버깅: 선택 응답 전달
-            print(f"  ➡️ [{self.__class__.__name__}] 수신한 선택 정보({len(payload)}개 ID)를 프론트엔드로 전달합니다.")
+            print(f"  -> [{self.__class__.__name__}] 수신한 선택 정보({len(payload)}개 ID)를 프론트엔드로 전달합니다.")
             await self.channel_layer.group_send(
                 FrontendConsumer.frontend_group_name,
                 {'type': 'broadcast_selection', 'unique_ids': payload}
@@ -333,7 +333,7 @@ class RevitConsumer(AsyncWebsocketConsumer):
 
             print(f"  - 전체 객체 수: {payload.get('total_elements')}") # 기존 print 유지
             # 디버깅: 진행 시작 브로드캐스트
-            print(f"  ➡️ [{self.__class__.__name__}] 데이터 가져오기 시작 정보를 프론트엔드로 전달합니다.")
+            print(f"  -> [{self.__class__.__name__}] 데이터 가져오기 시작 정보를 프론트엔드로 전달합니다.")
             await self.channel_layer.group_send(
                 FrontendConsumer.frontend_group_name,
                 {"type": "broadcast_progress", "data": data}
@@ -363,27 +363,27 @@ class RevitConsumer(AsyncWebsocketConsumer):
             print(f"  - 이번 청크의 UniqueId {len(chunk_uids)}개 추가. 현재까지 총 {len(self.all_incoming_uids)}개 수신.") # 기존 print 유지
 
             # 디버깅: 진행 업데이트 브로드캐스트
-            print(f"  ➡️ [{self.__class__.__name__}] 데이터 진행률 업데이트 정보를 프론트엔드로 전달합니다.")
+            print(f"  -> [{self.__class__.__name__}] 데이터 진행률 업데이트 정보를 프론트엔드로 전달합니다.")
             await self.channel_layer.group_send(
                 FrontendConsumer.frontend_group_name,
                 {"type": "broadcast_progress", "data": data}
             )
             if project_id and elements_data:
                 # 디버깅: DB 동기화 시작
-                print(f"  🔄 [{self.__class__.__name__}] 수신한 {len(elements_data)}개 객체에 대한 DB 동기화를 시작합니다 (Project: {project_id}).")
+                print(f"  [SYNC] [{self.__class__.__name__}] 수신한 {len(elements_data)}개 객체에 대한 DB 동기화를 시작합니다 (Project: {project_id}).")
                 await asyncio.shield(self.sync_chunk_of_elements(project_id, elements_data))
 
         elif msg_type == 'fetch_progress_complete':
             print("[DEBUG] 'fetch_progress_complete' 수신. 동기화를 마무리하고 삭제 작업을 시작합니다.") # 기존 print 유지
             if self.project_id_for_fetch:
                 # 디버깅: 삭제 작업 시작
-                print(f"  🗑️ [{self.__class__.__name__}] 오래된 객체 삭제 작업을 시작합니다 (Project: {self.project_id_for_fetch}).")
+                print(f"  [DEL] [{self.__class__.__name__}] 오래된 객체 삭제 작업을 시작합니다 (Project: {self.project_id_for_fetch}).")
                 await cleanup_old_elements(self.project_id_for_fetch, self.all_incoming_uids)
             else:
                 print("[WARNING] 'project_id_for_fetch'가 설정되지 않아 삭제 작업을 건너뜁니다.") # 기존 print 유지
 
             # 디버깅: 완료 브로드캐스트
-            print(f"  ➡️ [{self.__class__.__name__}] 데이터 가져오기 완료 정보를 프론트엔드로 전달합니다.")
+            print(f"  -> [{self.__class__.__name__}] 데이터 가져오기 완료 정보를 프론트엔드로 전달합니다.")
             await self.channel_layer.group_send(
                 FrontendConsumer.frontend_group_name,
                 {"type": "broadcast_progress", "data": data}
@@ -398,10 +398,10 @@ class RevitConsumer(AsyncWebsocketConsumer):
         if command_data.get('command') == 'fetch_all_elements_chunked':
             project_id = command_data.get('project_id')
             self.project_id_for_fetch = project_id
-            print(f"🚀 [{self.__class__.__name__}] 데이터 가져오기 세션 시작. Project ID '{project_id}'를 저장합니다.") # 기존 print 유지
+            print(f"[START] [{self.__class__.__name__}] 데이터 가져오기 세션 시작. Project ID '{project_id}'를 저장합니다.") # 기존 print 유지
         # ▲▲▲ [추가] 여기까지 입니다. ▲▲▲
 
-        print(f"➡️  [{self.__class__.__name__}] '{self.group_name}' 그룹의 클라이언트로 명령을 보냅니다: {command_data.get('command')}") # 기존 print 유지
+        print(f"->  [{self.__class__.__name__}] '{self.group_name}' 그룹의 클라이언트로 명령을 보냅니다: {command_data.get('command')}") # 기존 print 유지
         try: # 디버깅: send 실패 시 로그 추가
             await self.send(text_data=json.dumps(command_data))
         except Exception as e:
@@ -568,7 +568,7 @@ def cleanup_old_elements(project_id, incoming_uids):
 
             deleted_count, deleted_raw_details = project.raw_elements.filter(element_unique_id__in=to_delete_uids).delete()
             print(f"    - DB에서 {deleted_count}개의 오래된 RawElement 객체를 성공적으로 삭제했습니다. Details: {deleted_raw_details}") # 기존 print 유지 (상세 정보 추가)
-            print(f"    - ✅ CASCADE 효과로 인해 관련된 SplitElement, QuantityMember(분할), CostItem(분할)도 함께 삭제되었습니다.")
+            print(f"    - [OK] CASCADE 효과로 인해 관련된 SplitElement, QuantityMember(분할), CostItem(분할)도 함께 삭제되었습니다.")
         else:
             print("    - 삭제할 객체가 없습니다. 모든 데이터가 최신 상태입니다.") # 기존 print 유지
 
@@ -579,11 +579,11 @@ class FrontendConsumer(AsyncWebsocketConsumer):
     frontend_group_name = 'frontend_group'
     async def connect(self):
         # 디버깅: 프론트엔드 연결
-        print(f"✅ [{self.__class__.__name__}] 웹 브라우저 클라이언트가 '{self.frontend_group_name}' 그룹에 참여합니다.")
+        print(f"[OK] [{self.__class__.__name__}] Browser client joined '{self.frontend_group_name}' group")
         await self.channel_layer.group_add(self.frontend_group_name, self.channel_name); await self.accept()
     async def disconnect(self, close_code):
         # 디버깅: 프론트엔드 연결 해제
-        print(f"❌ [{self.__class__.__name__}] 웹 브라우저 클라이언트가 '{self.frontend_group_name}' 그룹에서 나갑니다 (Code: {close_code}).")
+        print(f"[DISCONN] [{self.__class__.__name__}] Browser client left '{self.frontend_group_name}' group (Code: {close_code})")
         await self.channel_layer.group_discard(self.frontend_group_name, self.channel_name)
 
 
@@ -591,7 +591,7 @@ class FrontendConsumer(AsyncWebsocketConsumer):
         data = json.loads(text_data)
         msg_type = data.get('type')
         payload = data.get('payload', {})
-        print(f"✉️ [{self.__class__.__name__}] 웹 브라우저로부터 메시지 수신: type='{msg_type}'") # 기존 print 유지
+        print(f"[MSG] [{self.__class__.__name__}] Received from browser: type='{msg_type}'") # 기존 print 유지
 
         # ▼▼▼ [추가] Frontend 로그를 파일에 저장 ▼▼▼
         if msg_type == 'frontend_log':
@@ -613,7 +613,7 @@ class FrontendConsumer(AsyncWebsocketConsumer):
 
         if msg_type == 'command_to_client':
             target_group = payload.pop('target_group', 'revit_broadcast_group')
-            print(f"   ➡️  '{target_group}' 그룹으로 명령을 전달합니다: {payload}") # 기존 print 유지
+            print(f"   ->  '{target_group}' 그룹으로 명령을 전달합니다: {payload}") # 기존 print 유지
             await self.channel_layer.group_send(target_group, {'type': 'send.command', 'command_data': payload})
 
         # ▼▼▼ [수정] get_all_elements 메시지 처리 부분에 print문 추가 ▼▼▼
@@ -677,7 +677,7 @@ class FrontendConsumer(AsyncWebsocketConsumer):
             # 생성 또는 수정 후에는 태그 목록만 업데이트하여 브로드캐스트합니다.
             tags = await self.db_get_tags(project_id)
             # 디버깅: 태그 목록 브로드캐스트
-            print(f"  ➡️ [{self.__class__.__name__}] 업데이트된 태그 목록을 모든 클라이언트로 브로드캐스트합니다.")
+            print(f"  -> [{self.__class__.__name__}] 업데이트된 태그 목록을 모든 클라이언트로 브로드캐스트합니다.")
             await self.channel_layer.group_send(self.frontend_group_name, {'type': 'broadcast_tags', 'tags': tags})
 
         elif msg_type == 'delete_tag':
@@ -694,13 +694,13 @@ class FrontendConsumer(AsyncWebsocketConsumer):
 
             # 2. 변경된 전체 태그 목록을 모든 클라이언트에 브로드캐스트합니다.
             tags = await self.db_get_tags(project_id)
-            print(f"  ➡️ [{self.__class__.__name__}] 업데이트된 태그 목록을 브로드캐스트합니다.")
+            print(f"  -> [{self.__class__.__name__}] 업데이트된 태그 목록을 브로드캐스트합니다.")
             await self.channel_layer.group_send(self.frontend_group_name, {'type': 'broadcast_tags', 'tags': tags})
 
             # 3. 만약 영향을 받은 element가 있었다면, 해당 element들의 최신 정보를 브로드캐스트합니다.
             if affected_ids:
                 elements = await serialize_specific_elements(affected_ids)
-                print(f"  ➡️ [{self.__class__.__name__}] 영향 받은 {len(elements)}개 객체의 업데이트 정보를 브로드캐스트합니다.")
+                print(f"  -> [{self.__class__.__name__}] 영향 받은 {len(elements)}개 객체의 업데이트 정보를 브로드캐스트합니다.")
                 await self.channel_layer.group_send(self.frontend_group_name, {'type': 'broadcast_elements', 'elements': elements})
         elif msg_type in ['assign_tags', 'clear_tags']:
             element_ids = payload.get('element_ids')
@@ -714,7 +714,7 @@ class FrontendConsumer(AsyncWebsocketConsumer):
                 await self.db_clear_tags(element_ids)
             elements = await serialize_specific_elements(element_ids)
             # 디버깅: 객체 업데이트 브로드캐스트
-            print(f"  ➡️ [{self.__class__.__name__}] 업데이트된 {len(elements)}개 객체 정보를 브로드캐스트합니다.")
+            print(f"  -> [{self.__class__.__name__}] 업데이트된 {len(elements)}개 객체 정보를 브로드캐스트합니다.")
             await self.channel_layer.group_send(self.frontend_group_name, {'type': 'broadcast_elements', 'elements': elements})
         # ▼▼▼ [추가] AI 학습 상태 폴링 요청 처리 ▼▼▼
         elif msg_type == 'get_training_status':
@@ -766,25 +766,25 @@ class FrontendConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_progress(self, event):
         # 디버깅: 진행률 브로드캐스트
-        print(f"  ➡️ [{self.__class__.__name__}] 데이터 가져오기 진행률 브로드캐스트: type='{event['data'].get('type')}'")
+        print(f"  -> [{self.__class__.__name__}] 데이터 가져오기 진행률 브로드캐스트: type='{event['data'].get('type')}'")
         await self.send(text_data=json.dumps(event['data']))
     async def broadcast_tags(self, event):
         # 디버깅: 태그 목록 브로드캐스트
-        print(f"  ➡️ [{self.__class__.__name__}] 태그 목록 업데이트 브로드캐스트 ({len(event['tags'])}개).")
+        print(f"  -> [{self.__class__.__name__}] 태그 목록 업데이트 브로드캐스트 ({len(event['tags'])}개).")
         await self.send(text_data=json.dumps({'type': 'tags_updated', 'tags': event['tags']}))
     async def broadcast_elements(self, event):
         # 디버깅: 객체 정보 브로드캐스트
-        print(f"  ➡️ [{self.__class__.__name__}] 객체 정보 업데이트 브로드캐스트 ({len(event['elements'])}개).")
+        print(f"  -> [{self.__class__.__name__}] 객체 정보 업데이트 브로드캐스트 ({len(event['elements'])}개).")
         await self.send(text_data=json.dumps({'type': 'elements_updated', 'elements': event['elements']}))
     async def broadcast_selection(self, event):
         # 디버깅: 선택 정보 브로드캐스트
-        print(f"  ➡️ [{self.__class__.__name__}] Revit/Blender 선택 정보 업데이트 브로드캐스트 ({len(event['unique_ids'])}개).")
+        print(f"  -> [{self.__class__.__name__}] Revit/Blender 선택 정보 업데이트 브로드캐스트 ({len(event['unique_ids'])}개).")
         await self.send(text_data=json.dumps({'type': 'revit_selection_update', 'unique_ids': event['unique_ids']}))
 
     # ▼▼▼ [추가] AI 학습 진행률 브로드캐스트 핸들러 ▼▼▼
     async def broadcast_training_progress(self, event):
         """views.py에서 호출되어 AI 학습 진행률을 특정 클라이언트 그룹에게 전송"""
-        print(f"  ➡️ [{self.__class__.__name__}] AI 학습 진행률 브로드캐스트 (Task ID: {event['task_id']}, Status: {event['progress']['status']}).")
+        print(f"  -> [{self.__class__.__name__}] AI 학습 진행률 브로드캐스트 (Task ID: {event['task_id']}, Status: {event['progress']['status']}).")
         await self.send(text_data=json.dumps({
             'type': 'training_progress_update', # 프론트엔드에서 받을 메시지 타입
             'project_id': event['project_id'],
@@ -795,7 +795,7 @@ class FrontendConsumer(AsyncWebsocketConsumer):
 
     async def send_tags_update(self, tags):
         # 디버깅: 특정 클라이언트에게 태그 목록 전송
-        print(f"  ➡️ [{self.__class__.__name__}] 현재 클라이언트에게 태그 목록 전송 ({len(tags)}개).")
+        print(f"  -> [{self.__class__.__name__}] 현재 클라이언트에게 태그 목록 전송 ({len(tags)}개).")
         await self.send(text_data=json.dumps({'type': 'tags_updated', 'tags': tags}))
 
     @database_sync_to_async

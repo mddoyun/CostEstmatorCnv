@@ -225,4 +225,9 @@ urlpatterns = [
     # 3D Viewer Filter
     path('api/filter/data/<uuid:project_id>/', views.get_filter_data, name='get_filter_data'),
     path('api/filter/apply/<uuid:project_id>/', views.apply_filter_to_viewer, name='apply_filter_to_viewer'),
+
+    # ▼▼▼ [NEW] AI Classification System API ▼▼▼
+    # Note: All routes temporarily disabled - functions not fully implemented
+    # Use api/v2/ai/training-data/<uuid:project_id>/ at line 222 for training data
+    # ▲▲▲ [NEW] AI Classification System API End ▲▲▲
 ]

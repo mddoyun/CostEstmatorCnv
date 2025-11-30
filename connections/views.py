@@ -451,27 +451,40 @@ def get_value_from_element(raw_data, parameter_name):
     if not raw_data or not parameter_name:
         return None
 
-    # 0. ▼▼▼ [추가] 전체 parameter_name을 하나의 키로 먼저 시도 (2025-11-05) ▼▼▼
-    # 예: "Qto_WallBaseQuantities__GrossSideArea" 자체가 키인 경우
+    # 0. ▼▼▼ [수정] 전체 parameter_name을 평탄화된 키로 먼저 시도 (2025-11-29) ▼▼▼
+    # raw_data의 키가 "Type.PropertySet.치수__b" 형태로 평탄화되어 있는 경우 먼저 처리
+    # 예: parameter_name="Type.PropertySet.치수__b" -> raw_data["Type.PropertySet.치수__b"]
     if parameter_name in raw_data:
         return raw_data[parameter_name]
-    if 'Parameters' in raw_data and parameter_name in raw_data['Parameters']:
-        return raw_data['Parameters'][parameter_name]
-    if 'TypeParameters' in raw_data and parameter_name in raw_data['TypeParameters']:
-        return raw_data['TypeParameters'][parameter_name]
+
+    # Parameters/TypeParameters 내부에서도 평탄화된 키 검색
+    if 'Parameters' in raw_data and isinstance(raw_data['Parameters'], dict):
+        if parameter_name in raw_data['Parameters']:
+            return raw_data['Parameters'][parameter_name]
+    if 'TypeParameters' in raw_data and isinstance(raw_data['TypeParameters'], dict):
+        if parameter_name in raw_data['TypeParameters']:
+            return raw_data['TypeParameters'][parameter_name]
 
     # 1. 점(.)을 기준으로 키를 분리합니다.
     parts = parameter_name.split('.')
 
-    # ▼▼▼ [추가] 점으로 분리한 후 전체 경로를 하나의 키로 시도 (2025-11-05) ▼▼▼
-    # 예: "QuantitySet.Qto_WallBaseQuantities__GrossSideArea"의 경우
-    # parts[0]="QuantitySet", parts[1]="Qto_WallBaseQuantities__GrossSideArea"
-    if len(parts) == 2:
-        first_key, second_key = parts[0], parts[1]
-        # raw_data[first_key][second_key] 형태로 시도
+    # ▼▼▼ [수정] 중첩 구조 처리 전에 부분 평탄화된 키도 시도 (2025-11-29) ▼▼▼
+    # 예: parts = ['Type', 'PropertySet', '치수__b']
+    # 시도 1: raw_data['Type.PropertySet.치수__b'] (이미 위에서 시도함)
+    # 시도 2: raw_data['Type']['PropertySet.치수__b'] (부분 평탄화)
+    # 시도 3: raw_data['Type']['PropertySet']['치수__b'] (완전 중첩)
+    if len(parts) >= 2:
+        first_key = parts[0]
+        rest_path = '.'.join(parts[1:])
+
+        # 시도 2: 첫 번째 키가 객체이고, 나머지가 평탄화된 키인 경우
         if first_key in raw_data and isinstance(raw_data[first_key], dict):
-            if second_key in raw_data[first_key]:
-                return raw_data[first_key][second_key]
+            if rest_path in raw_data[first_key]:
+                return raw_data[first_key][rest_path]
+            # 시도 3: 재귀적으로 중첩 경로 탐색
+            nested_value = get_value_from_element(raw_data[first_key], rest_path)
+            if nested_value is not None:
+                return nested_value
 
     # 2. 검색을 시작할 초기 객체를 설정합니다.
     # 만약 첫 번째 키가 'Parameters'나 'TypeParameters'가 아니라면,
