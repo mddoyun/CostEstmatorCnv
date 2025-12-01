@@ -3,7 +3,7 @@
 ; Server is installed in the Revit Addin folder for integrated execution
 
 #define MyAppName "CostEstimator"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.4.3"
 #define MyAppPublisher "AiBimCost"
 #define RevitAddinPath "{userappdata}\Autodesk\Revit\Addins\2026\CostEstimator"
 ; Build output path (uses AppData because csproj sets BaseOutputPath there)

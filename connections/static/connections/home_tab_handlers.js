@@ -294,6 +294,10 @@ async function handleHomeCreateProject() {
  * 홈 탭의 "프로젝트 삭제" 버튼 핸들러
  */
 async function handleHomeDeleteProject() {
+    console.log('[HomeTab] handleHomeDeleteProject called');
+    console.log('[HomeTab] currentProjectId:', currentProjectId);
+    console.log('[HomeTab] csrftoken available:', typeof csrftoken !== 'undefined' ? 'Yes' : 'No');
+    console.log('[HomeTab] getCSRFToken available:', typeof getCSRFToken !== 'undefined' ? 'Yes' : 'No');
 
     if (!currentProjectId) {
         showToast('삭제할 프로젝트를 먼저 선택하세요.', 'error');
@@ -309,15 +313,22 @@ async function handleHomeDeleteProject() {
     }
 
     try {
+        // CSRF 토큰 가져오기 (getCSRFToken 함수 우선 사용, 없으면 전역 csrftoken 사용)
+        const token = typeof getCSRFToken === 'function' ? getCSRFToken() : csrftoken;
+        console.log('[HomeTab] Using CSRF token:', token ? token.substring(0, 10) + '...' : 'null');
+        console.log('[HomeTab] Sending DELETE request to:', `/connections/delete-project/${currentProjectId}/`);
+
         const response = await fetch(`/connections/delete-project/${currentProjectId}/`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': csrftoken,
+                'X-CSRFToken': token,
             },
         });
 
+        console.log('[HomeTab] Response status:', response.status);
         const result = await response.json();
+        console.log('[HomeTab] Response result:', result);
 
         if (!response.ok) {
             throw new Error(result.message || '프로젝트 삭제에 실패했습니다.');
@@ -342,6 +353,7 @@ async function handleHomeDeleteProject() {
         }, 100);
 
     } catch (error) {
+        console.error('[HomeTab] Delete project error:', error);
         showToast(`프로젝트 삭제 실패: ${error.message}`, 'error');
     }
 }
@@ -498,6 +510,7 @@ async function handleHomeRenameProject() {
  * 홈 탭 이벤트 리스너 설정
  */
 function setupHomeTabListeners() {
+    console.log('[HomeTab] setupHomeTabListeners called');
 
     // 프로젝트 관리 버튼들
     const createBtn = document.getElementById('home-create-project-btn');
@@ -507,6 +520,7 @@ function setupHomeTabListeners() {
     const deleteBtn = document.getElementById('home-delete-project-btn');
     const nameInput = document.getElementById('home-new-project-name');
 
+    console.log('[HomeTab] Found buttons - create:', !!createBtn, 'import:', !!importBtn, 'export:', !!exportBtn, 'rename:', !!renameBtn, 'delete:', !!deleteBtn);
 
     if (createBtn) {
         createBtn.addEventListener('click', handleHomeCreateProject);
@@ -530,6 +544,7 @@ function setupHomeTabListeners() {
     }
     if (deleteBtn) {
         deleteBtn.addEventListener('click', handleHomeDeleteProject);
+        console.log('[HomeTab] Delete button event listener attached');
     }
 
     // 빠른 작업 카드

@@ -66,10 +66,10 @@ class CostCode(models.Model):
     secondary_detail_code = models.CharField(max_length=100, blank=True, null=True, verbose_name="2차내역코드")
     # ▲▲▲ [추가] 여기까지 ▲▲▲
     created_at = models.DateTimeField(auto_now_add=True)
-    # ▼▼▼ [수정] ai_sd_enabled 필드 verbose_name 추가 ▼▼▼
-    ai_sd_enabled = models.BooleanField(default=False, verbose_name="개산견적(SD) 사용")       # AI개략견적활용여부
+    # ▼▼▼ [수정] 기본값을 True로 변경 - 새 공사코드는 기본적으로 SD/DD 활성화 (2025-12-01) ▼▼▼
+    ai_sd_enabled = models.BooleanField(default=True, verbose_name="개산견적(SD) 사용")       # AI개략견적활용여부
+    dd_enabled    = models.BooleanField(default=True, verbose_name="상세견적(DD) 사용")       # 상세견적활용여부
     # ▲▲▲ [수정] 여기까지 ▲▲▲
-    dd_enabled    = models.BooleanField(default=False, verbose_name="상세견적(DD) 사용")       # 상세견적활용여부
     class Meta:
         unique_together = ('project', 'code')
         ordering = ['code']
@@ -1707,3 +1707,187 @@ class AISynonymDictionary(models.Model):
 
     def __str__(self):
         return f"{self.canonical_word} → {', '.join(self.synonyms[:3])}"
+
+
+# -----------------------------------------------------------------------------
+# AI 기반 자동 분류 시스템
+# -----------------------------------------------------------------------------
+class AIClassificationTrainingData(models.Model):
+    """AI 모델 학습을 위한 레이블링된 데이터"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_classification_training_data')
+
+    # 학습 데이터 소스
+    raw_element = models.ForeignKey(RawElement, on_delete=models.CASCADE, related_name='ai_training_records')
+
+    # BIM 속성 스냅샷 (학습 입력 피처)
+    bim_properties = models.JSONField(
+        default=dict,
+        help_text="BIM 속성 스냅샷: {Category, Family, Type, Level, Parameters, etc.}"
+    )
+
+    # 레이블 (학습 타겟)
+    assigned_tags = models.ManyToManyField(
+        QuantityClassificationTag,
+        related_name='training_samples',
+        help_text="할당된 수량산출 분류 태그들 (다중 레이블 가능)"
+    )
+
+    # 메타데이터
+    data_source = models.CharField(
+        max_length=50,
+        choices=[
+            ('manual', '사용자 수동 할당'),
+            ('ruleset', '룰셋 적용 결과'),
+            ('ai_corrected', 'AI 예측 후 사용자 수정'),
+        ],
+        default='manual',
+        help_text="데이터 출처"
+    )
+
+    is_validated = models.BooleanField(
+        default=False,
+        help_text="사용자가 검증한 고품질 데이터인지 여부"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['project', 'is_validated']),
+            models.Index(fields=['project', 'data_source']),
+        ]
+
+    def __str__(self):
+        return f"Training Data: {self.raw_element.unique_id[:8]} ({self.get_data_source_display()})"
+
+
+class AIClassificationModel(models.Model):
+    """학습된 AI 분류 모델 메타데이터 및 바이너리"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_classification_models')
+
+    # 모델 기본 정보
+    name = models.CharField(max_length=255, help_text="모델 이름 (예: v1.0-catboost)")
+    description = models.TextField(blank=True, null=True, help_text="모델 설명")
+    version = models.CharField(max_length=50, default="1.0", help_text="모델 버전")
+
+    # 모델 파일 (pickle로 직렬화된 CatBoost 모델)
+    model_binary = models.BinaryField(help_text="직렬화된 모델 바이너리 (pickle)")
+
+    # 피처 엔지니어링 정보
+    feature_columns = models.JSONField(
+        default=list,
+        help_text="학습에 사용된 피처 컬럼 리스트"
+    )
+
+    label_encoder = models.BinaryField(
+        null=True, blank=True,
+        help_text="레이블 인코더 (MultiLabelBinarizer pickle)"
+    )
+
+    # 학습 메타데이터
+    training_samples_count = models.IntegerField(default=0, help_text="학습 샘플 수")
+    training_date = models.DateTimeField(auto_now_add=True)
+
+    hyperparameters = models.JSONField(
+        default=dict,
+        help_text="학습 하이퍼파라미터 (iterations, depth, learning_rate, etc.)"
+    )
+
+    # 성능 지표
+    performance_metrics = models.JSONField(
+        default=dict,
+        help_text="""성능 지표: {
+            'hamming_loss': float,
+            'f1_macro': float,
+            'f1_micro': float,
+            'precision_macro': float,
+            'recall_macro': float,
+            'subset_accuracy': float,
+            'per_label_metrics': {label: {f1, precision, recall}},
+            'confusion_matrices': {label: [[tp, fp], [fn, tn]]},
+            'feature_importance': {feature: importance}
+        }"""
+    )
+
+    # 상태 관리
+    is_active = models.BooleanField(
+        default=False,
+        help_text="현재 활성화된 모델인지 (프로젝트당 1개만 활성화)"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['project', 'is_active']),
+        ]
+
+    def __str__(self):
+        status = "활성" if self.is_active else "비활성"
+        return f"[{status}] {self.name} v{self.version}"
+
+
+class AIClassificationPrediction(models.Model):
+    """AI 모델의 예측 결과 (추적 및 피드백용)"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ai_predictions')
+
+    # 예측 대상
+    raw_element = models.ForeignKey(RawElement, on_delete=models.CASCADE, related_name='ai_predictions')
+
+    # 사용된 모델
+    model = models.ForeignKey(AIClassificationModel, on_delete=models.SET_NULL, null=True, related_name='predictions')
+
+    # 예측 결과
+    predicted_tags = models.ManyToManyField(
+        QuantityClassificationTag,
+        related_name='ai_predicted_samples'
+    )
+
+    prediction_scores = models.JSONField(
+        default=dict,
+        help_text="각 태그별 예측 신뢰도: {tag_id: confidence_score}"
+    )
+
+    # 사용자 피드백
+    user_confirmed = models.BooleanField(
+        default=False,
+        help_text="사용자가 예측 결과를 확인/승인했는지"
+    )
+
+    user_corrected_tags = models.ManyToManyField(
+        QuantityClassificationTag,
+        related_name='user_corrected_samples',
+        blank=True,
+        help_text="사용자가 수정한 최종 태그들"
+    )
+
+    feedback_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', '확인 대기'),
+            ('accepted', '승인됨'),
+            ('corrected', '수정됨'),
+            ('rejected', '거부됨'),
+        ],
+        default='pending'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['project', 'feedback_status']),
+            models.Index(fields=['project', 'user_confirmed']),
+        ]
+
+    def __str__(self):
+        return f"Prediction: {self.raw_element.unique_id[:8]} [{self.get_feedback_status_display()}]"

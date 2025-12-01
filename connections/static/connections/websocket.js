@@ -123,7 +123,59 @@ window.setupWebSocket = function() {
 
             case 'revit_data_chunk': {
                 // console.log("[WebSocket] Received data chunk."); // 너무 빈번하여 주석 처리
-                allRevitData.push(...data.payload);
+
+                // ▼▼▼ [수정] raw_data 평탄화: Attributes, PropertySet, Parameters 등을 최상위로 평탄화
+                const processedPayload = data.payload.map(item => {
+                    if (item.raw_data) {
+                        const rd = item.raw_data;
+
+                        // Attributes.* -> Attributes.Category, Attributes.Family 등
+                        if (rd.Attributes && typeof rd.Attributes === 'object') {
+                            for (const [key, value] of Object.entries(rd.Attributes)) {
+                                rd[`Attributes.${key}`] = value;
+                            }
+                        }
+
+                        // PropertySet.* 평탄화
+                        if (rd.PropertySet && typeof rd.PropertySet === 'object') {
+                            for (const [key, value] of Object.entries(rd.PropertySet)) {
+                                rd[`PropertySet.${key}`] = value;
+                            }
+                        }
+
+                        // Parameters.* 평탄화 (Revit 파라미터)
+                        if (rd.Parameters && typeof rd.Parameters === 'object') {
+                            for (const [key, value] of Object.entries(rd.Parameters)) {
+                                rd[`Parameters.${key}`] = value;
+                            }
+                        }
+
+                        // QuantitySet.* 평탄화 (수량 정보)
+                        if (rd.QuantitySet && typeof rd.QuantitySet === 'object') {
+                            for (const [key, value] of Object.entries(rd.QuantitySet)) {
+                                rd[`QuantitySet.${key}`] = value;
+                            }
+                        }
+
+                        // Type.Attributes.* 평탄화
+                        if (rd.Type && rd.Type.Attributes && typeof rd.Type.Attributes === 'object') {
+                            for (const [key, value] of Object.entries(rd.Type.Attributes)) {
+                                rd[`Type.Attributes.${key}`] = value;
+                            }
+                        }
+
+                        // Type.Parameters.* 평탄화 (타입 파라미터)
+                        if (rd.Type && rd.Type.Parameters && typeof rd.Type.Parameters === 'object') {
+                            for (const [key, value] of Object.entries(rd.Type.Parameters)) {
+                                rd[`Type.Parameters.${key}`] = value;
+                            }
+                        }
+                    }
+                    return item;
+                });
+
+                allRevitData.push(...processedPayload);
+                // ▲▲▲ [수정] 여기까지
                 const totalKnown = progressBar.dataset.totalKnown === '1';
                 const displayTotal = Number(
                     progressBar.dataset.displayTotal ?? progressBar.max

@@ -62,13 +62,12 @@ def main():
     print(f"[INFO] Database path set to: {db_path}")
 
     try:
-        # --- 4. Run database migration (only for new/invalid database) ---
-        if not db_is_valid:
-            print("\n--- Starting database migration (new/invalid database) ---")
-            execute_from_command_line([sys.argv[0], 'migrate'])
-            print("--- Database migration complete ---\n")
-        else:
-            print("[INFO] Valid database exists, skipping migration to preserve data")
+        # --- 4. Run database migration ---
+        # Django migrate는 이미 적용된 마이그레이션은 스킵하고 새로운 것만 적용합니다.
+        # 기존 데이터는 유지되면서 새 테이블/필드만 추가됩니다.
+        print("\n--- Checking and applying database migrations ---")
+        execute_from_command_line([sys.argv[0], 'migrate', '--verbosity', '1'])
+        print("--- Database migration check complete ---\n")
 
         # --- 5. Get port number from arguments (default: 8000) ---
         port = '8000'

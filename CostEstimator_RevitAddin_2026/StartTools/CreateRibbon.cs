@@ -64,12 +64,37 @@ namespace AiBimCost.StartTools
                     version);
 
                 // 1단계에서 선언한 멤버 변수에 실제 경로를 할당합니다.
-                // 루트 폴더의 DLL을 직접 참조 (Release/Debug 구분 불필요)
-                THISCLASSDLLPATH = Path.Combine(addinsFolder,
-                    "CostEstimator_RevitAddin_2026",
-                    "AiBimCost.dll");
+                // 여러 가능한 설치 경로를 확인합니다 (개발용 및 인스톨러용)
+                string[] possibleFolders = new string[]
+                {
+                    "CostEstimator",                              // 인스톨러 설치 경로
+                    "CostEstimator_RevitAddin_2026",              // 개발 빌드 경로
+                    Path.Combine("CostEstimator_RevitAddin_2026", "Release", "net8.0-windows"),  // Release 빌드
+                    Path.Combine("CostEstimator_RevitAddin_2026", "Debug", "net8.0-windows")     // Debug 빌드
+                };
 
-                ADDINFOLDERPATH = Path.Combine(addinsFolder, "CostEstimator_RevitAddin_2026");
+                ADDINFOLDERPATH = null;
+                THISCLASSDLLPATH = null;
+
+                foreach (var folder in possibleFolders)
+                {
+                    string testPath = Path.Combine(addinsFolder, folder);
+                    string testDllPath = Path.Combine(testPath, "AiBimCost.dll");
+                    if (File.Exists(testDllPath))
+                    {
+                        ADDINFOLDERPATH = testPath;
+                        THISCLASSDLLPATH = testDllPath;
+                        break;
+                    }
+                }
+
+                // 경로를 찾지 못한 경우 기본값 설정
+                if (ADDINFOLDERPATH == null)
+                {
+                    ADDINFOLDERPATH = Path.Combine(addinsFolder, "CostEstimator");
+                    THISCLASSDLLPATH = Path.Combine(ADDINFOLDERPATH, "AiBimCost.dll");
+                }
+
                 LOG_FILE_PATH = Path.Combine(ADDINFOLDERPATH, "debug.log");
 
                 // Initialize log file

@@ -65,7 +65,5 @@
       <Private>False</Private>
     </Reference>
   </ItemGroup>
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="&#xD;&#xA;COPY /Y &quot;$(ProjectDir)CostEstimaotr_RevitAddin_2026.addin&quot; &quot;$(AppData)\Autodesk\Revit\Addins\2026\&quot;&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;XCOPY /D /Y &quot;$(TargetDir)*.dll&quot; &quot;$(AppData)\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\&quot;&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;XCOPY /D /E /I /Y &quot;$(ProjectDir)Icons&quot; &quot;$(AppData)\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\Icons\&quot;&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;IF NOT EXIST &quot;$(AppData)\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\server&quot; MKDIR &quot;$(AppData)\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\server&quot;&#xD;&#xA;&#xD;&#xA;XCOPY /Y &quot;$(ProjectDir)server\CostEstimatorServer.exe&quot; &quot;$(AppData)\Autodesk\Revit\Addins\2026\CostEstimator_RevitAddin_2026\server\&quot;" />
-  </Target>
+  <!-- PostBuild 제거됨: 인스톨러를 통해 설치하므로 더 이상 필요 없음 -->
 </Project>

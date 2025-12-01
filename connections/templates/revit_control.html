@@ -49,6 +49,7 @@
                             />
                             Revit 모드</label
                         >
+                        <!-- ▼▼▼ [숨김] Blender 모드 비활성화 (2025-12-01) - 나중에 필요시 주석 해제 ▼▼▼
                         <label
                             ><input
                                 type="radio"
@@ -57,6 +58,7 @@
                             />
                             Blender 모드</label
                         >
+                        ▲▲▲ [숨김] 여기까지 ▲▲▲ -->
                     </div>
                 </div>
                 <div class="header-center">
@@ -2326,6 +2328,12 @@
                     <nav class="inner-tab-nav">
                         <button
                             class="inner-tab-button active"
+                            data-inner-tab="ai-classification-auto"
+                        >
+                            🤖 AI 자동 분류
+                        </button>
+                        <button
+                            class="inner-tab-button"
                             data-inner-tab="ai-model-list"
                         >
                             📊 모델 목록/업로드
@@ -2351,9 +2359,84 @@
                     </nav>
 
                     <div class="inner-tab-content-container">
+                        <!-- AI 자동 분류 탭 -->
+                        <div id="ai-classification-auto" class="inner-tab-content active">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: 100%;">
+
+                                <!-- 왼쪽: 학습 데이터 관리 -->
+                                <div style="display: flex; flex-direction: column; gap: 20px;">
+                                    <!-- 학습 데이터 통계 -->
+                                    <div class="panel-box">
+                                        <div class="panel-header">
+                                            <h3>📊 학습 데이터 통계</h3>
+                                            <button id="refresh-training-stats-btn" class="secondary-button">🔄 새로고침</button>
+                                        </div>
+                                        <div id="aiTrainingStatsContainer" class="panel-content">
+                                            <p>프로젝트를 선택하면 학습 데이터 통계가 표시됩니다.</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- 모델 학습 -->
+                                    <div class="panel-box">
+                                        <div class="panel-header">
+                                            <h3>🎓 모델 학습</h3>
+                                        </div>
+                                        <div class="panel-content">
+                                            <div style="display: flex; flex-direction: column; gap: 15px;">
+                                                <div>
+                                                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">모델 이름:</label>
+                                                    <input type="text" id="ai-classification-model-name" placeholder="예: v1.0" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                                </div>
+                                                <div>
+                                                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">설명:</label>
+                                                    <textarea id="ai-classification-model-description" placeholder="모델에 대한 설명..." rows="3" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+                                                </div>
+                                                <div>
+                                                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">하이퍼파라미터:</label>
+                                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                                        <div>
+                                                            <label style="font-size: 12px;">Iterations:</label>
+                                                            <input type="number" id="ai-classification-iterations" value="500" min="100" max="2000" style="width: 100%; padding: 5px;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="font-size: 12px;">Depth:</label>
+                                                            <input type="number" id="ai-classification-depth" value="6" min="2" max="16" style="width: 100%; padding: 5px;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="font-size: 12px;">Learning Rate:</label>
+                                                            <input type="number" id="ai-classification-learning-rate" value="0.1" min="0.001" max="1" step="0.01" style="width: 100%; padding: 5px;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="font-size: 12px;">Test Size:</label>
+                                                            <input type="number" id="ai-classification-test-size" value="0.2" min="0.1" max="0.5" step="0.05" style="width: 100%; padding: 5px;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button id="start-ai-classification-training-btn" class="primary-button" style="width: 100%; padding: 12px; font-size: 16px; font-weight: bold;">🚀 학습 시작</button>
+                                                <div style="font-size: 12px; color: #666;">
+                                                    💡 Tip: 학습 전에 충분한 학습 데이터(최소 10개)가 필요합니다. 룰셋 적용 결과를 학습 데이터로 변환할 수 있습니다.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 오른쪽: 학습된 모델 목록 -->
+                                <div class="panel-box" style="height: 100%;">
+                                    <div class="panel-header">
+                                        <h3>🤖 학습된 모델 목록</h3>
+                                        <button id="refresh-classification-models-btn" class="secondary-button">🔄 새로고침</button>
+                                    </div>
+                                    <div id="aiModelsListContainer" class="panel-content" style="overflow-y: auto; max-height: calc(100vh - 300px);">
+                                        <p>프로젝트를 선택하면 모델 목록이 표시됩니다.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div
                             id="ai-model-list"
-                            class="inner-tab-content active"
+                            class="inner-tab-content"
                         >
                             <div class="ai-model-list-section panel-box">
                                 <div class="panel-header">
@@ -3586,8 +3669,10 @@
             console.log('[Layout] 3D viewer tab remains in right panel with all other content');
 
             // ▼▼▼ [MODIFIED] Assemble layout with chat panel ▼▼▼
-            splitWrapper.appendChild(chatPanel);
-            splitWrapper.appendChild(chatSplitter);
+            // ▼▼▼ [숨김] AI Assistant 채팅 패널 비활성화 (2025-12-01) - 나중에 필요시 주석 해제 ▼▼▼
+            // splitWrapper.appendChild(chatPanel);
+            // splitWrapper.appendChild(chatSplitter);
+            // ▲▲▲ [숨김] AI Assistant 채팅 패널 숨김 완료 ▲▲▲
             splitWrapper.appendChild(middlePanel);
             splitWrapper.appendChild(splitter);
             splitWrapper.appendChild(rightPanel);
@@ -3907,6 +3992,34 @@
             }, 100);
         </script>
         <script src="{% static 'connections/app.js' %}"></script>
+
+        <!-- AI Classification Modals -->
+        <div id="aiTrainingProgressModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 500px;">
+                <h3 style="margin-top: 0;">🎓 모델 학습 중...</h3>
+                <div class="progress-container" style="margin: 20px 0;">
+                    <div class="progress-bar-bg" style="width: 100%; height: 30px; background: #e0e0e0; border-radius: 15px; overflow: hidden;">
+                        <div id="aiTrainingProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); transition: width 0.3s;"></div>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px;">
+                        <span id="aiTrainingProgressText" style="font-size: 24px; font-weight: bold;">0%</span>
+                    </div>
+                </div>
+                <div id="aiTrainingProgressMessage" style="text-align: center; color: #666; min-height: 40px;">
+                    학습을 준비하고 있습니다...
+                </div>
+            </div>
+        </div>
+
+        <div id="aiModelDetailsModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 1000px; max-height: 80vh; overflow-y: auto;">
+                <span class="close-button" onclick="document.getElementById('aiModelDetailsModal').style.display='none'">&times;</span>
+                <div id="aiModelDetailsContent">
+                    <!-- Content will be populated by JS -->
+                </div>
+            </div>
+        </div>
+
         <!-- Chart.js 라이브러리 (소스맵 에러 방지를 위해 동적 로드) -->
         <script>
             // 소스맵 에러를 방지하기 위한 Chart.js 동적 로드

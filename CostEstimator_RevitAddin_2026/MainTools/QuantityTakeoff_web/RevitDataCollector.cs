@@ -228,49 +228,64 @@ namespace RevitDjangoConnector
 
             // Revit의 계산된 수량 정보 추출
             // 형식: "Qto_ElementBaseQuantities__QuantityName" (Blender와 동일)
+            // 모든 값은 프로젝트 단위로 변환됩니다.
 
             // 면적, 체적, 길이 등 기본 수량 정보
             try
             {
+                Units units = doc.GetUnits();
+
                 // 체적 (Volume)
                 var volumeParam = element.get_Parameter(BuiltInParameter.HOST_VOLUME_COMPUTED);
                 if (volumeParam != null && volumeParam.HasValue)
                 {
-                    quantitySets["Qto_ElementBaseQuantities__GrossVolume"] = volumeParam.AsDouble();
+                    quantitySets["Qto_ElementBaseQuantities__GrossVolume"] = ConvertToProjectUnits(volumeParam);
                 }
 
                 // 면적 (Area)
                 var areaParam = element.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
                 if (areaParam != null && areaParam.HasValue)
                 {
-                    quantitySets["Qto_ElementBaseQuantities__GrossArea"] = areaParam.AsDouble();
+                    quantitySets["Qto_ElementBaseQuantities__GrossArea"] = ConvertToProjectUnits(areaParam);
                 }
 
                 // 길이 (Length)
                 var lengthParam = element.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH);
                 if (lengthParam != null && lengthParam.HasValue)
                 {
-                    quantitySets["Qto_ElementBaseQuantities__Length"] = lengthParam.AsDouble();
+                    quantitySets["Qto_ElementBaseQuantities__Length"] = ConvertToProjectUnits(lengthParam);
                 }
 
                 // Wall specific quantities
                 if (element is Wall wall)
                 {
-                    quantitySets["Qto_WallBaseQuantities__GrossVolume"] = volumeParam?.AsDouble() ?? 0.0;
-                    quantitySets["Qto_WallBaseQuantities__GrossSideArea"] = areaParam?.AsDouble() ?? 0.0;
-                    quantitySets["Qto_WallBaseQuantities__Length"] = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH)?.AsDouble() ?? 0.0;
-                    quantitySets["Qto_WallBaseQuantities__Height"] = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM)?.AsDouble() ?? 0.0;
-                    quantitySets["Qto_WallBaseQuantities__Width"] = wall.WallType.Width;
+                    quantitySets["Qto_WallBaseQuantities__GrossVolume"] = ConvertToProjectUnits(volumeParam);
+                    quantitySets["Qto_WallBaseQuantities__GrossSideArea"] = ConvertToProjectUnits(areaParam);
+
+                    var wallLengthParam = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH);
+                    var wallHeightParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
+
+                    quantitySets["Qto_WallBaseQuantities__Length"] = ConvertToProjectUnits(wallLengthParam);
+                    quantitySets["Qto_WallBaseQuantities__Height"] = ConvertToProjectUnits(wallHeightParam);
+
+                    // 벽 두께: 프로젝트 단위로 변환 (길이 단위)
+                    double widthInternal = wall.WallType.Width;
+                    FormatOptions lengthFormat = units.GetFormatOptions(SpecTypeId.Length);
+                    double widthConverted = UnitUtils.ConvertFromInternalUnits(widthInternal, lengthFormat.GetUnitTypeId());
+                    quantitySets["Qto_WallBaseQuantities__Width"] = Math.Round(widthConverted, 6);
                 }
 
                 // Floor specific quantities
                 if (element is Floor floor)
                 {
-                    quantitySets["Qto_SlabBaseQuantities__GrossVolume"] = volumeParam?.AsDouble() ?? 0.0;
-                    quantitySets["Qto_SlabBaseQuantities__GrossArea"] = areaParam?.AsDouble() ?? 0.0;
+                    quantitySets["Qto_SlabBaseQuantities__GrossVolume"] = ConvertToProjectUnits(volumeParam);
+                    quantitySets["Qto_SlabBaseQuantities__GrossArea"] = ConvertToProjectUnits(areaParam);
                 }
             }
-            catch { /* 실패 시 건너뛰기 */ }
+            catch (Exception ex)
+            {
+                FileLogger.LogWarning($"ExtractQuantitySets failed for element {element.Id}: {ex.Message}");
+            }
 
             return quantitySets;
         }
@@ -692,6 +707,11 @@ namespace RevitDjangoConnector
         }
 
         // ▼▼▼ Helper Methods ▼▼▼
+
+        /// <summary>
+        /// 파라미터 값을 프로젝트 단위로 변환하여 반환합니다.
+        /// Revit 내부 단위(피트, 입방피트 등)를 프로젝트 설정 단위(mm, m³ 등)로 변환합니다.
+        /// </summary>
         private static object GetParameterValue(Parameter param)
         {
             if (param == null || !param.HasValue) return null;
@@ -703,12 +723,66 @@ namespace RevitDjangoConnector
                 case StorageType.Integer:
                     return param.AsInteger();
                 case StorageType.Double:
-                    return param.AsDouble();
+                    // 단위가 있는 파라미터인 경우 프로젝트 단위로 변환
+                    return ConvertToProjectUnits(param);
                 case StorageType.ElementId:
                     return param.AsValueString();  // ElementId를 문자열로 변환
                 default:
                     return param.AsValueString();  // 기본적으로 문자열 표현 사용
             }
+        }
+
+        /// <summary>
+        /// Double 값을 프로젝트 단위로 변환합니다.
+        /// Revit 2022+ API (ForgeTypeId 기반)를 사용합니다.
+        /// </summary>
+        private static object ConvertToProjectUnits(Parameter param)
+        {
+            if (param == null || !param.HasValue) return null;
+
+            double internalValue = param.AsDouble();
+
+            try
+            {
+                // 파라미터의 단위 타입 가져오기 (Revit 2022+ API)
+                ForgeTypeId specTypeId = param.Definition.GetDataType();
+
+                // 단위가 없는 파라미터 (무차원)인 경우 원본 값 반환
+                // SpecTypeId.Number는 무차원 숫자, YesNo는 Boolean 타입
+                if (specTypeId == null || specTypeId == SpecTypeId.Number || specTypeId == SpecTypeId.Boolean.YesNo)
+                {
+                    return internalValue;
+                }
+
+                // 프로젝트 단위 타입 가져오기
+                Document doc = param.Element?.Document;
+                if (doc == null)
+                {
+                    return internalValue;
+                }
+
+                // FormatOptions에서 프로젝트 단위 가져오기
+                Units units = doc.GetUnits();
+                FormatOptions formatOptions = units.GetFormatOptions(specTypeId);
+
+                if (formatOptions != null)
+                {
+                    ForgeTypeId unitTypeId = formatOptions.GetUnitTypeId();
+
+                    // 내부 단위 -> 프로젝트 단위 변환
+                    double convertedValue = UnitUtils.ConvertFromInternalUnits(internalValue, unitTypeId);
+
+                    // 소수점 정리 (불필요한 정밀도 제거)
+                    return Math.Round(convertedValue, 6);
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogWarning($"Unit conversion failed for parameter '{param.Definition.Name}': {ex.Message}");
+            }
+
+            // 변환 실패 시 원본 값 반환
+            return internalValue;
         }
 
         private static string GetParameterValueAsString(Element element, BuiltInParameter builtInParam)

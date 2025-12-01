@@ -1667,6 +1667,7 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
         if (!response.ok) throw new Error('수량산출룰셋을 불러오는데 실패했습니다.');
 
         const rules = await response.json();
+        console.log('[DEBUG][applyCostItemQuantityRules] Loaded rules:', JSON.stringify(rules, null, 2));
 
         if (!rules || rules.length === 0) {
             showToast('적용할 수량산출룰셋이 없습니다.', 'warning');
@@ -1692,19 +1693,27 @@ async function applyCostItemQuantityRules(selectedOnly = false) {
             const ciContext = buildCostItemContext(costItem);
 
             // 룰셋 순회하며 조건 체크
+            console.log(`[DEBUG] CostItem ${costItem.id} context:`, JSON.stringify(ciContext, null, 2));
             for (const rule of rules) {
                 // ▼▼▼ [추가] 대상 공사코드 체크 (2025-11-05) ▼▼▼
                 // target_cost_code_code가 지정되어 있으면 해당 공사코드에만 적용
                 if (rule.target_cost_code_code) {
+                    console.log(`[DEBUG] Checking rule "${rule.name}": target_cost_code="${rule.target_cost_code_code}", ciContext.cost_code="${ciContext['cost_code']}"`);
                     if (ciContext['cost_code'] !== rule.target_cost_code_code) {
+                        console.log(`[DEBUG] Skipping rule "${rule.name}": cost_code mismatch`);
                         continue; // 대상 공사코드가 다르면 스킵
                     }
                 }
                 // ▲▲▲ [추가] 여기까지 ▲▲▲
 
-                if (evaluateCiConditions(rule.conditions || [], ciContext)) {
+                const conditionResult = evaluateCiConditions(rule.conditions || [], ciContext);
+                console.log(`[DEBUG] Rule "${rule.name}" conditions:`, JSON.stringify(rule.conditions), '-> result:', conditionResult);
+                if (conditionResult) {
                     // ▼▼▼ [수정] 1차 수량 산식 평가 (2025-11-14) ▼▼▼
+                    console.log(`[DEBUG] Rule "${rule.name}" matched! Evaluating formula: "${rule.quantity_formula}"`);
+                    console.log(`[DEBUG] ciContext keys:`, Object.keys(ciContext).filter(k => k.startsWith('mm_prop_') || k.startsWith('qm_prop_')));
                     const quantity = evaluateQuantityFormula(rule.quantity_formula || '', ciContext);
+                    console.log(`[DEBUG] Calculated quantity:`, quantity);
 
                     // ▼▼▼ [추가] 2차 수량 산식 평가 (2025-11-14) ▼▼▼
                     const secondaryQuantity = evaluateQuantityFormula(rule.secondary_quantity_formula || '', ciContext);
@@ -1943,17 +1952,34 @@ function buildCostItemContext(costItem) {
             }
 
             // 4. MemberMark 속성 (상속)
-            if (qm.member_mark_id) {
-                const mm = window.loadedMemberMarks?.find(m => m.id === qm.member_mark_id);
+            console.log(`[DEBUG][buildCostItemContext] qm.member_mark_id = ${qm.member_mark_id}, qm.member_mark = ${qm.member_mark}`);
+            console.log(`[DEBUG][buildCostItemContext] window.loadedMemberMarks count = ${window.loadedMemberMarks?.length || 0}`);
+
+            // member_mark_id 또는 member_mark 둘 다 시도
+            const memberMarkId = qm.member_mark_id || qm.member_mark;
+            if (memberMarkId) {
+                const mm = window.loadedMemberMarks?.find(m => m.id === memberMarkId);
+                console.log(`[DEBUG][buildCostItemContext] Found MemberMark:`, mm);
                 if (mm) {
                     context['member_mark_mark'] = mm.mark;
 
                     if (mm.properties) {
+                        console.log(`[DEBUG][buildCostItemContext] MemberMark properties:`, mm.properties);
                         Object.keys(mm.properties).forEach(key => {
                             context[`mm_prop_${key}`] = mm.properties[key];
+                            console.log(`[DEBUG][buildCostItemContext] Added mm_prop_${key} = ${mm.properties[key]}`);
                         });
+                        // mm_prop_ 키가 추가되었는지 확인
+                        const mmKeys = Object.keys(context).filter(k => k.startsWith('mm_prop_'));
+                        console.log(`[DEBUG][buildCostItemContext] mm_prop_ keys in context:`, mmKeys);
+                    } else {
+                        console.log(`[DEBUG][buildCostItemContext] MemberMark has no properties`);
                     }
+                } else {
+                    console.log(`[DEBUG][buildCostItemContext] MemberMark not found in loadedMemberMarks`);
                 }
+            } else {
+                console.log(`[DEBUG][buildCostItemContext] No member_mark_id on QuantityMember`);
             }
 
             // 5. Space 속성 (상속)
@@ -1979,6 +2005,8 @@ function evaluateCiConditions(conditions, context) {
         let property = cond.property || cond.parameter;
         const operator = cond.operator || 'equals';
         const expectedValue = String(cond.value || '').toLowerCase();
+
+        console.log(`[DEBUG][evaluateCiConditions] Checking condition: property="${property}", operator="${operator}", expectedValue="${expectedValue}"`);
 
         // 표시 형식의 속성명을 내부 컨텍스트 키로 변환
         let contextKey = property;
@@ -2016,7 +2044,11 @@ function evaluateCiConditions(conditions, context) {
             contextKey = 'space_name';
         }
 
+        console.log(`[DEBUG][evaluateCiConditions] property="${property}" -> contextKey="${contextKey}", context[contextKey]="${context[contextKey]}"`);
+
         const actualValue = String(context[contextKey] || '').toLowerCase();
+
+        console.log(`[DEBUG][evaluateCiConditions] actualValue="${actualValue}" vs expectedValue="${expectedValue}"`);
 
         let matches = false;
 
@@ -2084,8 +2116,10 @@ function evaluateQuantityFormula(formula, context) {
             let propertyPath = match[1]; // property_name
 
             // 괄호와 설명 부분 제거 (예: "QM.volume (부재 체적)" -> "QM.volume")
-            if (propertyPath.includes('(')) {
-                propertyPath = propertyPath.split('(')[0].trim();
+            // 주의: 속성명에 포함된 괄호는 유지 (예: "MM.properties.폭(m)" -> "MM.properties.폭(m)")
+            // 설명은 " (" (공백+괄호) 패턴으로 시작함
+            if (propertyPath.includes(' (')) {
+                propertyPath = propertyPath.split(' (')[0].trim();
             }
 
             // 속성 경로에서 실제 컨텍스트 키 찾기
@@ -2124,6 +2158,8 @@ function evaluateQuantityFormula(formula, context) {
             }
 
 
+            console.log(`[DEBUG evaluateQuantityFormula] propertyPath: "${propertyPath}", contextKey: "${contextKey}", value:`, value);
+
             if (value !== undefined && value !== null) {
                 // 숫자로 변환 시도
                 const numValue = parseFloat(value);
@@ -2133,6 +2169,7 @@ function evaluateQuantityFormula(formula, context) {
                     evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
                 }
             } else {
+                console.warn(`[DEBUG evaluateQuantityFormula] Value NOT FOUND for key "${contextKey}"`);
                 evaluatedFormula = evaluatedFormula.replace(fullMatch, 0);
             }
         }

@@ -548,38 +548,52 @@ window.loadDataForActiveTab = function loadDataForActiveTab() {
             console.log(
                 `[DEBUG][loadDataForActiveTab] Loading DD dependencies (Items, Members, BIM, BOQ Fields, Unit Types).`
             ); // 디버깅
-            // BOQ 생성에 필요한 데이터 로드
-            loadCostItems(); // BOQ는 CostItem 기반
-            loadQuantityMembers(); // CostItem -> QM 참조
-            loadMemberMarks(); // CostItem -> QM -> MM 참조
-            loadUnitPriceTypes(); // 단가 기준 목록용 (loadedUnitPriceTypesForBoq 아님)
-            loadBoqGroupingFields(); // 그룹핑 필드 목록 로드
+            // ▼▼▼ [수정] 데이터 로딩 완료 후 BOQ 필드 로드 및 집계표 생성 (2025-12-01) ▼▼▼
+            // BOQ 생성에 필요한 데이터를 먼저 로드한 후, 그룹핑 필드 로드 및 집계표 생성
+            (async () => {
+                try {
+                    // 1. 필수 데이터 병렬 로드 (await으로 완료 대기)
+                    await Promise.all([
+                        loadCostItems(),      // BOQ는 CostItem 기반
+                        loadQuantityMembers(), // CostItem -> QM 참조
+                        loadMemberMarks(),     // CostItem -> QM -> MM 참조
+                        loadUnitPriceTypes()   // 단가 기준 목록용
+                    ]);
+                    console.log('[DEBUG][loadDataForActiveTab-DD] Core data loaded successfully.');
 
-            // BIM 데이터 확인 및 필요시 요청
-            if (
-                allRevitData.length === 0 &&
-                frontendSocket &&
-                frontendSocket.readyState === WebSocket.OPEN
-            ) {
-                console.log(
-                    "[DEBUG][loadDataForActiveTab] Requesting BIM data (all_elements) for DD tab as it's empty."
-                ); // 디버깅
-                frontendSocket.send(
-                    JSON.stringify({
-                        type: 'get_all_elements',
-                        payload: { project_id: currentProjectId },
-                    })
-                );
-            }
-            initializeBoqUI(); // DD 탭 UI 초기화 (토글 버튼, 상세 탭 등)
+                    // BIM 데이터 확인 및 필요시 요청
+                    if (
+                        allRevitData.length === 0 &&
+                        frontendSocket &&
+                        frontendSocket.readyState === WebSocket.OPEN
+                    ) {
+                        console.log(
+                            "[DEBUG][loadDataForActiveTab] Requesting BIM data (all_elements) for DD tab as it's empty."
+                        );
+                        frontendSocket.send(
+                            JSON.stringify({
+                                type: 'get_all_elements',
+                                payload: { project_id: currentProjectId },
+                            })
+                        );
+                    }
 
-            // 자동으로 집계표 생성 (데이터 로드 후 실행)
-            setTimeout(() => {
-                if (typeof window.generateBoqReport === 'function') {
-                    window.generateBoqReport();
-                } else {
+                    // 2. UI 초기화
+                    initializeBoqUI(); // DD 탭 UI 초기화 (토글 버튼, 상세 탭 등)
+
+                    // 3. 데이터 로드 완료 후 그룹핑 필드 로드
+                    await loadBoqGroupingFields();
+                    console.log('[DEBUG][loadDataForActiveTab-DD] BOQ grouping fields loaded.');
+
+                    // 4. 자동으로 집계표 생성
+                    if (typeof window.generateBoqReport === 'function') {
+                        window.generateBoqReport();
+                    }
+                } catch (error) {
+                    console.error('[ERROR][loadDataForActiveTab-DD] Failed to load DD tab data:', error);
                 }
-            }, 500); // 데이터 로드를 위한 짧은 지연
+            })();
+            // ▲▲▲ [수정] 여기까지 ▲▲▲
             break;
         case 'ai-model-manager': // 'AI 모델 관리' 탭 진입 시
             console.log(

@@ -1272,3 +1272,65 @@ function saveBoqColumnSettings() {
         window.initAoSplitBar();
     }
 })();
+
+// ==================== AI Classification Management 초기화 ====================
+import('./ai_classification_management.js').then(module => {
+    console.log('[AI Classification] Module loaded');
+
+    // 프로젝트 변경 시 AI Classification 초기화
+    const originalOnProjectChange = window.onProjectChange;
+    window.onProjectChange = function(projectId) {
+        if (originalOnProjectChange) {
+            originalOnProjectChange(projectId);
+        }
+
+        // AI Classification 초기화
+        if (projectId && window.aiClassificationManagement) {
+            window.aiClassificationManagement.initAIClassificationManagement(projectId);
+        }
+    };
+
+    // 이벤트 리스너 설정
+    document.getElementById('refresh-training-stats-btn')?.addEventListener('click', () => {
+        if (window.currentProjectId) {
+            window.aiClassificationManagement.loadTrainingDataStats(window.currentProjectId);
+        }
+    });
+
+    document.getElementById('start-ai-classification-training-btn')?.addEventListener('click', () => {
+        if (!window.currentProjectId) {
+            alert('프로젝트를 먼저 선택해주세요.');
+            return;
+        }
+
+        const modelName = document.getElementById('ai-classification-model-name').value.trim();
+        const description = document.getElementById('ai-classification-model-description').value.trim();
+
+        if (!modelName) {
+            alert('모델 이름을 입력해주세요.');
+            return;
+        }
+
+        const hyperparameters = {
+            iterations: parseInt(document.getElementById('ai-classification-iterations').value),
+            depth: parseInt(document.getElementById('ai-classification-depth').value),
+            learning_rate: parseFloat(document.getElementById('ai-classification-learning-rate').value),
+        };
+
+        window.aiClassificationManagement.startModelTraining(
+            window.currentProjectId,
+            modelName,
+            description,
+            hyperparameters
+        );
+    });
+
+    document.getElementById('refresh-classification-models-btn')?.addEventListener('click', () => {
+        if (window.currentProjectId) {
+            window.aiClassificationManagement.loadClassificationModels(window.currentProjectId);
+        }
+    });
+
+}).catch(error => {
+    console.error('[AI Classification] Failed to load module:', error);
+});

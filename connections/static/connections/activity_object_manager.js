@@ -9,6 +9,10 @@ window.loadedActivityObjects = [];
 let selectedAoIds = new Set();
 let aoGroupingLevels = [];
 let allAoFields = [];
+let isLoadingActivityObjects = false; // 중복 호출 방지 플래그
+let lastLoadActivityObjectsTime = 0; // 시간 기반 debounce
+const LOAD_ACTIVITY_OBJECTS_DEBOUNCE_MS = 2000; // 2초 debounce로 강화
+let aoLoadRequestId = 0; // 요청 ID (최신 요청만 처리)
 
 // =====================================================================
 // 이벤트 리스너 설정
@@ -143,20 +147,67 @@ function setupAoListeners() {
 // =====================================================================
 
 async function loadActivityObjects() {
+    // 중복 호출 방지 - 강화된 보호
+    if (isLoadingActivityObjects) {
+        console.log('[Activity Object Manager] Already loading activity objects, skipping...');
+        return;
+    }
+
+    // 시간 기반 debounce - 2초 이내에 다시 호출되면 스킵
+    const now = Date.now();
+    if (now - lastLoadActivityObjectsTime < LOAD_ACTIVITY_OBJECTS_DEBOUNCE_MS) {
+        console.log(`[Activity Object Manager] Debounce: skipping call within ${LOAD_ACTIVITY_OBJECTS_DEBOUNCE_MS}ms (waited ${now - lastLoadActivityObjectsTime}ms)`);
+        return;
+    }
+    lastLoadActivityObjectsTime = now;
+
     if (!currentProjectId) {
         renderActivityObjectsTable([]);
         return;
     }
+
+    // 이 요청의 고유 ID 할당
+    const thisRequestId = ++aoLoadRequestId;
+    console.log(`[Activity Object Manager] Starting request #${thisRequestId}`);
+
+    isLoadingActivityObjects = true;
     try {
         const response = await fetch(
             `/connections/api/activity-objects/${currentProjectId}/`
         );
-        if (!response.ok)
-            throw new Error('액티비티 객체 목록을 불러오는데 실패했습니다.');
+
+        // 요청이 완료되었을 때 더 새로운 요청이 시작되었다면 결과 무시
+        if (thisRequestId !== aoLoadRequestId) {
+            console.log(`[Activity Object Manager] Request #${thisRequestId} superseded by #${aoLoadRequestId}, ignoring result`);
+            return;
+        }
+
+        if (!response.ok) {
+            // 서버 에러 메시지 추출 시도
+            let errorMsg = '액티비티 객체 목록을 불러오는데 실패했습니다.';
+            try {
+                const errorData = await response.json();
+                if (errorData.message) {
+                    errorMsg = errorData.message;
+                }
+            } catch (parseError) {
+                // JSON 파싱 실패 시 기본 메시지 사용
+                errorMsg += ` (HTTP ${response.status})`;
+            }
+            console.error(`[Activity Object Manager] API Error: ${errorMsg}`);
+            throw new Error(errorMsg);
+        }
 
         const allObjects = await response.json();
+
+        // 요청 ID 재확인 (JSON 파싱 중에도 새 요청이 들어왔을 수 있음)
+        if (thisRequestId !== aoLoadRequestId) {
+            console.log(`[Activity Object Manager] Request #${thisRequestId} superseded after JSON parse, ignoring`);
+            return;
+        }
+
         window.loadedActivityObjects = allObjects.filter(ao => ao.is_active !== false);
-        console.log(`[Activity Object Manager] Loaded ${window.loadedActivityObjects.length} active ActivityObjects`);
+        console.log(`[Activity Object Manager] Request #${thisRequestId}: Loaded ${window.loadedActivityObjects.length} active ActivityObjects`);
 
         // 필드 선택 UI 업데이트 후 테이블 렌더링
         populateAoFieldSelection(window.loadedActivityObjects);
@@ -164,6 +215,8 @@ async function loadActivityObjects() {
     } catch (error) {
         console.error('Error loading activity objects:', error);
         showToast(error.message, 'error');
+    } finally {
+        isLoadingActivityObjects = false;
     }
 }
 
@@ -2236,8 +2289,10 @@ function evaluateQuantityFormula(formula, context) {
             let propertyPath = match[1]; // property_name
 
             // 괄호와 설명 부분 제거 (예: "QM.volume (부재 체적)" -> "QM.volume")
-            if (propertyPath.includes('(')) {
-                propertyPath = propertyPath.split('(')[0].trim();
+            // 주의: 속성명에 포함된 괄호는 유지 (예: "MM.properties.폭(m)" -> "MM.properties.폭(m)")
+            // 설명은 " (" (공백+괄호) 패턴으로 시작함
+            if (propertyPath.includes(' (')) {
+                propertyPath = propertyPath.split(' (')[0].trim();
             }
 
             // 속성 경로에서 실제 컨텍스트 키 찾기

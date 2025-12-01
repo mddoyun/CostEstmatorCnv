@@ -111,6 +111,7 @@ def get_all_projects(request):
     print("[ERROR][get_all_projects] Invalid request method")
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
 
+@csrf_exempt
 def delete_project(request, project_id):
     """
     프로젝트를 삭제하는 API
@@ -555,18 +556,18 @@ def get_internal_field_name(display_field):
     # ▲▲▲ [추가] 여기까지 ▲▲▲
 
     # ▼▼▼ [추가] QM.*, MM.*, SC.*, CI.*, CC.*, AO.*, AC.* 처리 (2025-11-05) ▼▼▼
-    # QM.System.* -> 수량산출부재 시스템 속성
-    if display_field.startswith('QM.System.'):
+    # QM.System.* -> 수량산출부재 시스템 속성 (대소문자 모두 지원)
+    if display_field.startswith('QM.System.') or display_field.startswith('QM.system.'):
         return display_field[10:]  # 'QM.System.' 제거
-    # QM.Properties.* -> 수량산출부재 사용자 정의 속성
-    if display_field.startswith('QM.Properties.'):
+    # QM.Properties.* -> 수량산출부재 사용자 정의 속성 (대소문자 모두 지원)
+    if display_field.startswith('QM.Properties.') or display_field.startswith('QM.properties.'):
         return display_field[14:]  # 'QM.Properties.' 제거
 
-    # MM.System.* -> 일람부호 시스템 속성
-    if display_field.startswith('MM.System.'):
+    # MM.System.* -> 일람부호 시스템 속성 (대소문자 모두 지원)
+    if display_field.startswith('MM.System.') or display_field.startswith('MM.system.'):
         return display_field[10:]  # 'MM.System.' 제거
-    # MM.Properties.* -> 일람부호 사용자 정의 속성
-    if display_field.startswith('MM.Properties.'):
+    # MM.Properties.* -> 일람부호 사용자 정의 속성 (대소문자 모두 지원)
+    if display_field.startswith('MM.Properties.') or display_field.startswith('MM.properties.'):
         return display_field[14:]  # 'MM.Properties.' 제거
 
     # SC.System.* -> 공간분류 시스템 속성
@@ -647,18 +648,21 @@ def evaluate_conditions(data_dict, conditions):
         # ▼▼▼ [핵심 수정] 계층적 명명 규칙 지원 ▼▼▼
         # 1. 계층적 표시명 (BIM.Attributes.*, etc.)을 내부 필드명으로 변환
         internal_field = get_internal_field_name(p)
+        print(f"[DEBUG][evaluate_conditions] property='{p}' -> internal_field='{internal_field}'", flush=True)
 
         actual_value = None
         # 2. 먼저 data_dict에서 원본 표시명 (p)으로 직접 키를 찾아봅니다
         if p in data_dict:
             actual_value = data_dict.get(p)
+            print(f"[DEBUG][evaluate_conditions] Found by original key '{p}': {actual_value}", flush=True)
         # 3. 원본 키가 없으면 변환된 내부 필드명으로 찾아봅니다
         elif internal_field in data_dict:
             actual_value = data_dict.get(internal_field)
+            print(f"[DEBUG][evaluate_conditions] Found by internal_field '{internal_field}': {actual_value}", flush=True)
         # ▼▼▼ [추가] MM.Properties.* -> [속성명] 매핑 지원 (2025-11-13) ▼▼▼
-        # MM.Properties.속성명 -> [속성명] 형태로 변환하여 찾기
-        elif p.startswith('MM.Properties.'):
-            prop_name = p[14:]  # 'MM.Properties.' 제거
+        # MM.Properties.속성명 -> [속성명] 형태로 변환하여 찾기 (대소문자 모두 지원)
+        elif p.startswith('MM.Properties.') or p.startswith('MM.properties.'):
+            prop_name = p[14:]  # 'MM.Properties.' 또는 'MM.properties.' 제거
             bracket_key = f'[{prop_name}]'  # [속성명] 형태로 변환
             actual_value = data_dict.get(bracket_key)
             print(f"[DEBUG][evaluate_conditions] MM.Properties.* mapping: '{p}' -> '{bracket_key}' = {actual_value}")
@@ -677,6 +681,7 @@ def evaluate_conditions(data_dict, conditions):
         # ▲▲▲ [핵심 수정] 여기까지 입니다. ▲▲▲
             
         actual_v_str = str(actual_value or "")
+        print(f"[DEBUG][evaluate_conditions] operator='{o}', expected='{v}', actual='{actual_v_str}'", flush=True)
 
         result = False # 결과 변수 초기화
         if o == 'equals': result = (actual_v_str == str(v))
@@ -828,8 +833,10 @@ def cost_codes_api(request, project_id, code_id=None):
         try:
             data = json.loads(request.body)
             project = Project.objects.get(id=project_id)
-            ai_sd = bool(data.get('ai_sd_enabled', False))
-            dd    = bool(data.get('dd_enabled', False))
+            # ▼▼▼ [수정] 기본값을 True로 변경 - 새 공사코드는 기본적으로 SD/DD 활성화 (2025-12-01) ▼▼▼
+            ai_sd = bool(data.get('ai_sd_enabled', True))
+            dd    = bool(data.get('dd_enabled', True))
+            # ▲▲▲ [수정] 여기까지 ▲▲▲
             print(f"[COSTCODE/POST] project={project_id} payload={data} "f"=> ai_sd_enabled={ai_sd}, dd_enabled={dd}")
             # 필수 필드 확인
             if not data.get('code') or not data.get('name'):
@@ -2196,14 +2203,14 @@ def evaluate_expression_for_cost_item(expression, quantity_member):
         for placeholder in set(member_placeholders):
             value = None
 
-            # ▼▼▼ [수정] QM.properties.*, MM.properties.* 형태 파싱 (2025-11-14) ▼▼▼
-            if placeholder.startswith('QM.properties.'):
+            # ▼▼▼ [수정] QM.properties.*, MM.properties.* 형태 파싱 (대소문자 모두 지원) (2025-11-14, 2025-12-01) ▼▼▼
+            if placeholder.startswith('QM.properties.') or placeholder.startswith('QM.Properties.'):
                 # {QM.properties.높이} → "높이" 추출
-                prop_key = placeholder.replace('QM.properties.', '')
+                prop_key = placeholder[14:]  # 'QM.properties.' 또는 'QM.Properties.' 제거
                 value = member_props.get(prop_key)
-            elif placeholder.startswith('MM.properties.'):
+            elif placeholder.startswith('MM.properties.') or placeholder.startswith('MM.Properties.'):
                 # {MM.properties.대근(상)간격} → "대근(상)간격" 추출
-                prop_key = placeholder.replace('MM.properties.', '')
+                prop_key = placeholder[14:]  # 'MM.properties.' 또는 'MM.Properties.' 제거
                 member_mark = quantity_member.member_mark
                 if member_mark and member_mark.properties:
                     value = member_mark.properties.get(prop_key)
@@ -3953,26 +3960,68 @@ def export_property_mapping_rules(request, project_id):
 
 @require_http_methods(["POST"])
 def import_property_mapping_rules(request, project_id):
-    project = Project.objects.get(id=project_id)
-    csv_file = request.FILES.get('csv_file')
-    if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+    import sys
+    print(f"[DEBUG][import_property_mapping_rules] ENTRY: project_id={project_id}", flush=True)
+    sys.stdout.flush()
     try:
-        PropertyMappingRule.objects.filter(project=project).delete()
-        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
-        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
-        # ▲▲▲ [수정] 여기까지 ▲▲▲
+        project = Project.objects.get(id=project_id)
+    except Project.DoesNotExist:
+        print(f"[DEBUG][import_property_mapping_rules] Project not found: {project_id}")
+        return JsonResponse({'status': 'error', 'message': f'프로젝트를 찾을 수 없습니다: {project_id}'}, status=400)
+
+    csv_file = request.FILES.get('csv_file')
+    print(f"[DEBUG][import_property_mapping_rules] csv_file={csv_file}")
+    if not csv_file:
+        print(f"[DEBUG][import_property_mapping_rules] No CSV file in request")
+        return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+
+    try:
+        # 기존 룰셋 삭제
+        deleted_count = PropertyMappingRule.objects.filter(project=project).delete()
+        print(f"[DEBUG][import_property_mapping_rules] Deleted {deleted_count} existing rules")
+
+        # CSV 파일 읽기
+        csv_content = csv_file.read().decode('utf-8-sig')
+        print(f"[DEBUG][import_property_mapping_rules] CSV content length: {len(csv_content)} bytes")
+        # Windows cp949 인코딩 문제 방지를 위해 ASCII-safe 출력
+        print(f"[DEBUG][import_property_mapping_rules] First 500 chars: {csv_content[:500].encode('ascii', 'replace').decode('ascii')}")
+
+        reader = csv.DictReader(csv_content.splitlines())
+        print(f"[DEBUG][import_property_mapping_rules] CSV fieldnames: {reader.fieldnames}")
+
+        created_count = 0
+        skipped_count = 0
         for row in reader:
             try:
-                target_tag = QuantityClassificationTag.objects.get(project=project, name=row.get('target_tag_name'))
+                target_tag_name = row.get('target_tag_name')
+                rule_name = row.get('name', '')
+                # Windows cp949 인코딩 문제 방지
+                print(f"[DEBUG][import_property_mapping_rules] Processing row: name={rule_name.encode('ascii', 'replace').decode('ascii')}, target_tag_name={target_tag_name.encode('ascii', 'replace').decode('ascii') if target_tag_name else 'None'}")
+                target_tag = QuantityClassificationTag.objects.get(project=project, name=target_tag_name)
                 PropertyMappingRule.objects.create(
-                    project=project, name=row.get('name'), description=row.get('description', ''),
+                    project=project, name=rule_name, description=row.get('description', ''),
                     priority=int(row.get('priority', 0)), target_tag=target_tag,
                     conditions=json.loads(row.get('conditions', '[]')),
                     mapping_script=json.loads(row.get('mapping_script', '{}'))
                 )
-            except QuantityClassificationTag.DoesNotExist: continue
-        return JsonResponse({'status': 'success', 'message': '속성 맵핑 룰셋을 성공적으로 가져왔습니다.'})
-    except Exception as e: return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
+                created_count += 1
+            except QuantityClassificationTag.DoesNotExist:
+                print(f"[DEBUG][import_property_mapping_rules] Tag not found: {target_tag_name.encode('ascii', 'replace').decode('ascii') if target_tag_name else 'None'}")
+                skipped_count += 1
+                continue
+            except Exception as row_error:
+                print(f"[DEBUG][import_property_mapping_rules] Row error: {str(row_error).encode('ascii', 'replace').decode('ascii')}")
+                skipped_count += 1
+                continue
+
+        message = f'속성 맵핑 룰셋을 성공적으로 가져왔습니다. (생성: {created_count}, 스킵: {skipped_count})'
+        print(f"[DEBUG][import_property_mapping_rules] Created: {created_count}, Skipped: {skipped_count}")
+        return JsonResponse({'status': 'success', 'message': message})
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG][import_property_mapping_rules] Exception: {str(e).encode('ascii', 'replace').decode('ascii')}")
+        print(f"[DEBUG][import_property_mapping_rules] Traceback: {traceback.format_exc().encode('ascii', 'replace').decode('ascii')}")
+        return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 # --- 3. CostCodeRule ---
 @require_http_methods(["GET"])
@@ -3997,26 +4046,100 @@ def export_cost_code_rules(request, project_id):
 
 @require_http_methods(["POST"])
 def import_cost_code_rules(request, project_id):
-    project = Project.objects.get(id=project_id)
-    csv_file = request.FILES.get('csv_file')
-    if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+    import sys
+    print(f"[DEBUG][import_cost_code_rules] ENTRY: project_id={project_id}", flush=True)
+    sys.stdout.flush()
     try:
-        CostCodeRule.objects.filter(project=project).delete()
-        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
-        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
-        # ▲▲▲ [수정] 여기까지 ▲▲▲
-        for row in reader:
+        project = Project.objects.get(id=project_id)
+    except Project.DoesNotExist:
+        print(f"[DEBUG][import_cost_code_rules] Project not found: {project_id}", flush=True)
+        return JsonResponse({'status': 'error', 'message': f'프로젝트를 찾을 수 없습니다: {project_id}'}, status=400)
+
+    csv_file = request.FILES.get('csv_file')
+    if not csv_file:
+        return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+
+    try:
+        deleted_count = CostCodeRule.objects.filter(project=project).delete()
+        print(f"[DEBUG][import_cost_code_rules] Deleted {deleted_count} existing rules", flush=True)
+
+        csv_content = csv_file.read().decode('utf-8-sig')
+        # 중복 BOM 제거 (여러 번 저장되면 BOM이 쌓일 수 있음)
+        while csv_content.startswith('\ufeff'):
+            csv_content = csv_content[1:]
+        # 각 행의 시작 BOM도 제거
+        lines = csv_content.splitlines()
+        cleaned_lines = [line.lstrip('\ufeff') for line in lines]
+        csv_content = '\n'.join(cleaned_lines)
+
+        print(f"[DEBUG][import_cost_code_rules] CSV content length: {len(csv_content)} bytes", flush=True)
+
+        # CSV 내용 첫 500자 출력
+        print(f"[DEBUG][import_cost_code_rules] CSV preview: {csv_content[:500].encode('ascii', 'replace').decode('ascii')}", flush=True)
+
+        reader = csv.DictReader(csv_content.splitlines())
+
+        created_count = 0
+        skipped_count = 0
+
+        # 디버깅: CSV 컬럼 확인
+        fieldnames = reader.fieldnames
+        print(f"[DEBUG][import_cost_code_rules] CSV fieldnames: {fieldnames}", flush=True)
+
+        # 프로젝트의 모든 CostCode 목록 가져오기
+        existing_cost_codes = list(CostCode.objects.filter(project=project).values_list('code', flat=True))
+        print(f"[DEBUG][import_cost_code_rules] Existing CostCodes count: {len(existing_cost_codes)}", flush=True)
+        if existing_cost_codes:
+            first_codes = [str(c).encode('ascii', 'replace').decode('ascii') for c in existing_cost_codes[:5]]
+            print(f"[DEBUG][import_cost_code_rules] First 5 CostCodes: {first_codes}", flush=True)
+
+        for row_num, row in enumerate(reader, start=1):
             try:
-                target_cost_code = CostCode.objects.get(project=project, code=row.get('target_cost_code_code'))
+                target_code = row.get('target_cost_code_code', '')
+                rule_name = row.get('name', '')
+
+                # ASCII-safe 로그 출력
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: name={rule_name.encode('ascii', 'replace').decode('ascii')}, target_code={target_code.encode('ascii', 'replace').decode('ascii')}", flush=True)
+
+                if not target_code:
+                    print(f"[DEBUG][import_cost_code_rules] Row {row_num}: SKIPPED - target_cost_code_code is empty", flush=True)
+                    skipped_count += 1
+                    continue
+
+                # CostCode 찾기 전에 정확한 쿼리 로깅
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: Looking for CostCode with code='{target_code}'", flush=True)
+
+                target_cost_code = CostCode.objects.get(project=project, code=target_code)
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: Found CostCode: {target_cost_code.id}", flush=True)
+
                 CostCodeRule.objects.create(
                     project=project, name=row.get('name'), description=row.get('description', ''),
                     priority=int(row.get('priority', 0)), target_cost_code=target_cost_code,
                     conditions=json.loads(row.get('conditions', '[]')),
                     quantity_mapping_script=json.loads(row.get('quantity_mapping_script', '{}'))
                 )
-            except CostCode.DoesNotExist: continue
-        return JsonResponse({'status': 'success', 'message': '공사코드 룰셋을 성공적으로 가져왔습니다.'})
-    except Exception as e: return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
+                created_count += 1
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: CREATED successfully", flush=True)
+            except CostCode.DoesNotExist:
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: SKIPPED - CostCode not found: '{target_code}'", flush=True)
+                skipped_count += 1
+                continue
+            except json.JSONDecodeError as json_err:
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: SKIPPED - JSON parse error: {str(json_err)}", flush=True)
+                skipped_count += 1
+                continue
+            except Exception as row_error:
+                print(f"[DEBUG][import_cost_code_rules] Row {row_num}: SKIPPED - Exception: {str(row_error).encode('ascii', 'replace').decode('ascii')}", flush=True)
+                skipped_count += 1
+                continue
+
+        print(f"[DEBUG][import_cost_code_rules] FINAL: Created: {created_count}, Skipped: {skipped_count}", flush=True)
+        return JsonResponse({'status': 'success', 'message': f'수량산출 룰셋을 성공적으로 가져왔습니다. (생성: {created_count}, 스킵: {skipped_count})'})
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG][import_cost_code_rules] Exception: {str(e).encode('ascii', 'replace').decode('ascii')}", flush=True)
+        print(f"[DEBUG][import_cost_code_rules] Traceback: {traceback.format_exc()}", flush=True)
+        return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 # --- 4. MemberMarkAssignmentRule ---
 @require_http_methods(["GET"])
@@ -4036,48 +4159,87 @@ def export_member_mark_assignment_rules(request, project_id):
 
 @require_http_methods(["POST"])
 def import_member_mark_assignment_rules(request, project_id):
-    project = Project.objects.get(id=project_id)
-    csv_file = request.FILES.get('csv_file')
-    if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+    print(f"[DEBUG][import_member_mark_assignment_rules] ENTRY: project_id={project_id}")
     try:
-        MemberMarkAssignmentRule.objects.filter(project=project).delete()
-        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
-        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
-        # ▲▲▲ [수정] 여기까지 ▲▲▲
+        project = Project.objects.get(id=project_id)
+    except Project.DoesNotExist:
+        print(f"[DEBUG][import_member_mark_assignment_rules] Project not found: {project_id}")
+        return JsonResponse({'status': 'error', 'message': f'프로젝트를 찾을 수 없습니다: {project_id}'}, status=400)
 
-        # ▼▼▼ [추가] 일람부호 자동 생성 (2025-11-05) ▼▼▼
+    csv_file = request.FILES.get('csv_file')
+    if not csv_file:
+        return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+
+    try:
+        deleted_count = MemberMarkAssignmentRule.objects.filter(project=project).delete()
+        print(f"[DEBUG][import_member_mark_assignment_rules] Deleted {deleted_count} existing rules")
+
+        csv_content = csv_file.read().decode('utf-8-sig')
+        # 중복 BOM 제거 (여러 번 저장되면 BOM이 쌓일 수 있음)
+        while csv_content.startswith('\ufeff'):
+            csv_content = csv_content[1:]
+        # 각 행의 시작 BOM도 제거
+        lines = csv_content.splitlines()
+        cleaned_lines = [line.lstrip('\ufeff') for line in lines]
+        csv_content = '\n'.join(cleaned_lines)
+
+        print(f"[DEBUG][import_member_mark_assignment_rules] CSV content length: {len(csv_content)} bytes", flush=True)
+        reader = csv.DictReader(csv_content.splitlines())
+
         created_marks = []
-        for row in reader:
-            mark_expression = row.get('mark_expression', '')
+        created_count = 0
+        skipped_count = 0
 
-            # mark_expression이 있고, 해당 일람부호가 프로젝트에 없으면 생성
-            if mark_expression:
-                existing_mark = MemberMark.objects.filter(project=project, mark=mark_expression).first()
-                if not existing_mark:
-                    # 새 일람부호 생성
-                    new_mark = MemberMark.objects.create(
-                        project=project,
-                        mark=mark_expression,
-                        properties={}
-                    )
-                    created_marks.append(mark_expression)
-                    print(f"[DEBUG] 일람부호 '{mark_expression}' 자동 생성됨")
+        # 디버깅: CSV 컬럼 확인
+        fieldnames = reader.fieldnames
+        print(f"[DEBUG][import_member_mark_assignment_rules] CSV fieldnames: {fieldnames}")
 
-            # 룰셋 생성
-            MemberMarkAssignmentRule.objects.create(
-                project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
-                conditions=json.loads(row.get('conditions', '[]')),
-                mark_expression=mark_expression
-            )
+        for row_num, row in enumerate(reader, start=1):
+            try:
+                mark_expression = row.get('mark_expression', '')
+                rule_name = row.get('name', '')
 
-        # 메시지 생성
-        message = '일람부호 할당 룰셋을 성공적으로 가져왔습니다.'
+                # ASCII-safe 로그 출력
+                print(f"[DEBUG][import_member_mark_assignment_rules] Row {row_num}: name={rule_name.encode('ascii', 'replace').decode('ascii')}, mark_expression={mark_expression.encode('ascii', 'replace').decode('ascii')}")
+
+                # mark_expression이 있고, 해당 일람부호가 프로젝트에 없으면 생성
+                if mark_expression:
+                    existing_mark = MemberMark.objects.filter(project=project, mark=mark_expression).first()
+                    if not existing_mark:
+                        MemberMark.objects.create(
+                            project=project,
+                            mark=mark_expression,
+                            properties={}
+                        )
+                        created_marks.append(mark_expression)
+                        print(f"[DEBUG][import_member_mark_assignment_rules] Row {row_num}: Created MemberMark: {mark_expression.encode('ascii', 'replace').decode('ascii')}")
+
+                MemberMarkAssignmentRule.objects.create(
+                    project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
+                    conditions=json.loads(row.get('conditions', '[]')),
+                    mark_expression=mark_expression
+                )
+                created_count += 1
+                print(f"[DEBUG][import_member_mark_assignment_rules] Row {row_num}: CREATED successfully")
+            except json.JSONDecodeError as json_err:
+                print(f"[DEBUG][import_member_mark_assignment_rules] Row {row_num}: SKIPPED - JSON parse error: {str(json_err)}")
+                skipped_count += 1
+                continue
+            except Exception as row_error:
+                print(f"[DEBUG][import_member_mark_assignment_rules] Row {row_num}: SKIPPED - Exception: {str(row_error).encode('ascii', 'replace').decode('ascii')}")
+                skipped_count += 1
+                continue
+
+        message = f'일람부호 할당 룰셋을 성공적으로 가져왔습니다. (생성: {created_count})'
         if created_marks:
-            message += f' (자동 생성된 일람부호: {", ".join(created_marks)})'
-        # ▲▲▲ [추가] 여기까지 ▲▲▲
+            message += f' (자동 생성된 일람부호: {len(created_marks)}개)'
 
+        print(f"[DEBUG][import_member_mark_assignment_rules] Created: {created_count}, Marks: {len(created_marks)}")
         return JsonResponse({'status': 'success', 'message': message})
-    except Exception as e: return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG][import_member_mark_assignment_rules] Exception: {str(e).encode('ascii', 'replace').decode('ascii')}")
+        return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 # --- 5. CostCodeAssignmentRule ---
 @require_http_methods(["GET"])
@@ -4097,22 +4259,69 @@ def export_cost_code_assignment_rules(request, project_id):
 
 @require_http_methods(["POST"])
 def import_cost_code_assignment_rules(request, project_id):
-    project = Project.objects.get(id=project_id)
-    csv_file = request.FILES.get('csv_file')
-    if not csv_file: return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+    print(f"[DEBUG][import_cost_code_assignment_rules] ENTRY: project_id={project_id}")
     try:
-        CostCodeAssignmentRule.objects.filter(project=project).delete()
-        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
-        reader = csv.DictReader(csv_file.read().decode('utf-8-sig').splitlines())
-        # ▲▲▲ [수정] 여기까지 ▲▲▲
-        for row in reader:
-            CostCodeAssignmentRule.objects.create(
-                project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
-                conditions=json.loads(row.get('conditions', '[]')),
-                cost_code_expressions=json.loads(row.get('cost_code_expressions', '{}'))
-            )
-        return JsonResponse({'status': 'success', 'message': '공사코드 할당 룰셋을 성공적으로 가져왔습니다.'})
-    except Exception as e: return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
+        project = Project.objects.get(id=project_id)
+    except Project.DoesNotExist:
+        print(f"[DEBUG][import_cost_code_assignment_rules] Project not found: {project_id}")
+        return JsonResponse({'status': 'error', 'message': f'프로젝트를 찾을 수 없습니다: {project_id}'}, status=400)
+
+    csv_file = request.FILES.get('csv_file')
+    if not csv_file:
+        return JsonResponse({'status': 'error', 'message': 'CSV 파일이 필요합니다.'}, status=400)
+
+    try:
+        deleted_count = CostCodeAssignmentRule.objects.filter(project=project).delete()
+        print(f"[DEBUG][import_cost_code_assignment_rules] Deleted {deleted_count} existing rules")
+
+        csv_content = csv_file.read().decode('utf-8-sig')
+        # 중복 BOM 제거 (여러 번 저장되면 BOM이 쌓일 수 있음)
+        while csv_content.startswith('\ufeff'):
+            csv_content = csv_content[1:]
+        # 각 행의 시작 BOM도 제거
+        lines = csv_content.splitlines()
+        cleaned_lines = [line.lstrip('\ufeff') for line in lines]
+        csv_content = '\n'.join(cleaned_lines)
+
+        print(f"[DEBUG][import_cost_code_assignment_rules] CSV content length: {len(csv_content)} bytes", flush=True)
+        reader = csv.DictReader(csv_content.splitlines())
+
+        created_count = 0
+        skipped_count = 0
+
+        # 디버깅: CSV 컬럼 확인
+        fieldnames = reader.fieldnames
+        print(f"[DEBUG][import_cost_code_assignment_rules] CSV fieldnames: {fieldnames}", flush=True)
+
+        for row_num, row in enumerate(reader, start=1):
+            try:
+                rule_name = row.get('name', '')
+
+                # ASCII-safe 로그 출력
+                print(f"[DEBUG][import_cost_code_assignment_rules] Row {row_num}: name={rule_name.encode('ascii', 'replace').decode('ascii')}")
+
+                CostCodeAssignmentRule.objects.create(
+                    project=project, name=row.get('name'), priority=int(row.get('priority', 0)),
+                    conditions=json.loads(row.get('conditions', '[]')),
+                    cost_code_expressions=json.loads(row.get('cost_code_expressions', '{}'))
+                )
+                created_count += 1
+                print(f"[DEBUG][import_cost_code_assignment_rules] Row {row_num}: CREATED successfully")
+            except json.JSONDecodeError as json_err:
+                print(f"[DEBUG][import_cost_code_assignment_rules] Row {row_num}: SKIPPED - JSON parse error: {str(json_err)}")
+                skipped_count += 1
+                continue
+            except Exception as row_error:
+                print(f"[DEBUG][import_cost_code_assignment_rules] Row {row_num}: SKIPPED - Exception: {str(row_error).encode('ascii', 'replace').decode('ascii')}")
+                skipped_count += 1
+                continue
+
+        print(f"[DEBUG][import_cost_code_assignment_rules] Created: {created_count}, Skipped: {skipped_count}")
+        return JsonResponse({'status': 'success', 'message': f'공사코드 할당 룰셋을 성공적으로 가져왔습니다. (생성: {created_count})'})
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG][import_cost_code_assignment_rules] Exception: {str(e).encode('ascii', 'replace').decode('ascii')}")
+        return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
 
 # --- 6. SpaceClassificationRule ---
 @require_http_methods(["GET"])
@@ -4255,15 +4464,34 @@ def import_activity_assignment_rules(request, project_id):
 def export_cost_codes(request, project_id):
     project = Project.objects.get(id=project_id)
     codes = CostCode.objects.filter(project=project)
-    
+
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="{project.name}_cost_codes.csv"'
-    
+
     writer = csv.writer(response)
-    writer.writerow(['code', 'name', 'spec', 'unit', 'category', 'description'])
+    # [수정 2025-12-01] 모든 필드 포함
+    writer.writerow([
+        'code', 'name', 'description', 'detail_code', 'category', 'product_name',
+        'spec', 'unit', 'secondary_name', 'secondary_spec', 'secondary_unit',
+        'secondary_detail_code', 'note', 'ai_sd_enabled', 'dd_enabled'
+    ])
     for code in codes:
         writer.writerow([
-            code.code, code.name, code.spec, code.unit, code.category, code.description
+            code.code,
+            code.name,
+            code.description or '',
+            code.detail_code or '',
+            code.category or '',
+            code.product_name or '',
+            code.spec or '',
+            code.unit or '',
+            code.secondary_name or '',
+            code.secondary_spec or '',
+            code.secondary_unit or '',
+            code.secondary_detail_code or '',
+            code.note or '',
+            'TRUE' if code.ai_sd_enabled else 'FALSE',
+            'TRUE' if code.dd_enabled else 'FALSE'
         ])
     return response
 
@@ -4278,25 +4506,36 @@ def import_cost_codes(request, project_id):
         # 기존 데이터를 모두 삭제 (덮어쓰기 방식)
         CostCode.objects.filter(project=project).delete()
 
-        # ▼▼▼ [수정] UTF-8 BOM 처리 (2025-11-05) ▼▼▼
         decoded_file = csv_file.read().decode('utf-8-sig').splitlines()
-        # ▲▲▲ [수정] 여기까지 ▲▲▲
         reader = csv.DictReader(decoded_file)
-        
+
         codes_to_create = []
         for row in reader:
+            # [수정 2025-12-01] 모든 필드 처리
+            ai_sd_val = row.get('ai_sd_enabled', 'TRUE').upper()
+            dd_val = row.get('dd_enabled', 'TRUE').upper()
+
             codes_to_create.append(CostCode(
                 project=project,
                 code=row.get('code'),
                 name=row.get('name'),
+                description=row.get('description', ''),
+                detail_code=row.get('detail_code', ''),
+                category=row.get('category', ''),
+                product_name=row.get('product_name', ''),
                 spec=row.get('spec', ''),
                 unit=row.get('unit', ''),
-                category=row.get('category', ''),
-                description=row.get('description', '')
+                secondary_name=row.get('secondary_name', ''),
+                secondary_spec=row.get('secondary_spec', ''),
+                secondary_unit=row.get('secondary_unit', ''),
+                secondary_detail_code=row.get('secondary_detail_code', ''),
+                note=row.get('note', ''),
+                ai_sd_enabled=ai_sd_val in ('TRUE', '1', 'YES', '✅'),
+                dd_enabled=dd_val in ('TRUE', '1', 'YES', '✅')
             ))
-        
+
         CostCode.objects.bulk_create(codes_to_create)
-        
+
         return JsonResponse({'status': 'success', 'message': '공사코드 데이터를 성공적으로 가져왔습니다.'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': f'파일 처리 중 오류 발생: {e}'}, status=400)
@@ -7385,95 +7624,101 @@ def apply_cost_item_activity_rules_api(request, project_id):
 # ActivityObject API Views
 # ============================================================
 
-@require_http_methods(["GET", "POST", "PUT", "DELETE"])
+@require_http_methods(["GET", "POST", "PUT", "PATCH", "DELETE"])
 def activity_objects_api(request, project_id, ao_id=None):
     """ActivityObject API - 액티비티 객체 목록 조회, 생성, 수정, 삭제"""
     print(f"[DEBUG][activity_objects_api] ENTRY: method={request.method}, project_id={project_id}, ao_id={ao_id}")
 
     if request.method == 'GET':
         # 목록 조회
-        activity_objects = ActivityObject.objects.filter(
-            project_id=project_id,
-            is_active=True
-        ).select_related(
-            'activity',
-            'cost_item__cost_code',
-            'cost_item__quantity_member__member_mark',
-            'cost_item__quantity_member__raw_element'
-        ).prefetch_related('cost_item__activities')
+        try:
+            activity_objects = ActivityObject.objects.filter(
+                project_id=project_id,
+                is_active=True
+            ).select_related(
+                'activity',
+                'cost_item__cost_code',
+                'cost_item__quantity_member__member_mark',
+                'cost_item__quantity_member__raw_element'
+            ).prefetch_related('cost_item__activities')
 
-        data = []
-        for ao in activity_objects:
-            ao_data = {
-                'id': str(ao.id),
-                'start_date': ao.start_date.isoformat() if ao.start_date else None,
-                'end_date': ao.end_date.isoformat() if ao.end_date else None,
-                'actual_duration': float(ao.actual_duration) if ao.actual_duration else None,
-                'quantity': float(ao.quantity),
-                'is_manual': ao.is_manual,
-                'manual_formula': ao.manual_formula,
-                'quantity_expression': getattr(ao, 'quantity_expression', {}),  # ▼▼▼ [추가] quantity_expression 필드 추가 (2025-11-05) ▼▼▼
-                'progress': float(ao.progress),
-                'metadata': ao.metadata,
-                'created_at': ao.created_at.isoformat() if ao.created_at else None,
-                'updated_at': ao.updated_at.isoformat() if ao.updated_at else None,
-            }
-
-            # Activity 속성
-            if ao.activity:
-                ao_data['activity'] = {
-                    'id': str(ao.activity.id),
-                    'code': ao.activity.code,
-                    'name': ao.activity.name,
-                    'duration_per_unit': float(ao.activity.duration_per_unit) if ao.activity.duration_per_unit else None,
+            data = []
+            for ao in activity_objects:
+                ao_data = {
+                    'id': str(ao.id),
+                    'start_date': ao.start_date.isoformat() if ao.start_date else None,
+                    'end_date': ao.end_date.isoformat() if ao.end_date else None,
+                    'actual_duration': float(ao.actual_duration) if ao.actual_duration else None,
+                    'quantity': float(ao.quantity),
+                    'is_manual': ao.is_manual,
+                    'manual_formula': ao.manual_formula,
+                    'quantity_expression': ao.quantity_expression or {},
+                    'progress': float(ao.progress),
+                    'metadata': ao.metadata,
+                    'created_at': ao.created_at.isoformat() if ao.created_at else None,
+                    'updated_at': ao.updated_at.isoformat() if ao.updated_at else None,
                 }
 
-            # CostItem 속성
-            if ao.cost_item:
-                ci = ao.cost_item
-                ao_data['cost_item'] = {
-                    'id': str(ci.id),
-                    'quantity': float(ci.quantity),
-                    'description': ci.description,
-                }
-
-                # CostCode 속성
-                if ci.cost_code:
-                    ao_data['cost_code'] = {
-                        'id': str(ci.cost_code.id),
-                        'code': ci.cost_code.code,
-                        'name': ci.cost_code.name,
-                        'detail_code': ci.cost_code.detail_code,
-                        'unit': ci.cost_code.unit,
-                        'note': ci.cost_code.note,
+                # Activity 속성
+                if ao.activity:
+                    ao_data['activity'] = {
+                        'id': str(ao.activity.id),
+                        'code': ao.activity.code,
+                        'name': ao.activity.name,
+                        'duration_per_unit': float(ao.activity.duration_per_unit) if ao.activity.duration_per_unit else None,
                     }
 
-                # QuantityMember 속성
-                if ci.quantity_member:
-                    qm = ci.quantity_member
-                    ao_data['quantity_member'] = {
-                        'id': str(qm.id),
-                        'name': qm.name,
-                        'properties': qm.properties or {},
+                # CostItem 속성
+                if ao.cost_item:
+                    ci = ao.cost_item
+                    ao_data['cost_item'] = {
+                        'id': str(ci.id),
+                        'quantity': float(ci.quantity),
+                        'description': ci.description,
                     }
 
-                    # MemberMark 속성
-                    if qm.member_mark:
-                        ao_data['member_mark'] = {
-                            'id': str(qm.member_mark.id),
-                            'mark': qm.member_mark.mark,
-                            'description': qm.member_mark.description,
-                            'properties': qm.member_mark.properties or {},
+                    # CostCode 속성
+                    if ci.cost_code:
+                        ao_data['cost_code'] = {
+                            'id': str(ci.cost_code.id),
+                            'code': ci.cost_code.code,
+                            'name': ci.cost_code.name,
+                            'detail_code': ci.cost_code.detail_code,
+                            'unit': ci.cost_code.unit,
+                            'note': ci.cost_code.note,
                         }
 
-                    # RawElement (BIM) 속성
-                    if qm.raw_element and qm.raw_element.raw_data:
-                        ao_data['raw_data'] = qm.raw_element.raw_data
+                    # QuantityMember 속성
+                    if ci.quantity_member:
+                        qm = ci.quantity_member
+                        ao_data['quantity_member'] = {
+                            'id': str(qm.id),
+                            'name': qm.name,
+                            'properties': qm.properties or {},
+                        }
 
-            data.append(ao_data)
+                        # MemberMark 속성
+                        if qm.member_mark:
+                            ao_data['member_mark'] = {
+                                'id': str(qm.member_mark.id),
+                                'mark': qm.member_mark.mark,
+                                'description': qm.member_mark.description,
+                                'properties': qm.member_mark.properties or {},
+                            }
 
-        print(f"[DEBUG][activity_objects_api] GET: Returning {len(data)} ActivityObjects")
-        return JsonResponse(data, safe=False)
+                        # RawElement (BIM) 속성
+                        if qm.raw_element and qm.raw_element.raw_data:
+                            ao_data['raw_data'] = qm.raw_element.raw_data
+
+                data.append(ao_data)
+
+            print(f"[DEBUG][activity_objects_api] GET: Returning {len(data)} ActivityObjects")
+            return JsonResponse(data, safe=False)
+        except Exception as e:
+            import traceback
+            print(f"[ERROR][activity_objects_api] GET Error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
+            return JsonResponse({'status': 'error', 'message': f'ActivityObject 목록 조회 중 오류 발생: {str(e)}'}, status=500)
 
     elif request.method == 'POST':
         # 수동 생성

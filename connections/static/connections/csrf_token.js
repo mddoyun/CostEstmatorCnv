@@ -10,7 +10,8 @@ function getCookie(name) {
     return null;
 }
 
-let csrftoken =
+// var를 사용하여 전역 스코프에서 확실히 접근 가능하도록 함
+var csrftoken =
     document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
     getCookie('csrftoken');
 
@@ -23,3 +24,7 @@ function getCSRFToken() {
     }
     return csrftoken;
 }
+
+// window 객체에도 명시적으로 연결
+window.csrftoken = csrftoken;
+window.getCSRFToken = getCSRFToken;
